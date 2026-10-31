@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import { OpenAIExtensions } from '@openai/mcp-extensions/server';
 import { z } from 'zod/v4';
 import { createLibraryStore } from '../library/index.mjs';
 import { getWorkerStatus } from '../scripts/worker-client.mjs';
 import { createDesignService } from './service.mjs';
-import { ACTIONS, READ_ACTIONS, LIBRARY_UI_URI, FILE_UI_URI, UI_MIME_TYPE } from './contract.mjs';
+import { ACTIONS, READ_ACTIONS, LIBRARY_UI_URI, FILE_UI_URI, UI_MIME_TYPE, PLUGIN_UI_VERSION } from './contract.mjs';
 
 const readonly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const appOnly = uri => ({ ui: { resourceUri: uri, visibility: ['app'] } });
@@ -30,9 +31,10 @@ function resultFor(value, action) {
   return { content, structuredContent: { result: value } };
 }
 
-export async function createDesignServer({ store = createLibraryStore({ isBusy: nativeActivity }), html,
-  htmlPath = new URL('../ui/index.html', import.meta.url), icons, editorOpen, pluginRoot, version = '0.4.0' } = {}) {
+export async function createDesignServer({ store = createLibraryStore({ isBusy: nativeActivity }), html, resourceDiagnostics = true,
+  htmlPath = new URL('../ui/index.html', import.meta.url), icons, editorOpen, pluginRoot, version = PLUGIN_UI_VERSION } = {}) {
   if (html === undefined) html = await readFile(htmlPath, 'utf8');
+  const htmlSHA256 = resourceDiagnostics ? createHash('sha256').update(html, 'utf8').digest('hex') : null;
   if (icons === undefined) {
     const icon = await readFile(new URL('../assets/icon.png', import.meta.url));
     icons = [{ src: `data:image/png;base64,${icon.toString('base64')}`, mimeType: 'image/png', sizes: ['512x512'] }];
@@ -41,14 +43,18 @@ export async function createDesignServer({ store = createLibraryStore({ isBusy: 
   const extensions = new OpenAIExtensions(server);
   const service = createDesignService({ store, pluginRoot, editorOpen });
   const uiResource = uri => ({ uri, mimeType: UI_MIME_TYPE, text: html,
-    _meta: { ui: { csp: {
+    _meta: { 'codex-design/uiVersion': PLUGIN_UI_VERSION, ui: { csp: {
       connectDomains: ['blob:', 'data:', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
       resourceDomains: ['blob:', 'data:', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdn.oaistatic.com', 'https://cdn.openai.com'],
       frameDomains: ['blob:', 'data:'], baseUriDomains: ['https://codex-design.invalid'],
     } },
       'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['fullscreen'] } } });
   for (const [name, uri] of [['design-library-ui', LIBRARY_UI_URI], ['design-file-ui', FILE_UI_URI]]) {
-    server.registerResource(name, uri, { mimeType: UI_MIME_TYPE }, async () => ({ contents: [uiResource(uri)] }));
+    server.registerResource(name, uri, { mimeType: UI_MIME_TYPE }, async () => {
+      if (resourceDiagnostics) process.stderr.write(`${JSON.stringify({ event: 'codex_design_ui_resource_read', serverName: 'codex-design',
+        pluginVersion: version, uiVersion: PLUGIN_UI_VERSION, resourceURI: uri, htmlSHA256 })}\n`);
+      return { contents: [uiResource(uri)] };
+    });
   }
   server.registerTool('DesignLibrary', {
     title: 'codex design', description: 'Open the full Codex Design workspace from global navigation.',

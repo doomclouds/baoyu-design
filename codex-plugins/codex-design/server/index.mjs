@@ -36539,6 +36539,7 @@ function toError(value) {
 
 // source/server/register.mjs
 import { readFile as readFile2 } from "node:fs/promises";
+import { createHash as createHash6 } from "node:crypto";
 
 // node_modules/@modelcontextprotocol/server/dist/index.mjs
 var DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024;
@@ -53909,8 +53910,9 @@ async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeout
 }
 
 // source/server/contract.mjs
-var LIBRARY_UI_URI = "ui://codex-design/library";
-var FILE_UI_URI = "ui://codex-design/file";
+var PLUGIN_UI_VERSION = "0.4.1";
+var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
+var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var UI_MIME_TYPE = "text/html;profile=mcp-app";
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
 var READ_ACTIONS = Object.freeze(["library.list", "library.get", "view.get", "conversation.get", "reference.get", "reference.readFile"]);
@@ -54259,13 +54261,15 @@ function resultFor(value, action) {
 async function createDesignServer({
   store = createLibraryStore({ isBusy: nativeActivity }),
   html,
+  resourceDiagnostics = true,
   htmlPath = new URL("../ui/index.html", import.meta.url),
   icons,
   editorOpen,
   pluginRoot,
-  version: version3 = "0.4.0"
+  version: version3 = PLUGIN_UI_VERSION
 } = {}) {
   if (html === void 0) html = await readFile2(htmlPath, "utf8");
+  const htmlSHA256 = resourceDiagnostics ? createHash6("sha256").update(html, "utf8").digest("hex") : null;
   if (icons === void 0) {
     const icon = await readFile2(new URL("../assets/icon.png", import.meta.url));
     icons = [{ src: `data:image/png;base64,${icon.toString("base64")}`, mimeType: "image/png", sizes: ["512x512"] }];
@@ -54278,6 +54282,7 @@ async function createDesignServer({
     mimeType: UI_MIME_TYPE,
     text: html,
     _meta: {
+      "codex-design/uiVersion": PLUGIN_UI_VERSION,
       ui: { csp: {
         connectDomains: ["blob:", "data:", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
         resourceDomains: ["blob:", "data:", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdn.oaistatic.com", "https://cdn.openai.com"],
@@ -54288,7 +54293,18 @@ async function createDesignServer({
     }
   });
   for (const [name, uri2] of [["design-library-ui", LIBRARY_UI_URI], ["design-file-ui", FILE_UI_URI]]) {
-    server.registerResource(name, uri2, { mimeType: UI_MIME_TYPE }, async () => ({ contents: [uiResource(uri2)] }));
+    server.registerResource(name, uri2, { mimeType: UI_MIME_TYPE }, async () => {
+      if (resourceDiagnostics) process.stderr.write(`${JSON.stringify({
+        event: "codex_design_ui_resource_read",
+        serverName: "codex-design",
+        pluginVersion: version3,
+        uiVersion: PLUGIN_UI_VERSION,
+        resourceURI: uri2,
+        htmlSHA256
+      })}
+`);
+      return { contents: [uiResource(uri2)] };
+    });
   }
   server.registerTool("DesignLibrary", {
     title: "codex design",

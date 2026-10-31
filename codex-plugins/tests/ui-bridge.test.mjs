@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { App } from '@modelcontextprotocol/ext-apps';
 import { createMcpBridge, installMcpBridge } from '../source/server/ui-bridge.mjs';
+import { PLUGIN_UI_VERSION } from '../source/server/contract.mjs';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
 const secondId = '22222222-2222-4222-8222-222222222222';
@@ -63,6 +64,20 @@ function host(t, { context = {}, initialState, file, descriptor, onCall } = {}) 
     context: patch => notify('ui/notifications/host-context-changed', patch),
   };
 }
+
+test('a native bridge declares its UI version and becomes unavailable before disposal completes', async t => {
+  const f = host(t);
+  const bridge = await createMcpBridge({ app: f.app });
+  assert.equal(bridge.transport, 'mcp');
+  assert.equal(bridge.uiVersion, PLUGIN_UI_VERSION);
+  assert.equal(bridge.supportsInlineEditor, true);
+  assert.equal(bridge.available, true);
+  assert.equal(bridge.diagnostics().uiVersion, PLUGIN_UI_VERSION);
+  const closing = bridge.dispose();
+  assert.equal(bridge.available, false);
+  await closing;
+  await assert.rejects(bridge.invoke('view.get'), { code: 'BRIDGE_UNAVAILABLE' });
+});
 
 test('SDK hostcontextchanged supplies params directly and merged partial updates preserve locale', async t => {
   const f = host(t, { context: { locale: 'zh-CN' } });

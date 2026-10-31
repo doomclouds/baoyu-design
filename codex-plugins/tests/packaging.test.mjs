@@ -9,6 +9,7 @@ import { isBuiltin } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { build } from 'esbuild';
+import { LIBRARY_UI_URI, FILE_UI_URI, PLUGIN_UI_VERSION } from '../source/server/contract.mjs';
 
 const buildRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pluginRoot = path.join(buildRoot, 'codex-design');
@@ -182,6 +183,7 @@ test('the packaged workspace UI is a single HTML resource with no external scrip
 test('the installed stdio bundle exposes real entrypoints while ordinary tools keep chat output free of UI panels', async t => {
   const session = await packagedMcpSession(t);
   const manifest = await readJson(path.join(pluginRoot, 'plugin.json'));
+  assert.equal(manifest.version, PLUGIN_UI_VERSION, 'the packaged UI resource version must match the installed release');
   assert.equal(session.initialized.serverInfo.name, manifest.name);
   assert.equal(session.initialized.serverInfo.version, manifest.version);
   const { tools } = await session.rpc('tools/list');
@@ -190,6 +192,7 @@ test('the installed stdio bundle exposes real entrypoints while ordinary tools k
     assert.ok(tool, 'missing native entrypoint ' + name);
     assert.deepEqual(tool._meta.ui.visibility, ['app']);
     assert.ok(tool._meta['openai/ui'].entrypoints.some(entry => entry.type === type));
+    assert.equal(tool._meta.ui.resourceUri, type === 'global' ? LIBRARY_UI_URI : FILE_UI_URI);
   }
   for (const name of ['design_read', 'design_action', 'search_mentions']) {
     const tool = tools.find(item => item.name === name);
@@ -199,7 +202,7 @@ test('the installed stdio bundle exposes real entrypoints while ordinary tools k
     assert.equal(tool._meta?.['openai/ui']?.entrypoints, undefined);
   }
   assert.equal(tools.find(tool => tool.name === 'search_mentions').annotations.readOnlyHint, true);
-  const ui = await session.rpc('resources/read', { uri: 'ui://codex-design/library' });
+  const ui = await session.rpc('resources/read', { uri: LIBRARY_UI_URI });
   const packagedHtml = await readFile(path.join(pluginRoot, 'ui/index.html'), 'utf8');
   assert.equal(ui.contents[0].mimeType, 'text/html;profile=mcp-app');
   assert.equal(ui.contents[0].text, packagedHtml, 'the distributed server must return the bundled UI, not source HTML or a test placeholder');

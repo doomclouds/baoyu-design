@@ -1,13 +1,13 @@
 import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
-import { ACTIONS, READ_ACTIONS, UNSUPPORTED_CHAT_CODE } from './contract.mjs';
+import { ACTIONS, READ_ACTIONS, UNSUPPORTED_CHAT_CODE, PLUGIN_UI_VERSION } from './contract.mjs';
 
 const fail = (message, code) => Object.assign(new Error(message), { code });
 const changed = action => !READ_ACTIONS.includes(action) && !action.startsWith('editor.') && action !== 'thumbnail.get';
 const artifactRoute = /^\/artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?[^#]*)?$/i;
 const artifactId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app = new App({ name: 'codex-design', version: '0.4.0' }) } = {}) {
+export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app = new App({ name: 'codex-design', version: PLUGIN_UI_VERSION }) } = {}) {
   const extensions = new OpenAIExtensions(app);
   const listeners = new Set();
   let toolInput;
@@ -19,7 +19,8 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
   let navigation = Promise.resolve();
   let pendingArtifact;
   const bridge = {
-    available: true, supportsInlineEditor: true, language: navigator.language, hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS] },
+    available: true, transport: 'mcp', uiVersion: PLUGIN_UI_VERSION, supportsInlineEditor: true,
+    language: navigator.language, hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS] },
     async invoke(action, payload = {}) {
       if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
       if (action === 'conversation.send') throw fail('A verified per-artifact native conversation bridge is not available.', UNSUPPORTED_CHAT_CODE);
@@ -56,14 +57,14 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
     diagnostics() {
       const host = app.getHostVersion();
       const context = app.getHostContext();
-      return { uiVersion: '0.4.0', transport: 'mcp',
+      return { uiVersion: PLUGIN_UI_VERSION, transport: 'mcp',
         host: host ? { name: host.name, version: host.version } : null,
         capabilityNames: Object.keys(app.getHostCapabilities() || {}).sort(),
         theme: context?.theme, locale: context?.locale, displayMode: context?.displayMode,
         styleVariableNames: Object.keys(context?.styles?.variables || {}).sort() };
     },
     subscribe(handler) { listeners.add(handler); return () => listeners.delete(handler); },
-    async dispose() { disposed = true; connected = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
+    async dispose() { disposed = true; bridge.available = false; connected = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
   };
   const applyContext = () => {
     // SDK listeners receive params directly; the SDK merges each partial patch first.
@@ -72,7 +73,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
     const root = globalThis.document?.documentElement;
     const host = app.getHostVersion();
     if (root?.setAttribute) {
-      root.setAttribute('data-codex-design-version', '0.4.0');
+      root.setAttribute('data-codex-design-version', PLUGIN_UI_VERSION);
       root.setAttribute('data-codex-design-transport', 'mcp');
       if (host?.name) root.setAttribute('data-codex-design-host', host.name);
     }

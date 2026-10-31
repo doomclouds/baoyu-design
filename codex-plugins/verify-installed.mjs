@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveCodexRunner } from './source/scripts/bridge-core.mjs';
+import { LIBRARY_UI_URI } from './source/server/contract.mjs';
 
 const cwd = path.resolve(process.argv[2] || process.cwd());
 const { version } = JSON.parse(await readFile(new URL('./source/plugin.json', import.meta.url), 'utf8'));
@@ -69,7 +70,7 @@ try {
   const libraryTools = Object.values(libraryServer.tools || {});
   const globalEntry = libraryTools.find(tool => tool.name === 'DesignLibrary');
   if (!globalEntry?._meta?.['openai/ui']?.entrypoints?.some(entry => entry.type === 'global')) throw new Error('Codex did not discover the global library entrypoint.');
-  if (globalEntry._meta.ui.resourceUri !== 'ui://codex-design/library') throw new Error('The installed library UI resource URI is incorrect.');
+  if (globalEntry._meta.ui.resourceUri !== LIBRARY_UI_URI) throw new Error('The installed library UI resource URI is incorrect.');
   console.log(JSON.stringify({ verified: true, pluginVersion: installed.version, pluginRoot: pluginRoots[0], codex: initialized.userAgent ?? null, cwd,
     skills: skills.map(({ name, path: skillPath, enabled, scope }) => ({ name, path: skillPath, enabled, scope })),
     mcp: { name: libraryServer.name, pluginId: libraryServer.pluginId, tools: libraryTools.map(tool => tool.name), globalEntrypoint: true, toolsError: libraryServer.toolsError ?? null }, errors }, null, 2));

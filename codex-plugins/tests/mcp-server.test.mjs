@@ -9,11 +9,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { fileUri, referenceUri } from '../source/server/contract.mjs';
+import { fileUri, referenceUri, LIBRARY_UI_URI, FILE_UI_URI, PLUGIN_UI_VERSION } from '../source/server/contract.mjs';
 
 const pluginBuildRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-async function session(t, { spike = false, built = false } = {}) {
+async function session(t, { spike = false, built = false, resourceDiagnostics = true } = {}) {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-design-mcp-test-'));
   const libraryRoot = built ? path.join(temporary, '.codex', 'CodexDesignLibrary') : path.join(temporary, 'library');
   const cleanup = [];
@@ -21,7 +21,7 @@ async function session(t, { spike = false, built = false } = {}) {
   const moduleUrl = relative => pathToFileURL(path.join(pluginBuildRoot, relative)).href;
   await fs.writeFile(runner, spike
     ? `import {serveStdio} from ${JSON.stringify(moduleUrl('node_modules/@modelcontextprotocol/server/dist/stdio.mjs'))};\nimport {createSpikeServer} from ${JSON.stringify(moduleUrl('source/server/spike.mjs'))};\nserveStdio(createSpikeServer);\n`
-    : `import {serveStdio} from ${JSON.stringify(moduleUrl('node_modules/@modelcontextprotocol/server/dist/stdio.mjs'))};\nimport {createDesignServer,nativeActivity} from ${JSON.stringify(moduleUrl('source/server/register.mjs'))};\nimport {createLibraryStore} from ${JSON.stringify(moduleUrl('source/library/index.mjs'))};\nserveStdio(()=>createDesignServer({store:createLibraryStore({root:${JSON.stringify(libraryRoot)},isBusy:nativeActivity}),html:'<!doctype html><html><body>test UI</body></html>',icons:[],editorOpen:async record=>({url:'http://127.0.0.1:7443/editor/',artifactId:record.id,nativeConversationBound:false})}));\n`);
+    : `import {serveStdio} from ${JSON.stringify(moduleUrl('node_modules/@modelcontextprotocol/server/dist/stdio.mjs'))};\nimport {createDesignServer,nativeActivity} from ${JSON.stringify(moduleUrl('source/server/register.mjs'))};\nimport {createLibraryStore} from ${JSON.stringify(moduleUrl('source/library/index.mjs'))};\nserveStdio(()=>createDesignServer({store:createLibraryStore({root:${JSON.stringify(libraryRoot)},isBusy:nativeActivity}),resourceDiagnostics:${JSON.stringify(resourceDiagnostics)},html:'<!doctype html><html><body>test UI</body></html>',icons:[],editorOpen:async record=>({url:'http://127.0.0.1:7443/editor/',artifactId:record.id,nativeConversationBound:false})}));\n`);
   const env = built ? { ...process.env, USERPROFILE: temporary } : process.env;
   if (built) {
     const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', 'import os from "node:os"; process.stdout.write(os.homedir());'], { env, windowsHide: true });
@@ -29,6 +29,7 @@ async function session(t, { spike = false, built = false } = {}) {
   }
   const child = spawn(process.execPath, [built ? path.join(pluginBuildRoot, 'codex-design', 'server', 'index.mjs') : runner], { cwd: temporary, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   let buffer = '', stderr = '', next = 0;
+  const stdoutLines = [];
   const pending = new Map();
   child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-8_000); });
   child.stdout.setEncoding('utf8');
@@ -38,6 +39,7 @@ async function session(t, { spike = false, built = false } = {}) {
     while ((newline = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
       if (!line.trim()) continue;
+      stdoutLines.push(line);
       let message; try { message = JSON.parse(line); } catch { continue; }
       const call = pending.get(message.id);
       if (!call) continue;
@@ -66,7 +68,7 @@ async function session(t, { spike = false, built = false } = {}) {
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   const call = (action, payload = {}, tool = 'design_action') => rpc('tools/call', { name: tool, arguments: { action, payload } });
   const value = async (action, payload, tool) => { const result = await call(action, payload, tool); assert.notEqual(result.isError, true, JSON.stringify(result)); return result.structuredContent.result; };
-  return { rpc, call, value, initialized, libraryRoot, cleanup, env };
+  return { rpc, call, value, initialized, libraryRoot, cleanup, env, stderr: () => stderr, stdoutLines: () => [...stdoutLines] };
 }
 
 test('global/file entries use app-only UI; ordinary model tools never attach a panel', async t => {
@@ -83,13 +85,53 @@ test('global/file entries use app-only UI; ordinary model tools never attach a p
   }
   assert.equal(tools.find(tool => tool.name === 'search_mentions').annotations.readOnlyHint, true);
   const resources = await f.rpc('resources/list', {});
-  assert.deepEqual(resources.resources.map(resource => resource.uri).sort(), ['ui://codex-design/file', 'ui://codex-design/library']);
-  const resource = (await f.rpc('resources/read', { uri: 'ui://codex-design/library' })).contents[0];
+  assert.deepEqual(resources.resources.map(resource => resource.uri).sort(), [FILE_UI_URI, LIBRARY_UI_URI].sort());
+  assert.ok([FILE_UI_URI, LIBRARY_UI_URI].every(uri => uri.includes(`/${PLUGIN_UI_VERSION}/`)));
+  const resource = (await f.rpc('resources/read', { uri: LIBRARY_UI_URI })).contents[0];
   assert.equal(resource.mimeType, 'text/html;profile=mcp-app');
   assert.match(resource.text, /test UI/);
+  assert.equal(resource._meta['codex-design/uiVersion'], PLUGIN_UI_VERSION);
   assert.deepEqual(resource._meta.ui.csp.frameDomains, ['blob:', 'data:']);
   assert.deepEqual(resource._meta.ui.csp.baseUriDomains, ['https://codex-design.invalid']);
   assert.equal(resource._meta.ui.csp.frameDomains.some(origin => origin.startsWith('http:')), false);
+});
+
+test('UI resource diagnostics identify exact served bytes on stderr without leaking content or polluting MCP stdout', async t => {
+  const f = await session(t);
+  const resources = [];
+  for (const uri of [LIBRARY_UI_URI, FILE_UI_URI]) resources.push((await f.rpc('resources/read', { uri })).contents[0]);
+  await f.value('library.list', {}, 'design_read');
+  await new Promise(resolve => setImmediate(resolve));
+  const diagnostics = f.stderr().trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+  assert.equal(diagnostics.length, 2, 'one diagnostic per actual UI resource read; ordinary model reads add none');
+  for (const [index, value] of diagnostics.entries()) {
+    assert.deepEqual(Object.keys(value).sort(), ['event', 'serverName', 'pluginVersion', 'uiVersion', 'resourceURI', 'htmlSHA256'].sort());
+    assert.equal(value.event, 'codex_design_ui_resource_read');
+    assert.equal(value.serverName, 'codex-design');
+    assert.equal(value.pluginVersion, f.initialized.serverInfo.version);
+    assert.equal(value.uiVersion, PLUGIN_UI_VERSION);
+    assert.equal(value.resourceURI, resources[index].uri);
+    assert.equal(value.htmlSHA256, createHash('sha256').update(resources[index].text, 'utf8').digest('hex'));
+  }
+  assert.equal(f.stderr().includes('test UI'), false);
+  assert.equal(f.stderr().includes(f.libraryRoot), false);
+  assert.equal(f.stderr().includes('http://'), false);
+  for (const line of f.stdoutLines()) {
+    const message = JSON.parse(line);
+    assert.equal(message.jsonrpc, '2.0');
+    assert.notEqual(message.event, 'codex_design_ui_resource_read');
+  }
+});
+
+test('UI resource diagnostics can be disabled without changing the served resource or metadata', async t => {
+  const f = await session(t, { resourceDiagnostics: false });
+  const resource = (await f.rpc('resources/read', { uri: LIBRARY_UI_URI })).contents[0];
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.stderr(), '');
+  assert.equal(resource._meta['codex-design/uiVersion'], PLUGIN_UI_VERSION);
+  assert.equal(resource._meta['openai/ui'].preferredDisplayMode, 'fullscreen');
+  assert.deepEqual(resource._meta.ui.csp.frameDomains, ['blob:', 'data:']);
+  assert.match(resource.text, /test UI/);
 });
 
 test('real LibraryStore CRUD and persistent artwork tabs work through stdio without chat creation', async t => {

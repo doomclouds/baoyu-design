@@ -1,5 +1,20 @@
 # Codex Design library implementation
 
+## 0.4.1 native startup follow-up
+
+After the user's Desktop restart, live plugin tools recovered but artwork frames
+were blocked. The actual Desktop log reports localhost HTTP frame navigation
+and ERR_BLOCKED_BY_CSP; it does not establish that the data-shell path failed.
+The installed 0.4 UI contains the native branch. Host resource caches include a
+plugin revision, with persisted startup fallback, so a broken versionless cache
+key must not be asserted as the proven cause.
+
+The patch gives library/file resources release-specific URIs, rejects legacy or
+HTTP bridges in the native entrypoint, and records bounded resource-read version
+and HTML-hash diagnostics on stderr. Standalone previews retain their explicit
+transport. Host CSP and the isolated editor architecture are unchanged. Actual
+consuming-host verification is still required after installation.
+
 ## 0.4 correction and acceptance
 
 The 2026-11-01 review identified that the browser preview had not established

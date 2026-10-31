@@ -43272,6 +43272,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
+  var PLUGIN_UI_VERSION = "0.4.1";
+  var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
+  var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
   var READ_ACTIONS = Object.freeze(["library.list", "library.get", "view.get", "conversation.get", "reference.get", "reference.readFile"]);
   var ACTIONS = Object.freeze([
@@ -43307,7 +43310,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   var changed = (action) => !READ_ACTIONS.includes(action) && !action.startsWith("editor.") && action !== "thumbnail.get";
   var artifactRoute = /^\/artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?[^#]*)?$/i;
   var artifactId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  async function createMcpBridge({ timeoutMs = 8e3, onInitialResult, app = new i({ name: "codex-design", version: "0.4.0" }) } = {}) {
+  async function createMcpBridge({ timeoutMs = 8e3, onInitialResult, app = new i({ name: "codex-design", version: PLUGIN_UI_VERSION }) } = {}) {
     const extensions = new OpenAIExtensions(app);
     const listeners = /* @__PURE__ */ new Set();
     let toolInput;
@@ -43320,6 +43323,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let pendingArtifact;
     const bridge = {
       available: true,
+      transport: "mcp",
+      uiVersion: PLUGIN_UI_VERSION,
       supportsInlineEditor: true,
       language: navigator.language,
       hostContext: null,
@@ -43364,7 +43369,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         const host = app.getHostVersion();
         const context = app.getHostContext();
         return {
-          uiVersion: "0.4.0",
+          uiVersion: PLUGIN_UI_VERSION,
           transport: "mcp",
           host: host ? { name: host.name, version: host.version } : null,
           capabilityNames: Object.keys(app.getHostCapabilities() || {}).sort(),
@@ -43380,6 +43385,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       },
       async dispose() {
         disposed = true;
+        bridge.available = false;
         connected = false;
         listeners.clear();
         app.removeEventListener("hostcontextchanged", onHostContext);
@@ -43392,7 +43398,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const root = globalThis.document?.documentElement;
       const host = app.getHostVersion();
       if (root?.setAttribute) {
-        root.setAttribute("data-codex-design-version", "0.4.0");
+        root.setAttribute("data-codex-design-version", PLUGIN_UI_VERSION);
         root.setAttribute("data-codex-design-transport", "mcp");
         if (host?.name) root.setAttribute("data-codex-design-host", host.name);
       }
@@ -43519,6 +43525,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   // source/ui/entry.js
   var controller;
   var mounting = Promise.resolve();
+  var embedded = window.parent !== window;
+  var currentMcpBridge = (bridge) => bridge?.transport === "mcp" && bridge.uiVersion === PLUGIN_UI_VERSION && bridge.available === true && bridge.supportsInlineEditor === true && typeof bridge.invoke === "function";
   async function mount(bridge) {
     controller?.destroy();
     controller = await createUi({ root: document.getElementById("codex-design-root"), bridge });
@@ -43527,18 +43535,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }
   window.createCodexDesignUi = createUi;
   window.installCodexDesignBridge = (bridge) => {
+    if (embedded && !currentMcpBridge(bridge)) return Promise.reject(new BridgeError("A current native MCP bridge is required in the embedded workspace."));
     window.codexDesignBridge = bridge;
     mounting = mounting.catch(() => {
     }).then(() => mount(bridge));
     return mounting;
   };
   window.addEventListener("codex-design:bridge-ready", (event) => {
-    window.installCodexDesignBridge(event.detail?.bridge ?? window.codexDesignBridge);
+    const bridge = event.detail?.bridge ?? window.codexDesignBridge;
+    if (!embedded || currentMcpBridge(bridge)) window.installCodexDesignBridge(bridge);
   });
-  var initialBridge = window.codexDesignBridge ?? (window.codexDesignHttpEndpoint ? createHttpBridge({ endpoint: window.codexDesignHttpEndpoint, eventsUrl: window.codexDesignEventsUrl }) : unavailableBridge());
+  var previousBridge = window.codexDesignBridge;
+  var initialBridge = embedded ? currentMcpBridge(previousBridge) ? previousBridge : unavailableBridge() : previousBridge ?? (window.codexDesignHttpEndpoint ? createHttpBridge({ endpoint: window.codexDesignHttpEndpoint, eventsUrl: window.codexDesignEventsUrl }) : unavailableBridge());
   mounting = mount(initialBridge);
-  if (!window.codexDesignBridge && !window.codexDesignHttpEndpoint && window.parent !== window) {
-    installMcpBridge({ timeoutMs: 8e3 }).catch((error112) => {
+  if (embedded && !currentMcpBridge(previousBridge)) {
+    (async () => {
+      await previousBridge?.dispose?.();
+      await installMcpBridge({ timeoutMs: 8e3 });
+    })().catch((error112) => {
       window.dispatchEvent(new CustomEvent("codex-design:bridge-error", { detail: { code: error112.code, message: error112.message } }));
     });
   }
