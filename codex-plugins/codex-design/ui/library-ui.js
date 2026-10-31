@@ -3,6 +3,9 @@ import brandIcon from './assets/brand.svg';
 import en from './locales/en.js';
 import zh from './locales/zh.js';
 import { BridgeError, supports, unavailableBridge } from './bridge.js';
+import { menuPosition } from './layout.mjs';
+import { createLibraryTransfer } from './library-transfer.mjs';
+import { mountNativeEditor } from './native-editor.mjs';
 
 const KINDS = ['slides', 'design', 'design-system', 'dashboard'];
 const ICONS = {
@@ -33,6 +36,9 @@ const ICONS = {
   rename: '<path d="M4 20l4-1L20 7l-3-3L5 16zM14 7l3 3"/>',
   refresh: '<path d="M20 4v6h-6M4 20v-6h6M5 9a8 8 0 0113-4l2 3M4 16l2 3a8 8 0 0013-4"/>',
   menu: '<path d="M4 5h16M4 12h16M4 19h16"/>',
+  sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  upload: '<path d="M12 16V3M7 8l5-5 5 5M4 16v5h16v-5"/>',
+  download: '<path d="M12 3v13M7 11l5 5 5-5M4 17v4h16v-4"/>',
   warning: '<path d="M12 3L2 21h20zM12 9v5M12 17v1"/>',
 };
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -65,15 +71,17 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   const state = {
     records: [], view: normalizeViewState(), category: 'all', favorites: false,
     query: '', sort: 'updated', layout: 'list', loading: true, error: null,
-    menu: null, toast: null, mobileSidebar: false, destroyed: false,
+    menu: null, toast: null, mobileSidebar: false, sidebarCollapsed: false, destroyed: false,
     busy: new Set(), chat: new Map(), drafts: new Map(), minimized: new Set(),
   };
+  try { state.sidebarCollapsed = localStorage.getItem('codex-design.sidebar-collapsed') === 'true'; } catch {}
   let recordsSequence = 0;
   let editorSequence = 0;
   let conversationSequence = 0;
   let currentSurface = null;
   let currentEditorUrl = null;
   let currentEditorLanguage = null;
+  let currentNativeEditor = null;
   const thumbnailCache = new Map();
   const thumbnailPending = new Set();
   let viewQueue = Promise.resolve();
@@ -81,22 +89,50 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let conversationTimer;
   const abort = new AbortController();
   root.classList.add('codex-design-ui');
-  root.innerHTML = '<div class="design-shell"><aside class="design-sidebar"></aside><section class="design-workspace"><div class="workspace-tabs"></div><main id="design-workspace-panel" class="workspace-panel" role="tabpanel"></main></section><div class="sidebar-scrim" hidden></div><div class="floating-layer"></div><div class="menu-layer"></div><div class="toast-layer" aria-live="polite" aria-atomic="true"></div><dialog class="design-dialog"></dialog><span class="sr-only live-status" role="status"></span></div>';
+  root.innerHTML = '<div class="design-shell"><aside class="design-sidebar" id="design-category-navigation"></aside><section class="design-workspace"><div class="workspace-tabbar"><button type="button" class="icon-button sidebar-toggle" data-action="toggle-sidebar" aria-controls="design-category-navigation"></button><div class="workspace-tabs"></div></div><main id="design-workspace-panel" class="workspace-panel" role="tabpanel"></main></section><div class="sidebar-scrim" hidden></div><div class="floating-layer"></div><div class="menu-layer"></div><div class="toast-layer" aria-live="polite" aria-atomic="true"></div><dialog class="design-dialog"></dialog><span class="sr-only live-status" role="status"></span></div>';
   const elements = {
     shell: root.querySelector('.design-shell'), sidebar: root.querySelector('.design-sidebar'),
     tabs: root.querySelector('.workspace-tabs'), panel: root.querySelector('.workspace-panel'),
     floating: root.querySelector('.floating-layer'), menus: root.querySelector('.menu-layer'),
     toast: root.querySelector('.toast-layer'), dialog: root.querySelector('dialog'),
     live: root.querySelector('.live-status'), scrim: root.querySelector('.sidebar-scrim'),
+    sidebarToggle: root.querySelector('.sidebar-toggle'),
   };
   const recordFor = (id) => state.records.find((record) => record.id === id);
   const activeRecord = () => recordFor(state.view.activeTabId);
+  async function flushCurrentEditor() {
+    const editor = currentNativeEditor;
+    if (typeof editor?.flush !== 'function') return;
+    announce(t('savingChanges'));
+    try { await editor.flush(); announce(t('changesSaved')); }
+    catch (error) { announce(t('editorSaveFailed')); throw error; }
+  }
+  const previousNavigationGuard = bridge.beforeNavigate;
+  const navigationGuard = async request => {
+    await previousNavigationGuard?.(request);
+    if (state.view.activeTabId !== 'library' && (request?.action === 'teardown' || request?.id !== state.view.activeTabId)) await flushCurrentEditor();
+  };
+  bridge.beforeNavigate = navigationGuard;
   function upsertRecord(record) {
     if (!isRecord(record)) return;
     ++recordsSequence;
     state.records = [...state.records.filter((item) => item.id !== record.id), record];
   }
   const enabled = (action) => supports(bridge, action);
+  const transfer = createLibraryTransfer({
+    invoke: (action, payload) => invoke(action, payload),
+    ...(typeof bridge.downloadArtifact === 'function' ? { download: bridge.downloadArtifact.bind(bridge) } : {}),
+    onImported: async record => {
+      upsertRecord(record);
+      await changeView('openTab', { id: record.id });
+      await refreshRecords(true);
+    },
+    onRestored: async record => {
+      upsertRecord(record);
+      if (state.view.activeTabId === record.id) { currentSurface = null; renderWorkspace(); }
+      await refreshRecords(true);
+    },
+  });
   const disabled = (action) => enabled(action) ? '' : ' disabled';
   const busy = (key) => state.busy.has(key);
   const focusKey = () => document.activeElement?.getAttribute('data-focus-key');
@@ -113,7 +149,21 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   function errorMessage(error) {
     if (['UNSUPPORTED', 'NOT_SUPPORTED', 'NATIVE_EDIT_CHAT_UNAVAILABLE'].includes(error?.code)) return t('unsupported');
-    return error?.message || t('actionFailed');
+    const key = {
+      INVALID_TITLE: 'invalidTitle', ARTIFACT_BUSY: 'artifactBusy', LIBRARY_BUSY: 'libraryBusy', BRIDGE_BUSY: 'libraryBusy',
+      NOT_FOUND: 'artifactNotFound', ARTIFACT_UNAVAILABLE: 'artifactNotFound',
+      MISSING_CONTENT: 'missingBody', ARTIFACT_CONTENT_UNAVAILABLE: 'invalidBody', INVALID_CONTENT: 'invalidBody', INVALID_MANIFEST: 'invalidBody',
+      BRIDGE_UNAVAILABLE: 'bridgeUnavailable', EACCES: 'fileAccessFailed', EPERM: 'fileAccessFailed', EBUSY: 'artifactFilesBusy',
+      LIMIT_EXCEEDED: 'limitExceeded', REQUEST_TOO_LARGE: 'transferTooLarge', INVALID_IMPORT: 'invalidBundle', UNSUPPORTED_FORMAT: 'invalidBundle',
+      EDITOR_RUNTIME_ERROR: 'editorRuntimeFailed', EDITOR_START_TIMEOUT: 'editorStartTimeout', EDITOR_TIMEOUT: 'editorStartTimeout',
+      EDITOR_DOCUMENT_TOO_LARGE: 'editorTooLarge', EDITOR_RESPONSE_TOO_LARGE: 'editorTooLarge',
+      EDITOR_FLUSH_FAILED: 'editorSaveFailed', EDITOR_FLUSH_TIMEOUT: 'editorSaveFailed', EDITOR_UNSAVED_CHANGES: 'editorSaveFailed',
+      TRANSFER_TOO_LARGE: 'transferTooLarge', INVALID_BUNDLE: 'invalidBundle', FILE_READ_FAILED: 'fileReadFailed', DOWNLOAD_UNAVAILABLE: 'downloadUnavailable',
+    }[error?.code];
+    // Keep implementation diagnostics in the console, outside localized product copy.
+    if (error?.message) console.warn('[Codex Design] ' + (error.code || 'UI_ERROR') + ': ' + String(error.message).slice(0, 2000));
+    if (key) return t(key);
+    return String(error?.code || '').startsWith('EDITOR_') ? t('editorUnavailable') : t('actionFailed');
   }
   async function invoke(action, payload = {}) {
     if (!enabled(action)) throw new BridgeError(t('unsupported'), 'UNSUPPORTED');
@@ -123,7 +173,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (busy(key)) return;
     state.busy.add(key);
     try { return await action(); }
-    catch (error) { toast(errorMessage(error), true); return undefined; }
+    catch (error) { if (error?.code !== 'DOWNLOAD_CANCELLED') toast(errorMessage(error), true); return undefined; }
     finally { state.busy.delete(key); }
   }
   function formatTime(value) {
@@ -137,7 +187,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     }
     return new Intl.DateTimeFormat(i18n.language, { month: 'short', day: 'numeric' }).format(timestamp);
   }
-  function rowProject(record) { return record.projectName || record.project?.name || t('noProject'); }
   function visibleRecords() {
     let records = state.records.filter((record) => state.category === 'trash' ? isDeleted(record) : !isDeleted(record));
     if (KINDS.includes(state.category)) records = records.filter((record) => record.kind === state.category);
@@ -196,14 +245,20 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const recents = state.records.filter((record) => !isDeleted(record)).slice().sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 5);
     const navItem = (category, symbol = category) => '<button type="button" class="sidebar-item ' + (state.category === category ? 'is-selected' : '') + '" data-action="category" data-category="' + category + '" data-focus-key="nav-' + category + '" aria-current="' + (state.category === category ? 'page' : 'false') + '">' + icon(symbol) + '<span>' + escape(t(category)) + '</span></button>';
     elements.sidebar.setAttribute('aria-label', t('libraryNavigation'));
-    elements.sidebar.innerHTML = '<div class="sidebar-heading"><span class="wordmark">Codex Design</span><button type="button" class="icon-button sidebar-search" data-action="focus-search" aria-label="' + escape(t('search')) + '">' + icon('search') + '</button></div>'
-      + '<button type="button" class="sidebar-item sidebar-create" data-action="create"' + disabled('library.create') + '>' + icon('plus') + '<span>' + escape(t('create')) + '</span></button>'
+    elements.sidebar.innerHTML = '<div class="sidebar-heading"><span class="wordmark">Codex Design</span><div class="sidebar-heading-actions"><button type="button" class="icon-button sidebar-search" data-action="focus-search" aria-label="' + escape(t('search')) + '">' + icon('search') + '</button><button type="button" class="icon-button sidebar-collapse" data-action="toggle-sidebar" aria-label="' + escape(t('collapseSidebar')) + '" title="' + escape(t('collapseSidebar')) + '">' + icon('sidebar') + '</button></div></div>'
+      + '<button type="button" class="sidebar-item sidebar-create" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled('library.create') + '>' + icon('plus') + '<span>' + escape(t('create')) + '</span></button>'
       + '<nav class="category-navigation" aria-label="' + escape(t('libraryNavigation')) + '">' + navItem('all', 'library') + KINDS.map((kind) => navItem(kind)).join('') + '</nav>'
       + '<div class="recent-section"><button type="button" class="section-label recent-heading" data-action="category" data-category="recent">' + escape(t('recent')) + '</button><div class="recent-items">'
       + recents.map((record) => '<button type="button" class="sidebar-item recent-item" data-action="open" data-id="' + escape(record.id) + '" title="' + escape(record.title) + '" aria-label="' + escape(t('openDesign', { title: record.title })) + '">' + icon(record.kind) + '<span>' + escape(record.title) + '</span></button>').join('') + '</div></div>'
       + '<div class="sidebar-bottom">' + navItem('trash') + '<button type="button" class="icon-button" data-action="settings" aria-label="' + escape(t('settings')) + '">' + icon('settings') + '</button></div>';
     elements.shell.classList.toggle('sidebar-open', state.mobileSidebar);
+    elements.shell.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
     elements.scrim.hidden = !state.mobileSidebar;
+    elements.sidebarToggle.innerHTML = icon('sidebar');
+    const navigationExpanded = matchMedia('(max-width: 700px)').matches ? state.mobileSidebar : !state.sidebarCollapsed;
+    elements.sidebarToggle.setAttribute('aria-label', t(navigationExpanded ? 'collapseSidebar' : 'expandSidebar'));
+    elements.sidebarToggle.setAttribute('title', t(navigationExpanded ? 'collapseSidebar' : 'expandSidebar'));
+    elements.sidebarToggle.setAttribute('aria-expanded', String(navigationExpanded));
     restoreFocus(focused);
   }
   function renderTabs() {
@@ -243,7 +298,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   function recordOpen(record, className = '') {
     const cannotOpen = isDeleted(record) || (record.contentStatus && record.contentStatus !== 'ok') || !enabled('view.openTab');
-    return '<button type="button" class="record-open ' + className + '" data-action="open" data-id="' + escape(record.id) + '" aria-label="' + escape(t('openDesign', { title: record.title })) + '"' + (cannotOpen ? ' disabled' : '') + '>' + thumbnail(record) + '<span class="record-copy"><span class="record-title">' + escape(record.title) + '</span>' + recordStatus(record) + '</span></button>';
+    const visual = className === 'card-open' ? thumbnail(record) : '<span class="record-type-icon" title="' + escape(t(record.kind)) + '" aria-hidden="true">' + icon(record.kind) + '</span>';
+    return '<button type="button" class="record-open ' + className + '" data-action="open" data-id="' + escape(record.id) + '" aria-label="' + escape(t('openDesign', { title: record.title })) + '"' + (cannotOpen ? ' disabled' : '') + '>' + visual + '<span class="record-copy"><span class="record-title">' + escape(record.title) + '</span>' + recordStatus(record) + '</span></button>';
   }
   function renderRecords() {
     const container = elements.panel.querySelector('.records-container');
@@ -256,8 +312,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (state.loading) container.innerHTML = '<div class="library-empty loading-state" role="status"><span class="spinner"></span><p>' + escape(t('loadingLibrary')) + '</p></div>';
     else if (!records.length || state.error) container.innerHTML = renderEmpty(records);
     else if (state.layout === 'grid') container.innerHTML = '<div class="design-grid">' + records.map((record) => '<article class="design-card">' + recordOpen(record, 'card-open') + '<div class="card-bottom"><span>' + escape(formatTime(record.updatedAt)) + '</span><div class="record-actions">' + recordActions(record) + '</div></div></article>').join('') + '</div>';
-    else container.innerHTML = '<table class="design-table"><thead><tr><th scope="col">' + escape(t('name')) + '</th><th scope="col" class="project-column">' + escape(t('project')) + '</th><th scope="col" class="edited-column">' + escape(t('lastEdited')) + '</th><th scope="col"><span class="sr-only">' + escape(t('moreActions', { title: '' })) + '</span></th></tr></thead><tbody>'
-      + records.map((record) => '<tr><th scope="row">' + recordOpen(record) + '</th><td class="project-column">' + escape(rowProject(record)) + '</td><td class="edited-column"><time datetime="' + escape(record.updatedAt) + '">' + escape(formatTime(record.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record) + '</div></td></tr>').join('') + '</tbody></table>';
+    else container.innerHTML = '<table class="design-table"><thead><tr><th scope="col">' + escape(t('name')) + '</th><th scope="col" class="kind-column">' + escape(t('kindColumn')) + '</th><th scope="col" class="edited-column">' + escape(t('lastEdited')) + '</th><th scope="col"><span class="sr-only">' + escape(t('actions')) + '</span></th></tr></thead><tbody>'
+      + records.map((record) => '<tr><th scope="row">' + recordOpen(record) + '</th><td class="kind-column">' + escape(t(record.kind)) + '</td><td class="edited-column"><time datetime="' + escape(record.updatedAt) + '">' + escape(formatTime(record.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record) + '</div></td></tr>').join('') + '</tbody></table>';
     restoreFocus(focused);
     hydrateThumbnails();
   }
@@ -265,7 +321,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const categoryTitle = t(state.category);
     elements.panel.classList.add('library-panel');
     elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape(t('libraryNavigation')) + '" aria-expanded="' + state.mobileSidebar + '">' + icon('menu') + '</button><div><h1>' + escape(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon('search') + '<span class="sr-only">' + escape(t('search')) + '</span><input type="search" class="library-search" placeholder="' + escape(t('searchKind', { kind: categoryTitle })) + '" value="' + escape(state.query) + '" autocomplete="off"></label>'
-      + (state.category !== 'trash' ? '<button type="button" class="button primary" data-action="create"' + disabled('library.create') + '>' + icon('plus') + escape(KINDS.includes(state.category) ? t('newKind', { kind: categoryTitle }) : t('newDesign')) + '</button>' : '') + '</div></header>'
+      + (state.category !== 'trash' ? '<button type="button" class="button primary" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled('library.create') + '>' + escape(t('create')) + icon('chevron') + '</button>' : '') + '</div></header>'
       + '<div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape(t('favorites')) + '"><button type="button" class="filter-tab ' + (!state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape(t('all')) + '</button><button type="button" class="filter-tab ' + (state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape(t('favorites')) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape(t('sort')) + '">' + icon('sort') + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === 'grid' ? 'is-selected' : '') + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === 'grid') + '" aria-label="' + escape(t('gridView')) + '">' + icon('grid') + '</button><button type="button" class="icon-button ' + (state.layout === 'list' ? 'is-selected' : '') + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === 'list') + '" aria-label="' + escape(t('listView')) + '">' + icon('list') + '</button></div></div><div class="records-container"></div></section>';
     renderRecords();
   }
@@ -273,45 +329,78 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const record = recordFor(id);
     if (!record || isDeleted(record)) { renderEditorFailure(t('restoredTabMissing'), id); return; }
     if (record.contentStatus && record.contentStatus !== 'ok') { renderEditorFailure(t(record.contentStatus === 'missing' ? 'missingBody' : 'invalidBody'), id); return; }
+    if (currentNativeEditor && state.view.activeTabId === id) {
+      try { await flushCurrentEditor(); }
+      catch (error) { toast(errorMessage(error), true); return; }
+    }
     const sequence = ++editorSequence;
+    currentNativeEditor?.dispose();
+    currentNativeEditor = null;
     currentEditorUrl = null;
     const host = elements.panel.querySelector('.editor-frame-host');
     if (!host) return;
     host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p></div>';
     try {
-      const result = await invoke('editor.open', { id, force });
+      const native = bridge.supportsInlineEditor === true;
+      const channel = native ? crypto.randomUUID() : null;
+      const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: i18n.language.startsWith('zh') ? 'zh' : 'en', channel } : {}) });
       if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
-      if (typeof result?.url !== 'string' || !result.url.trim()) throw new BridgeError('The editor did not return a URL.', 'INVALID_EDITOR_URL');
-      const url = new URL(result.url, location.href);
-      if (!['http:', 'https:'].includes(url.protocol)) throw new BridgeError('The editor returned an unsupported URL.', 'INVALID_EDITOR_URL');
-      url.searchParams.set('codexDesignLanguage', i18n.language.startsWith('zh') ? 'zh' : 'en');
-      currentEditorUrl = url.href;
       currentEditorLanguage = i18n.language;
       const iframe = document.createElement('iframe');
       iframe.className = 'design-editor-frame';
       iframe.title = t('editorFrame', { title: record.title });
-      iframe.src = url.href;
       iframe.allow = 'clipboard-read; clipboard-write; fullscreen';
       iframe.referrerPolicy = 'no-referrer';
       iframe.setAttribute('allowfullscreen', '');
       iframe.addEventListener('load', postEditorLanguage);
+      let url;
+      if (native) {
+        let editorReady = false;
+        currentNativeEditor = mountNativeEditor({ iframe, bridge, artifactId: id, channel, document: result,
+          onReady: () => { editorReady = true; host.querySelector('.editor-boot-overlay')?.remove(); },
+          onError: error => {
+            if (state.view.activeTabId !== id || sequence !== editorSequence) return;
+            const message = typeof error === 'string' ? error : errorMessage(error);
+            if (!editorReady) renderEditorFailure(message || t('editorUnavailable'), id);
+            else toast(message || t('editorUnavailable'), true);
+          } });
+        currentEditorUrl = currentNativeEditor.url;
+      } else {
+        if (typeof result?.url !== 'string' || !result.url.trim()) throw new BridgeError('The editor did not return a URL.', 'INVALID_EDITOR_URL');
+        url = new URL(result.url, location.href);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new BridgeError('The editor returned an unsupported URL.', 'INVALID_EDITOR_URL');
+        url.searchParams.set('codexDesignLanguage', i18n.language.startsWith('zh') ? 'zh' : 'en');
+        currentEditorUrl = url.href;
+        iframe.src = url.href;
+      }
       host.replaceChildren(iframe);
+      if (native) {
+        const loading = document.createElement('div');
+        loading.className = 'editor-boot-overlay';
+        loading.setAttribute('role', 'status');
+        loading.innerHTML = '<span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p>';
+        host.append(loading);
+      }
       updateLanguageNotice();
       const external = elements.panel.querySelector('.editor-external');
-      if (external) { external.href = url.href; external.hidden = false; }
+      if (external) { external.hidden = native; if (url) external.href = url.href; }
     } catch (error) {
       if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error), id);
     }
   }
   function renderEditorFailure(message, id) {
+    currentNativeEditor?.dispose();
+    currentNativeEditor = null;
     const host = elements.panel.querySelector('.editor-frame-host');
     if (!host) return;
-    host.innerHTML = '<div class="editor-loading"><div class="empty-symbol">' + icon('warning') + '</div><h2>' + escape(t('editorUnavailable')) + '</h2><p>' + escape(message) + '</p><button type="button" class="button secondary" data-action="retry-editor" data-id="' + escape(id) + '"' + disabled('editor.open') + '>' + escape(t('openEditorAgain')) + '</button></div>';
+    host.innerHTML = '<div class="editor-loading"><div class="empty-symbol">' + icon('warning') + '</div><h2>' + escape(t('editorUnavailable')) + '</h2><p>' + escape(message) + '</p><button type="button" class="button secondary" data-action="retry-editor" data-id="' + escape(id) + '"' + disabled(bridge.supportsInlineEditor === true ? 'editor.document' : 'editor.open') + '>' + escape(t('openEditorAgain')) + '</button></div>';
   }
   function postEditorLanguage() {
     const frame = elements.panel.querySelector('.design-editor-frame');
     if (!frame || !currentEditorUrl) return;
-    frame.contentWindow?.postMessage({ type: 'codex-design:ui-language-changed', preference: i18n.language.startsWith('zh') ? 'zh' : 'en', systemLocale: bridge.language || navigator.language }, new URL(currentEditorUrl).origin);
+    const message = { type: 'codex-design:ui-language-changed', preference: i18n.language.startsWith('zh') ? 'zh' : 'en', systemLocale: bridge.language || navigator.language };
+    if (currentNativeEditor?.post) currentNativeEditor.post(message);
+    else frame.contentWindow?.postMessage(message, currentNativeEditor ? '*' : new URL(currentEditorUrl).origin);
   }
   function updateLanguageNotice() {
     const workspace = elements.panel.querySelector('.editor-workspace');
@@ -329,6 +418,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const id = state.view.activeTabId;
     if (id === 'library') {
       ++editorSequence;
+      currentNativeEditor?.dispose();
+      currentNativeEditor = null;
       currentEditorUrl = null;
       currentEditorLanguage = null;
       if (currentSurface !== 'library') thumbnailCache.clear();
@@ -343,15 +434,21 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const title = record?.title || t('restoredTabMissing');
     elements.panel.classList.remove('library-panel');
     if (currentSurface !== id) {
-      elements.panel.innerHTML = '<section class="editor-workspace"><header class="editor-workspace-heading"><div class="editor-title-group"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape(t('libraryNavigation')) + '">' + icon('menu') + '</button><h1 class="editor-design-title">' + escape(title) + '</h1><span class="autosave-note">' + escape(t('savedByEditor')) + '</span></div><a class="icon-button editor-external" target="_blank" rel="noopener noreferrer" aria-label="' + escape(t('editorExternal')) + '" hidden>' + icon('external') + '</a></header><div class="editor-frame-host"></div></section>';
+      currentNativeEditor?.dispose();
+      currentNativeEditor = null;
+      elements.panel.innerHTML = '<section class="editor-workspace"><header class="editor-workspace-heading"><div class="editor-title-group"><h1 class="editor-design-title"><button type="button" class="editor-title-button" data-action="rename" data-id="' + escape(id) + '" title="' + escape(t('rename')) + '">' + escape(title) + '</button></h1></div><div class="editor-heading-actions"><a class="icon-button editor-external" target="_blank" rel="noopener noreferrer" aria-label="' + escape(t('editorExternal')) + '" hidden>' + icon('external') + '</a><button type="button" class="icon-button" data-action="item-menu" data-menu-trigger="true" data-id="' + escape(id) + '" aria-haspopup="menu" aria-label="' + escape(t('moreActions', { title })) + '">' + icon('more') + '</button></div></header><div class="editor-frame-host"></div></section>';
       currentSurface = id;
       openEditor(id);
       refreshConversation(id);
     } else {
-      const heading = elements.panel.querySelector('.editor-design-title');
+      const heading = elements.panel.querySelector('.editor-title-button');
       if (heading) heading.textContent = title;
       const frame = elements.panel.querySelector('iframe');
       if (frame) frame.title = t('editorFrame', { title });
+      const menuLabel = t('moreActions', { title });
+      const trigger = elements.panel.querySelector('.editor-heading-actions [data-action="item-menu"]');
+      if (trigger) trigger.setAttribute('aria-label', menuLabel);
+      if (state.menu?.type === 'item' && state.menu.id === id) elements.menus.querySelector('.menu-panel')?.setAttribute('aria-label', menuLabel);
     }
     renderConversation();
   }
@@ -442,8 +539,14 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   function changeView(action, payload) {
     viewQueue = viewQueue.catch(() => {}).then(async () => {
-      try { applyView(await invoke('view.' + action, payload)); }
-      catch (error) { toast(errorMessage(error), true); }
+      try {
+        const current = state.view.activeTabId;
+        const leavesCurrent = current !== 'library' && (action === 'closeTab' && payload.id === current || ['openTab', 'activateTab'].includes(action) && payload.id !== current);
+        if (leavesCurrent) await flushCurrentEditor();
+        applyView(await invoke('view.' + action, payload));
+        return true;
+      }
+      catch (error) { toast(errorMessage(error), true); return false; }
     });
     return viewQueue;
   }
@@ -469,40 +572,88 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       }
     }
   }
-  function setCategory(category) {
+  async function setCategory(category) {
     if (!['all', 'recent', 'trash', ...KINDS].includes(category)) return;
+    const previous = { category: state.category, favorites: state.favorites, query: state.query, sort: state.sort };
     state.category = category;
     state.favorites = false;
     state.query = '';
     state.mobileSidebar = false;
     if (category === 'recent') state.sort = 'updated';
-    if (state.view.activeTabId !== 'library') changeView('activateTab', { id: 'library' });
+    if (state.view.activeTabId !== 'library') {
+      if (!await changeView('activateTab', { id: 'library' })) { Object.assign(state, previous); renderSidebar(); return; }
+    }
     else { renderSidebar(); renderLibrary(); }
+    await refreshRecords(true);
   }
   function closeMenu(returnFocus = false) {
     const origin = state.menu?.origin;
     state.menu = null;
     elements.menus.replaceChildren();
+    origin?.setAttribute('aria-expanded', 'false');
     if (returnFocus) origin?.focus();
   }
   function openMenu(type, origin, id) {
     if (state.menu?.type === type && state.menu?.id === id) { closeMenu(); return; }
+    closeMenu();
     const record = recordFor(id);
     const items = type === 'sort' ? [
       ['sort-value', 'sortUpdated', 'updated', state.sort === 'updated'],
       ['sort-value', 'sortCreated', 'created', state.sort === 'created'],
       ['sort-value', 'sortName', 'name', state.sort === 'name'],
-    ] : [['rename', 'rename', '', false], ['copy', 'copy', '', false], ['trash-dialog', 'trashAction', '', false]];
+    ] : type === 'create' ? [...KINDS.map(kind => ['create-kind', kind, kind, false]), ['import', 'importArtwork', '', false]]
+      : [['rename', 'rename', '', false], ['copy', 'copy', '', false], ['export', 'exportArtwork', '', false], ['history', 'versionHistory', '', false], ['trash-dialog', 'trashAction', '', false]];
     state.menu = { type, id, origin };
     const rectangle = origin.getBoundingClientRect();
-    elements.menus.innerHTML = '<div class="menu-panel" role="menu" style="top:' + Math.min(rectangle.bottom + 8, innerHeight - 180) + 'px;left:' + Math.max(8, Math.min(rectangle.right - 220, innerWidth - 228)) + 'px">'
+    const position = menuPosition(rectangle, { width: type === 'create' ? 252 : 220, height: type === 'create' ? 294 : type === 'sort' ? 158 : 236, viewportWidth: innerWidth, viewportHeight: innerHeight, align: origin.classList.contains('sidebar-create') ? 'start' : 'end' });
+    origin.setAttribute('aria-expanded', 'true');
+    elements.menus.innerHTML = '<div class="menu-panel ' + (type === 'create' ? 'create-menu' : '') + '" role="menu" aria-label="' + escape(t(type === 'create' ? 'createContent' : type === 'sort' ? 'sort' : 'moreActions', { title: record?.title || '' })) + '" style="top:' + position.top + 'px;left:' + position.left + 'px;width:' + position.width + 'px;max-height:' + position.maxHeight + 'px">'
+      + (type === 'create' ? '<div class="menu-heading">' + escape(t('createContent')) + '</div>' : '')
       + items.map(([action, label, value, checked]) => {
-        const method = { rename: 'library.rename', copy: 'library.duplicate', 'trash-dialog': 'library.trash' }[action];
-        return '<button type="button" role="' + (type === 'sort' ? 'menuitemradio' : 'menuitem') + '"' + (type === 'sort' ? ' aria-checked="' + checked + '"' : '') + ' class="menu-item ' + (action === 'trash-dialog' ? 'danger' : '') + '" data-action="' + action + '" data-id="' + escape(record?.id || '') + '" data-value="' + value + '"' + (method ? disabled(method) : '') + '>' + icon(action === 'sort-value' ? checked ? 'check' : 'sort' : action === 'trash-dialog' ? 'trash' : action) + escape(t(label)) + '</button>';
+        const method = { 'create-kind': 'library.create', import: 'library.importArtifact', export: 'library.exportArtifact', history: 'library.listSnapshots', rename: 'library.rename', copy: 'library.duplicate', 'trash-dialog': 'library.trash' }[action];
+        return (['import', 'trash-dialog'].includes(action) ? '<div class="menu-separator" role="separator"></div>' : '') + '<button type="button" role="' + (type === 'sort' ? 'menuitemradio' : 'menuitem') + '"' + (type === 'sort' ? ' aria-checked="' + checked + '"' : '') + ' class="menu-item ' + (action === 'trash-dialog' ? 'danger' : '') + '" data-action="' + action + '" data-id="' + escape(record?.id || '') + '" data-value="' + value + '"' + (method ? disabled(method) : '') + '>' + icon(action === 'create-kind' ? value : action === 'import' ? 'upload' : action === 'export' ? 'download' : action === 'history' ? 'clock' : action === 'sort-value' ? checked ? 'check' : 'sort' : action === 'trash-dialog' ? 'trash' : action) + '<span>' + escape(t(label)) + '</span></button>';
       }).join('') + '</div>';
+    const panel = elements.menus.firstElementChild;
+    const measured = menuPosition(rectangle, { width: position.width, height: panel.getBoundingClientRect().height, viewportWidth: innerWidth, viewportHeight: innerHeight, align: origin.classList.contains('sidebar-create') ? 'start' : 'end' });
+    panel.style.top = measured.top + 'px';
+    panel.style.left = measured.left + 'px';
     elements.menus.querySelector('button:not(:disabled)')?.focus();
   }
-  function openDialog(type, record) {
+  async function createArtifact(kind) {
+    if (!KINDS.includes(kind)) return;
+    await runAction('create', async () => {
+      root.setAttribute('aria-busy', 'true');
+      try {
+        const result = await invoke('library.create', { kind, title: t('untitled.' + kind) });
+        const record = result?.artifact || result;
+        if (!isRecord(record)) throw new BridgeError(t('actionFailed'), 'INVALID_RESPONSE');
+        // Publish the persisted record before opening its tab, avoiding an initial list race.
+        upsertRecord(record);
+        state.mobileSidebar = false;
+        await changeView('openTab', { id: record.id });
+        await refreshRecords(true);
+        announce(t('created'));
+      } finally { root.removeAttribute('aria-busy'); }
+    });
+  }
+  async function openHistory(id) {
+    const record = recordFor(id);
+    if (!record || isDeleted(record)) return;
+    closeMenu();
+    const dialog = elements.dialog;
+    dialog.innerHTML = '<section class="dialog-form history-dialog" data-history-id="' + escape(id) + '"><header><h2 id="design-dialog-title">' + escape(t('versionHistory')) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><p class="dialog-description">' + escape(t('historyDescription')) + '</p><button type="button" class="button secondary" data-action="snapshot-create" data-id="' + escape(id) + '"' + disabled('library.snapshot') + '>' + icon('plus') + escape(t('createSnapshot')) + '</button><div class="snapshot-list" aria-live="polite"><p class="field-hint">' + escape(t('loadingHistory')) + '</p></div><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape(t('done')) + '</button></footer></section>';
+    dialog.setAttribute('aria-labelledby', 'design-dialog-title');
+    if (!dialog.open) dialog.showModal();
+    try {
+      const snapshots = await transfer.listSnapshots(id);
+      if (state.destroyed || !dialog.open || dialog.querySelector('[data-history-id]')?.dataset.historyId !== id) return;
+      const automaticLabels = { Snapshot: 'manualSnapshot', 'Before restore': 'beforeRestoreSnapshot', 'Before AI edit': 'beforeAiSnapshot', 'Before resumed AI edit': 'beforeResumedAiSnapshot' };
+      dialog.querySelector('.snapshot-list').innerHTML = snapshots.length ? snapshots.map(snapshot => '<article class="snapshot-row"><div><strong>' + escape(Object.hasOwn(automaticLabels, snapshot.label) ? t(automaticLabels[snapshot.label]) : snapshot.label || t('manualSnapshot')) + '</strong><time datetime="' + escape(snapshot.createdAt) + '">' + escape(new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.createdAt))) + '</time></div><button type="button" class="button secondary" data-action="snapshot-restore" data-id="' + escape(id) + '" data-snapshot-id="' + escape(snapshot.id) + '"' + disabled('library.restoreSnapshot') + '>' + escape(t('restoreVersion')) + '</button></article>').join('') : '<p class="field-hint">' + escape(t('historyEmpty')) + '</p>';
+    } catch (error) {
+      if (dialog.querySelector('[data-history-id]')?.dataset.historyId === id) dialog.querySelector('.snapshot-list').innerHTML = '<p class="dialog-error">' + escape(errorMessage(error)) + '</p>';
+    }
+  }
+  function openDialog(type, record, details = {}) {
     closeMenu();
     const dialog = elements.dialog;
     let title, fields = '', submit;
@@ -514,24 +665,48 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       title = t('reopenEditorLanguage');
       fields = '<p class="dialog-description">' + escape(t('editorLanguageConfirm')) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape(t('editorLanguageSaved')) + '</span></label>';
       submit = t('reopenEditorLanguage');
+    } else if (type === 'restore-snapshot') {
+      title = t('restoreVersionTitle');
+      fields = '<p class="dialog-description">' + escape(t('restoreVersionBody')) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape(t('editorLanguageSaved')) + '</span></label>';
+      submit = t('restoreVersion');
     } else if (type === 'trash') {
       title = t('trashTitle'); fields = '<p class="dialog-description">' + escape(t('trashBody', { title: record.title })) + '</p>'; submit = t('trashAction');
     } else {
-      title = t(type === 'create' ? 'newDesign' : type === 'rename' ? 'renameTitle' : 'copyTitle');
-      if (type === 'create') fields += '<fieldset class="kind-picker"><legend>' + escape(t('kindLabel')) + '</legend>' + KINDS.map((kind) => '<label class="kind-option"><input type="radio" name="kind" value="' + kind + '"' + ((KINDS.includes(state.category) ? state.category : 'slides') === kind ? ' checked' : '') + '>' + icon(kind) + '<span>' + escape(t(kind)) + '</span></label>').join('') + '</fieldset>';
-      const value = type === 'create' ? '' : type === 'copy' ? t('copyName', { title: record.title }) : record.title;
+      title = t(type === 'rename' ? 'renameTitle' : 'copyTitle');
+      const value = type === 'copy' ? t('copyName', { title: record.title }) : record.title;
       fields += '<label class="field-label" for="design-title">' + escape(t('titleLabel')) + '</label><input id="design-title" name="title" type="text" required maxlength="200" autocomplete="off" value="' + escape(value) + '" placeholder="' + escape(t('titlePlaceholder')) + '">';
-      submit = t(type === 'create' ? 'createDesign' : type === 'rename' ? 'renameSubmit' : 'copySubmit');
+      submit = t(type === 'rename' ? 'renameSubmit' : 'copySubmit');
     }
-    dialog.innerHTML = '<form class="dialog-form" data-dialog-type="' + type + '" data-id="' + escape(record?.id || '') + '"><header><h2 id="design-dialog-title">' + escape(title) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><div class="dialog-fields">' + fields + '</div><p class="dialog-error" role="alert" hidden></p><footer>' + (type !== 'settings' ? '<button type="button" class="button secondary" data-action="close-dialog">' + escape(t('cancel')) + '</button>' : '') + '<button type="submit" class="button ' + (type === 'trash' ? 'destructive' : 'primary') + '">' + escape(submit) + '</button></footer></form>';
+    dialog.innerHTML = '<form class="dialog-form" data-dialog-type="' + type + '" data-id="' + escape(record?.id || '') + '" data-snapshot-id="' + escape(details.snapshotId || '') + '"><header><h2 id="design-dialog-title">' + escape(title) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><div class="dialog-fields">' + fields + '</div><p class="dialog-error" role="alert" hidden></p><footer>' + (type !== 'settings' ? '<button type="button" class="button secondary" data-action="close-dialog">' + escape(t('cancel')) + '</button>' : '') + '<button type="submit" class="button ' + (type === 'trash' ? 'destructive' : 'primary') + '">' + escape(submit) + '</button></footer></form>';
     dialog.setAttribute('aria-labelledby', 'design-dialog-title');
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
     const input = dialog.querySelector('input[name="title"]');
     if (input) { input.focus(); input.select(); }
   }
   async function submitDialog(form) {
     const type = form.dataset.dialogType;
     const id = form.dataset.id;
+    if (type === 'restore-snapshot') {
+      if (!form.reportValidity() || form.getAttribute('aria-busy') === 'true') return;
+      form.setAttribute('aria-busy', 'true');
+      form.querySelector('button[type="submit"]').disabled = true;
+      try {
+        if (state.view.activeTabId === id) {
+          await flushCurrentEditor();
+          // Stop this iframe's autosave before replacing its source files.
+          ++editorSequence; currentNativeEditor?.dispose(); currentNativeEditor = null; elements.panel.querySelector('.design-editor-frame')?.remove();
+        }
+        await transfer.restoreSnapshot(id, form.dataset.snapshotId);
+        elements.dialog.close();
+        toast(t('versionRestored'));
+      } catch (error) {
+        const errorNode = form.querySelector('.dialog-error');
+        errorNode.hidden = false; errorNode.textContent = errorMessage(error);
+        form.querySelector('button[type="submit"]').disabled = false;
+        if (state.view.activeTabId === id) await openEditor(id, true);
+      } finally { form.removeAttribute('aria-busy'); }
+      return;
+    }
     if (type === 'reload-language') {
       if (!form.reportValidity()) return;
       elements.dialog.close();
@@ -548,18 +723,19 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const data = new FormData(form);
     const title = String(data.get('title') || '').trim();
     if (type !== 'trash' && !title) { form.elements.title.focus(); return; }
-    const action = { create: 'library.create', rename: 'library.rename', copy: 'library.duplicate', trash: 'library.trash' }[type];
-    const payload = type === 'create' ? { kind: data.get('kind'), title } : type === 'trash' ? { id } : { id, title };
+    const action = { rename: 'library.rename', copy: 'library.duplicate', trash: 'library.trash' }[type];
+    const payload = type === 'trash' ? { id } : { id, title };
     form.setAttribute('aria-busy', 'true');
     form.querySelector('button[type="submit"]').disabled = true;
     try {
+      if (state.view.activeTabId === id) await flushCurrentEditor();
       const result = await invoke(action, payload);
       const returnedRecord = result?.artifact || result;
       upsertRecord(returnedRecord);
       elements.dialog.close();
-      toast(t({ create: 'created', rename: 'renamed', copy: 'copied', trash: 'trashed' }[type]));
+      toast(t({ rename: 'renamed', copy: 'copied', trash: 'trashed' }[type]));
       if (type === 'trash' && state.view.tabs.some((tab) => tab.id === id)) await changeView('closeTab', { id });
-      if (type === 'create' || type === 'copy') {
+      if (type === 'copy') {
         const newRecord = result?.artifact || result;
         if (newRecord?.id) await changeView('openTab', { id: newRecord.id });
       }
@@ -606,6 +782,10 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       renderWorkspace();
       const external = elements.panel.querySelector('.editor-external');
       if (external) external.setAttribute('aria-label', t('editorExternal'));
+      const rename = elements.panel.querySelector('.editor-title-button');
+      if (rename) rename.title = t('rename');
+      const menu = elements.panel.querySelector('.editor-heading-actions [data-action="item-menu"]');
+      if (menu) menu.setAttribute('aria-label', t('moreActions', { title: activeRecord()?.title || '' }));
       postEditorLanguage();
       updateLanguageNotice();
     }
@@ -615,22 +795,30 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const button = event.target.closest('[data-action]');
     if (!button || button.disabled) return;
     const { action, id } = button.dataset;
-    if (action !== 'item-menu' && action !== 'sort-menu') closeMenu();
-    if (action === 'create') openDialog('create');
+    if (!['item-menu', 'sort-menu', 'create'].includes(action)) closeMenu();
+    if (action === 'create') openMenu('create', button);
+    else if (action === 'create-kind') await createArtifact(button.dataset.value);
+    else if (action === 'import') {
+      const task = transfer.importArtifact();
+      await runAction('import', async () => { if (await task) toast(t('imported')); });
+    } else if (action === 'export') await runAction('export-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.exportArtifact(id, recordFor(id)?.title); toast(t('exported')); });
+    else if (action === 'history') await openHistory(id);
+    else if (action === 'snapshot-create') await runAction('snapshot-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.createSnapshot(id, t('manualSnapshot')); await openHistory(id); });
+    else if (action === 'snapshot-restore') { const record = recordFor(id); if (record) openDialog('restore-snapshot', record, { snapshotId: button.dataset.snapshotId }); }
     else if (action === 'reload-language') openDialog('reload-language');
     else if (action === 'settings') openDialog('settings');
     else if (action === 'rename' || action === 'copy' || action === 'trash-dialog') {
       const record = recordFor(id);
       if (record) openDialog(action === 'trash-dialog' ? 'trash' : action, record);
     } else if (action === 'close-dialog') elements.dialog.close();
-    else if (action === 'category') setCategory(button.dataset.category);
+    else if (action === 'category') await setCategory(button.dataset.category);
     else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; renderLibrary(); }
     else if (action === 'layout') { state.layout = button.dataset.layout; renderLibrary(); }
     else if (action === 'sort-menu') openMenu('sort', button);
     else if (action === 'item-menu') openMenu('item', button, id);
     else if (action === 'sort-value') { state.sort = button.dataset.value; renderRecords(); }
     else if (action === 'open') { state.mobileSidebar = false; await changeView('openTab', { id }); }
-    else if (action === 'activate-tab') await changeView('activateTab', { id });
+    else if (action === 'activate-tab') { await changeView('activateTab', { id }); if (id === 'library') await refreshRecords(true); }
     else if (action === 'close-tab') await changeView('closeTab', { id });
     else if (action === 'favorite') await favoriteRecord(id);
     else if (action === 'restore') await restoreRecord(id);
@@ -645,7 +833,14 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     } else if (action === 'focus-search') {
       if (state.view.activeTabId !== 'library') await changeView('activateTab', { id: 'library' });
       elements.panel.querySelector('.library-search')?.focus();
-    } else if (action === 'toggle-sidebar') { state.mobileSidebar = !state.mobileSidebar; renderSidebar(); }
+    } else if (action === 'toggle-sidebar') {
+      if (matchMedia('(max-width: 700px)').matches) state.mobileSidebar = !state.mobileSidebar;
+      else {
+        state.sidebarCollapsed = !state.sidebarCollapsed;
+        try { localStorage.setItem('codex-design.sidebar-collapsed', String(state.sidebarCollapsed)); } catch {}
+      }
+      renderSidebar();
+    }
     else if (action === 'dismiss-toast') { clearTimeout(toastTimer); elements.toast.replaceChildren(); }
   }
   root.addEventListener('click', (event) => { handleAction(event).catch((error) => toast(errorMessage(error), true)); }, { signal: abort.signal });
@@ -657,12 +852,19 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       if (submit) submit.disabled = !event.target.value.trim() || busy('send-' + state.view.activeTabId);
     }
   }, { signal: abort.signal });
+  root.addEventListener('contextmenu', event => {
+    const row = event.target.closest('.design-table tbody tr, .design-card');
+    const origin = row?.querySelector('[data-action="item-menu"]');
+    if (!origin) return;
+    event.preventDefault();
+    openMenu('item', origin, origin.dataset.id);
+  }, { signal: abort.signal });
   root.addEventListener('submit', (event) => {
     if (event.target.matches('.dialog-form')) { event.preventDefault(); submitDialog(event.target); }
     if (event.target.matches('.conversation-composer')) { event.preventDefault(); sendConversation(); }
   }, { signal: abort.signal });
   root.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { closeMenu(true); state.mobileSidebar = false; renderSidebar(); }
+    if (event.key === 'Escape') { closeMenu(true); if (state.mobileSidebar) { state.mobileSidebar = false; renderSidebar(); } }
     if (event.target.matches('.conversation-composer textarea') && event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendConversation(); }
     if (event.target.getAttribute('role') === 'tab' && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
@@ -677,7 +879,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
         }
       } else {
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-        changeView('activateTab', { id: tabs[next].id }).then(() => restoreFocus('tab-' + tabs[next].id));
+        changeView('activateTab', { id: tabs[next].id }).then(changed => { if (changed) restoreFocus('tab-' + tabs[next].id); });
       }
     }
     if (event.target.closest('.menu-panel') && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -710,9 +912,11 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   document.addEventListener('pointerdown', (event) => {
     if (state.menu && !elements.menus.contains(event.target) && !event.target.closest('[data-menu-trigger]')) closeMenu();
   }, { signal: abort.signal });
+  window.addEventListener('resize', () => closeMenu(), { signal: abort.signal });
   elements.scrim.addEventListener('click', () => { state.mobileSidebar = false; renderSidebar(); }, { signal: abort.signal });
   const onSystemLanguage = () => { if (preference === 'system') i18n.changeLanguage(systemLanguage()); };
   window.addEventListener('languagechange', onSystemLanguage, { signal: abort.signal });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && state.view.activeTabId === 'library') void refreshRecords(true); }, { signal: abort.signal });
   i18n.on('languageChanged', renderLocalized);
   let refreshTimer;
   const unsubscribe = typeof bridge.subscribe === 'function' ? bridge.subscribe((event) => {
@@ -750,6 +954,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     activateArtifact: (id) => changeView('openTab', { id }),
     destroy() {
       state.destroyed = true;
+      if (bridge.beforeNavigate === navigationGuard) bridge.beforeNavigate = previousNavigationGuard;
+      currentNativeEditor?.dispose();
+      currentNativeEditor = null;
       ++editorSequence;
       ++conversationSequence;
       clearTimeout(toastTimer);

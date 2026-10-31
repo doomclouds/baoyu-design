@@ -1,9 +1,16 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJson, alive } from '../scripts/bridge-core.mjs';
 import { verifyEditorInstance } from '../scripts/artifact-command.mjs';
 import { createArtifactThumbnail } from '../library/thumbnail.mjs';
+import { createEditorTransport, editorRequestUrl, isValidBase64 } from './editor-transport.mjs';
+import { buildEditorDocument } from './editor-document.mjs';
+import { installNativeEditorTransport } from '../scripts/editor-native-transport.js';
+import { stopWorker } from '../scripts/worker-client.mjs';
+import { stopLocalEditor } from './editor-lifecycle.mjs';
 import { ACTIONS, KINDS, UNSUPPORTED_CHAT_CODE, fileUri, referenceUri } from './contract.mjs';
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
@@ -64,15 +71,24 @@ export async function openLocalEditor(record, { pluginRoot, env = process.env, t
   });
 }
 
-export function createDesignService({ store, pluginRoot = fileURLToPath(new URL('../', import.meta.url)), editorOpen = openLocalEditor } = {}) {
+export function createDesignService({ store, pluginRoot = fileURLToPath(new URL('../', import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
   if (!store) throw new TypeError('A LibraryStore is required.');
   const opening = new Map();
+  const trashing = new Set();
   const requireRecord = async id => {
     const record = await store.get(idOf(id));
     if (!record || record.deletedAt) throw failure('ARTIFACT_UNAVAILABLE', 'The artifact is missing or in the trash.');
     return record;
   };
   const initialize = async () => { await store.initialize(); return store; };
+  const editorFor = async id => {
+    const record = await requireRecord(id);
+    if (trashing.has(record.id)) throw failure('ARTIFACT_BUSY', 'This artwork is being moved to the trash.');
+    if (record.contentStatus !== 'ok') throw failure('ARTIFACT_CONTENT_UNAVAILABLE', 'Missing or invalid artifact content cannot open as a blank replacement.');
+    if (!opening.has(record.id)) opening.set(record.id, Promise.resolve().then(() => editorOpen(record, { pluginRoot })).finally(() => opening.delete(record.id)));
+    return await opening.get(record.id);
+  };
+  const transport = createEditorTransport({ editorFor });
   const reference = async id => {
     await initialize();
     const artifact = await requireRecord(id);
@@ -112,9 +128,22 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'library.rename': return await store.rename(idOf(payload.id), titleOf(payload.title));
         case 'library.setFavorite': if (typeof payload.favorite !== 'boolean') throw failure('INVALID_ARGUMENTS', 'favorite must be a boolean.'); return await store.setFavorite(idOf(payload.id), payload.favorite);
         case 'library.duplicate': return await store.duplicate(idOf(payload.id), { ...(payload.title === undefined ? {} : { title: titleOf(payload.title) }) });
-        case 'library.trash': return await store.trash(idOf(payload.id));
+        case 'library.trash': {
+          const id = idOf(payload.id);
+          if (trashing.has(id)) throw failure('ARTIFACT_BUSY', 'This artwork is already being moved to the trash.');
+          trashing.add(id);
+          try {
+            const record = await requireRecord(id);
+            if (opening.has(id)) await opening.get(id);
+            // Pause only idle ownership before stopping the verified editor.
+            // Release the worker lock before moving the directory that holds it.
+            await stopWorker(record.path, { onlyWhenIdle: true });
+            await editorStop(record, { pluginRoot });
+            return await store.trash(id);
+          } finally { trashing.delete(id); }
+        }
         case 'library.restore': return await store.restore(idOf(payload.id));
-        case 'library.snapshot': return await store.snapshot(idOf(payload.id));
+        case 'library.snapshot': return await store.snapshot(idOf(payload.id), payload.label === undefined ? {} : { label: titleOf(payload.label) });
         case 'library.listSnapshots': return await store.listSnapshots(idOf(payload.id));
         case 'library.restoreSnapshot': return await store.restoreSnapshot(idOf(payload.id), payload.snapshotId);
         case 'library.exportArtifact': return await store.exportArtifact(idOf(payload.id));
@@ -129,12 +158,58 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'view.activateTab': return await store.activateTab(payload.id === 'library' ? 'library' : idOf(payload.id));
         case 'view.closeTab': return await store.closeTab(payload.id === 'library' ? 'library' : idOf(payload.id));
         case 'view.reorderTabs': if (!Array.isArray(payload.ids)) throw failure('INVALID_ARGUMENTS', 'ids must be an array.'); return await store.reorderTabs(payload.ids.map(id => id === 'library' ? 'library' : idOf(id)));
-        case 'editor.open': {
-          const record = await requireRecord(payload.id);
-          if (record.contentStatus !== 'ok') throw failure('ARTIFACT_CONTENT_UNAVAILABLE', 'Missing or invalid artifact content cannot open as a blank replacement.');
-          if (!opening.has(record.id)) opening.set(record.id, Promise.resolve().then(() => editorOpen(record, { pluginRoot })).finally(() => opening.delete(record.id)));
-          return await opening.get(record.id);
+        case 'editor.open': return await editorFor(payload.id);
+        case 'editor.document': {
+          const id = idOf(payload.id);
+          if (typeof payload.channel !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure('INVALID_EDITOR_REQUEST', 'A unique editor channel is required.');
+          const language = /^zh(?:-|$)/i.test(String(payload.language)) ? 'zh' : 'en';
+          const editor = await editorFor(id);
+          const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
+          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };
+          if (editor.kind === 'design-system') {
+            configuration.previewVendors = await Promise.all([
+              ['react.production.min.js', 'd949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd'],
+              ['react-dom.production.min.js', '35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d'],
+            ].map(async ([file, expected]) => {
+              const bytes = await readFile(path.join(pluginRoot, 'skills/codex-design-system/scripts/editor/artifact-type/vendor', file));
+              if (bytes.length > 256 * 1024 || createHash('sha256').update(bytes).digest('hex') !== expected) throw failure('EDITOR_VENDOR_INTEGRITY', 'The packaged preview runtime failed its integrity check.');
+              return { file, url: 'data:text/javascript;base64,' + bytes.toString('base64') };
+            }));
+          }
+          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, '\\u003c')});`;
+          const root = new URL(editor.url);
+          const fetchLocal = async value => {
+            const url = new URL(String(value));
+            if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) throw failure('INVALID_EDITOR_REQUEST', 'Editor assets must stay inside their artwork session.');
+            const relative = url.pathname.slice(root.pathname.length);
+            editorRequestUrl(root.href, relative + url.search);
+            // Reuse the live data service, but load editor chrome from this
+            // installed release. Otherwise an old service would reintroduce
+            // obsolete immutable JS/i18n assets after a plugin upgrade.
+            let asset;
+            if (!relative) asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor/index.html');
+            else if (relative === '__codex/annotations.js') asset = path.join(pluginRoot, 'scripts/browser-annotations.js');
+            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
+              asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor', relative);
+            } else throw failure('EDITOR_ASSET_REFUSED', 'Only packaged static editor assets can be assembled.');
+            const bytes = await readFile(asset);
+            return new Response(bytes, { headers: { 'content-length': String(bytes.length) } });
+          };
+          const document = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap } });
+          return { ...editor, ...document, artifactId: id, channel: payload.channel, transport: 'mcp' };
         }
+        case 'editor.request': return await transport.request(idOf(payload.id), payload.request);
+        case 'editor.digest': {
+          await requireRecord(payload.id);
+          if (payload.algorithm !== 'SHA-256' || typeof payload.base64 !== 'string' || payload.base64.length > 44_739_244
+            || !isValidBase64(payload.base64)) throw failure('INVALID_EDITOR_DIGEST', 'Only a bounded SHA-256 digest is supported.');
+          const bytes = Buffer.from(payload.base64, 'base64');
+          if (bytes.length > 32 * 1024 * 1024) throw failure('INVALID_EDITOR_DIGEST', 'The digest input exceeds the transfer limit.');
+          return { base64: createHash('sha256').update(bytes).digest('base64') };
+        }
+        case 'editor.events.open': return await transport.openEvents(idOf(payload.id), payload.path);
+        case 'editor.events.poll': return await transport.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
+        case 'editor.events.close': return await transport.closeEvents(idOf(payload.id), payload.subscriptionId);
         case 'conversation.get': {
           const record = await requireRecord(payload.id);
           return { artifactId: record.id, binding: await store.getBinding(record.id), messages: [], status: 'unsupported',

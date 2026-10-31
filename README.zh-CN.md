@@ -80,7 +80,7 @@ node skills/claude-slides/scripts/artifact.mjs list                             
 
 `codex design` 将上面的五个技能、完整本地编辑器，以及 Codex 批注和编辑器评论联动打包在一起。
 
-0.3 基础版增加本地 MCP 作品库、分类侧栏、固定作品库 Tab、唯一作品 Tab、真实封面预览及编辑器中英文界面，作品统一保存在 `~/.codex/CodexDesignLibrary`。独立原生编辑对话及导入、导出、历史恢复的界面入口在后续版本继续接入；现有编辑器评论和技能流程保留。
+0.4 提供本地 MCP 作品库、可收缩分类栏、固定作品库 Tab、唯一作品 Tab、作品导入导出、版本恢复及编辑器中英文界面，作品统一保存在 `~/.codex/CodexDesignLibrary`。界面使用宿主字体和主题变量，原生视图通过内联编辑器及作品范围内的 MCP 读写运行。公开宿主接口尚未开放资料空间的中间侧栏插槽、顶部原生栏替换或每件作品独立绑定原生聊天，不能把内部分类栏视作已经接管宿主侧栏。验收方法见 [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md)。
 
 可编辑的完整示例见 [`codex-plugins/examples/`](codex-plugins/examples/README.md)：五页幻灯片、Bean Club 双画板、Nimbus 设计系统和年度 X 示例数据看板。
 

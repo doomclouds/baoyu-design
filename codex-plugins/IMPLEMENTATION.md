@@ -1,5 +1,31 @@
 # Codex Design library implementation
 
+## 0.4 correction and acceptance
+
+The 2026-11-01 review identified that the browser preview had not established
+native host correctness. The installed Codex resource parser rejects HTTP frame
+domains, making the former localhost iframe path unusable in the real app.
+The revision assembles the existing editors into a self-contained inner document
+and routes file/API/events through an artwork-scoped MCP transport. Native
+downloads use the standard SDK download method. Protocol and isolated sandbox
+tests remain separate from actual installed-host visual acceptance.
+
+The library now consumes host font/style/theme variables, uses a compact list
+and anchored Create menu, supports internal navigation collapse, and exposes
+content-only import/export plus recovery history. Native worker jobs establish
+a content restore point before editing. Global design systems are discovered
+from the global library in addition to explicitly configured folders.
+
+The current public host API cannot replace Space's native middle sidebar,
+remove the host-created workspace toolbar, or bind an independent native chat
+to each internal artwork tab. These are unresolved host integration requirements,
+not completed features. Do not patch the installed host, spoof the private
+Meetings sidebar capability, or report browser layout as native parity.
+
+See [NATIVE-TESTING.md](NATIVE-TESTING.md) for the required evidence layers and
+acceptance matrix. The historical 0.3 scope and evidence below explain the
+starting point; they are not final 0.4 consuming-app results.
+
 The 0.3 basic release was agreed with the user on 2026-10-31. It extends the
 existing `codex/plugin` branch and plugin identity, preserving all five skills,
 the approved icon, and the four existing editors and comment workflows.

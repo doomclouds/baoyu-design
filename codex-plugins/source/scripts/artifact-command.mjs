@@ -5,6 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BINDING_FILE, BridgeError, readJson, atomicJson, alive, withLock, resolveCodexRunner, samePath } from './bridge-core.mjs';
 import { getWorkerStatus, retryWorkerJob, stopWorker, registerNativeWorker, nextNativeJob, completeNativeJob } from './worker-client.mjs';
+import { designSystemSearchEnvironment } from './design-system-search.mjs';
+import { createLibraryStore } from '../library/index.mjs';
+import { UUID } from '../library/safety.mjs';
+import { WORKER_LOCK_FILE } from './worker-core.mjs';
 
 const BRIDGE_FLAGS = new Map([
   ['thread', 'threadId'], ['remote', 'remote'], ['remote-auth-token-env', 'remoteAuthTokenEnv'], ['codex-path', 'codexPath'],
@@ -50,6 +54,51 @@ function artifactRoot(skillDir, argv, { allowMissing = false } = {}) {
 // Generated packages expose codex-* skills; accept the upstream names only as
 // compatibility aliases when reusing a previous local package.
 const kindForSkill = (skillDir) => ({ 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard' })[path.basename(skillDir).replace(/^claude-/, 'codex-')];
+
+export async function createArtworkForSkill(skillDir, title, { store = createLibraryStore() } = {}) {
+  const kind = kindForSkill(skillDir);
+  if (!kind) throw new BridgeError('UNSUPPORTED_SKILL', 'Only the four artwork editor skills can create library artwork.');
+  const artwork = await store.create({ kind, title });
+  const url = new URL('codex://plugins/codex-design@codex-design-marketplace/app/DesignLibrary');
+  url.searchParams.set('path', `/artifacts/${artwork.id}`);
+  return { id: artwork.id, kind: artwork.kind, title: artwork.title, root: artwork.path, appUrl: url.href };
+}
+
+export async function checkpointArtworkForSkill(skillDir, givenRoot) {
+  const fail = () => new BridgeError('NOT_LIBRARY_ARTIFACT', 'Checkpoint requires an existing active library artwork with matching skill, UUID, artifact manifest, and surrounding library identity. Explicit project folders keep their existing workflow.');
+  const expectedKind = kindForSkill(skillDir);
+  let root, libraryRoot, id;
+  try {
+    const supplied = path.resolve(givenRoot);
+    const kindDirectory = path.dirname(supplied);
+    libraryRoot = path.dirname(kindDirectory);
+    id = path.basename(supplied).toLowerCase();
+    if (!UUID.test(id) || path.basename(kindDirectory) !== expectedKind) throw fail();
+    for (const directory of [supplied, kindDirectory, libraryRoot, path.join(libraryRoot, '_state')]) {
+      const stat = fs.lstatSync(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail();
+    }
+    for (const file of [path.join(supplied, 'artifact.json'), path.join(libraryRoot, '_state', 'library.json')]) {
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile() || stat.isSymbolicLink()) throw fail();
+    }
+    const manifest = readJson(path.join(supplied, 'artifact.json'));
+    const identity = readJson(path.join(libraryRoot, '_state', 'library.json'));
+    if (manifest?.formatVersion !== 1 || manifest.id !== id || manifest.kind !== expectedKind || manifest.deletedAt
+      || identity?.version !== 1 || !UUID.test(identity.id)) throw fail();
+    root = fs.realpathSync(supplied);
+    libraryRoot = fs.realpathSync(libraryRoot);
+  } catch { throw fail(); }
+  // Match the worker's lock order: job ownership first, then the library lock.
+  return withLock(path.join(root, WORKER_LOCK_FILE), async () => {
+    const status = await getWorkerStatus(root);
+    if (status.counts.active > 0) throw new BridgeError('ARTIFACT_BUSY', 'An active native design job owns this artwork. Its parent must coordinate ownership before an independent AI edit or checkpoint.');
+    const store = createLibraryStore({ root: libraryRoot });
+    const artwork = await store.get(id);
+    if (artwork.kind !== expectedKind || artwork.deleted || !samePath(artwork.path, root)) throw fail();
+    return { artifactId: id, root, pendingCount: status.counts.pending, snapshot: await store.snapshot(id, { label: 'Before AI edit' }) };
+  }, { timeoutMs: 10_000, staleMs: 0 });
+}
 
 export async function verifyEditorInstance(state, root, kind) {
   const fail = () => new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.');
@@ -119,13 +168,28 @@ async function completionInput() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function runArtifactCommand(skillDir, argv, { env = process.env, startupTimeoutMs = 20_000 } = {}) {
+export async function runArtifactCommand(skillDir, argv, { env = process.env, startupTimeoutMs = 20_000, libraryStore } = {}) {
   try {
     if (Number(process.versions.node.split('.')[0]) < 22) throw new BridgeError('NODE_VERSION', 'Codex Design requires Node.js 22 or later.');
     skillDir = fs.realpathSync(skillDir);
     const script = path.join(skillDir, 'scripts', 'artifact.mjs');
     const { forwarded, options } = parseBridgeArguments(argv);
     const command = forwarded[0];
+    if (command === 'create') {
+      if (forwarded.length !== 2 || Object.keys(options).length) throw new BridgeError('INVALID_CREATE_ARGUMENTS', 'Use create <title> with one quoted artwork title. Existing explicit artifact roots use the usual file workflow.');
+      const result = await createArtworkForSkill(skillDir, forwarded[1], { store: libraryStore });
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      process.exitCode = 0;
+      return 0;
+    }
+    if (command === 'checkpoint') {
+      if (forwarded.length !== 2 || Object.keys(options).length) throw new BridgeError('INVALID_CHECKPOINT_ARGUMENTS', 'Use checkpoint <existing-library-artifact-root>.');
+      const result = await checkpointArtworkForSkill(skillDir, forwarded[1]);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      process.exitCode = 0;
+      return 0;
+    }
+    if (command === 'list') env = designSystemSearchEnvironment(env);
     const customHook = forwarded.some((arg) => arg === '--agent-hook' || arg.startsWith('--agent-hook='));
     if (['worker-status', 'worker-retry', 'worker-register', 'worker-next', 'worker-complete', 'worker-stop'].includes(command)) {
       const { root } = artifactRoot(skillDir, forwarded);

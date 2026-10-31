@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { repairEditorRuntime } from './source/scripts/editor-runtime-adapter.mjs';
 
 export const EDITOR_KINDS = ['slides', 'design', 'design-system', 'dashboard'];
 
@@ -118,12 +119,56 @@ export function loadEditorTranslations() {
       if (typeof translated === 'string' && translated.trim()) result[message] = translated;
     }
   }
+  Object.assign(result, JSON.parse(readFileSync(new URL('./source/scripts/locales/native-zh-static.json', import.meta.url), 'utf8')));
   return result;
 }
 
 export const EDITOR_UI_ZH = Object.freeze(loadEditorTranslations());
 
+const STATIC_UI_PROPERTIES = '(?<![\\w$])(?:"aria-label"|label|title|placeholder|description|content|footnote|children|tooltip|tip|disabledTip|disabledReason|confirmLabel|cancelLabel|group|noUndo|noRedo|cancel|save|saves|noSave|what|hint|line|create|back|noFiles|adding|noneKept|removeLater|menuLabel|groupLabel)';
+const WELCOME_ARRAY = /(?<![\w$])(?:github|connect|upload):\[((?:"(?:\\.|[^"\\])*",?){1,3})\]/g;
+const CANVAS_TOOL_LABEL_MAP = /\{hand:"Hand",text:"Text",frame:"Artboard",note:"Note",draw:"Pencil",rect:"Rectangle",oval:"Oval",arrow:"Arrow",line:"Line",pen:"Pen"\}/g;
+const CANVAS_TOOL_BUTTON_LABEL = /\b[A-Za-z_$][\w$]*\("(?:select|hand|text|frame|note)",("(?:Select|Hand|Text|Artboard|Note)"),"(?:esc|[htan])"/g;
+const staticUiKey = text => 'static.' + createHash('sha256').update(text).digest('hex').slice(0, 16);
+
+// The original editors translate message IDs, but several toolbars and empty
+// states still use literal UI properties. Inventory those compiled callsites,
+// including simple conditional labels; never inspect an artwork or its DOM.
+export function extractStaticChromeMessages(source, translations = EDITOR_UI_ZH) {
+  const found = new Map();
+  const add = literal => {
+    let text; try { text = JSON.parse(literal); } catch { return; }
+    if (translations[text] && !icuArguments(text).length) found.set(staticUiKey(text), text);
+  };
+  for (const match of source.matchAll(new RegExp(STATIC_UI_PROPERTIES + ':("(?:\\\\.|[^"\\\\])*")', 'g'))) add(match[1]);
+  for (const match of source.matchAll(new RegExp(STATIC_UI_PROPERTIES + ':([^,;{}]{1,300})', 'g'))) {
+    for (const literal of match[1].matchAll(/"(?:\\.|[^"\\])*"/g)) add(literal[0]);
+  }
+  for (const match of source.matchAll(WELCOME_ARRAY)) for (const literal of match[1].matchAll(/"(?:\\.|[^"\\])*"/g)) add(literal[0]);
+  for (const match of source.matchAll(CANVAS_TOOL_LABEL_MAP)) for (const literal of match[0].matchAll(/:"(?:\\.|[^"\\])*"/g)) add(literal[0].slice(1));
+  for (const match of source.matchAll(CANVAS_TOOL_BUTTON_LABEL)) add(match[1]);
+  return found;
+}
+
 const CHROME_MESSAGES = {
+  'canvas.emptyCanvasArtboards': 'This canvas has no artboards yet. Add one, or let the agent add some.',
+  'canvas.emptyPageArtboards': 'This page has no artboards yet. Add one, or let the agent add some.',
+  'slides.numberLabel': 'Slide {{number}}', 'slides.positionLabel': 'Slide {{number}} of {{count}}',
+  'slides.skippedSuffix': ' (skipped)', 'slides.thumbnailSuffix': ' (thumbnail)', 'slides.titleSuffix': ': {{title}}',
+  'slides.openCommentSuffix': ', {{count}} open comments', 'slides.openCommentSuffix_one': ', {{count}} open comment',
+  'slides.openCommentSuffix_other': ', {{count}} open comments',
+  'chrome.syncing': 'Syncing…', 'chrome.syncRetry': 'Couldn’t sync — click to retry',
+  'chrome.allSynced': 'All changes synced',
+  'chrome.commentPin': 'Comment {{count}}',
+  'ds.previewThemeLabel': '{{name}}, Preview theme', 'ds.noFontFiles': 'No font files yet',
+  'ds.coverPreviewTitle': 'Cover',
+  'ds.storageUsage': 'Stored alongside the page: {{count}} files · {{used}} of {{limit}} used',
+  'ds.storageUsage_one': 'Stored alongside the page: {{count}} file · {{used}} of {{limit}} used',
+  'ds.storageUsage_other': 'Stored alongside the page: {{count}} files · {{used}} of {{limit}} used',
+  'canvas.pagesLabel': '{{title}}, pages', 'canvas.pagesCountLabel': '{{title}}, {{count}} pages',
+  'canvas.artboardPosition': 'Artboard {{index}} of {{count}}: {{title}}',
+  'ds.previewNavigated': 'Live preview stopped — the preview navigated away.',
+  'ds.previewScriptFailed': 'This preview could not run: a script it needs did not load, or threw while loading. Showing the static preview.',
   'chrome.sendToAgent': 'Send to agent', 'chrome.reply': 'Reply', 'chrome.comments': 'Comments',
   'chrome.comment': 'Comment', 'chrome.resolve': 'Resolve', 'chrome.reopen': 'Reopen',
   'chrome.resolved': 'Resolved', 'chrome.cancel': 'Cancel', 'chrome.delete': 'Delete',
@@ -134,7 +179,7 @@ const CHROME_MESSAGES = {
   'chrome.doneCommenting': 'Done commenting', 'chrome.hideComments': 'Hide comments',
   'chrome.showAllComments': 'Show all comments', 'chrome.commentOptions': 'Comment options',
   'chrome.filter': 'Filter', 'chrome.showResolved': 'Show resolved', 'chrome.allComments': 'All comments',
-  'chrome.noComments': 'No comments yet.', 'chrome.noOpenComments': 'No open comments.',
+  'chrome.noComments': 'No comments yet.', 'chrome.noCommentsShort': 'No comments.', 'chrome.noOpenComments': 'No open comments.',
   'chrome.deleteThread': 'Delete thread', 'chrome.sentToAgent': 'Sent to agent',
   'chrome.resolvedSuffix': ' · Resolved', 'chrome.oneReply': '1 reply',
   'chrome.waitingForAgent': 'Waiting for the agent', 'chrome.working': 'Working…', 'chrome.you': 'You',
@@ -179,10 +224,25 @@ const CHROME_MESSAGES = {
 };
 
 const CHROME_ZH = {
+  'This canvas has no artboards yet. Add one, or let the agent add some.': '此画布尚无画板。请添加一个画板，或让代理添加。',
+  'This page has no artboards yet. Add one, or let the agent add some.': '此页面尚无画板。请添加一个画板，或让代理添加。',
+  'Slide {{number}}': '幻灯片 {{number}}', 'Slide {{number}} of {{count}}': '幻灯片 {{number}} / {{count}}',
+  ' (skipped)': '（已跳过）', ' (thumbnail)': '（缩略图）', ': {{title}}': '：{{title}}',
+  ', {{count}} open comments': '，{{count}} 条未解决批注', ', {{count}} open comment': '，{{count}} 条未解决批注',
+  'Syncing…': '同步中…', 'Couldn’t sync — click to retry': '无法同步，单击以重试',
+  'All changes synced': '所有修改均已同步',
+  'Comment {{count}}': '批注 {{count}}', '{{name}}, Preview theme': '{{name}}，预览主题',
+  'No font files yet': '尚无字体文件',
+  'Stored alongside the page: {{count}} files · {{used}} of {{limit}} used': '随作品存储：{{count}} 个文件 · 已用 {{used}} / {{limit}}',
+  'Stored alongside the page: {{count}} file · {{used}} of {{limit}} used': '随作品存储：{{count}} 个文件 · 已用 {{used}} / {{limit}}',
+  '{{title}}, pages': '{{title}}，页面', '{{title}}, {{count}} pages': '{{title}}，{{count}} 个页面',
+  'Artboard {{index}} of {{count}}: {{title}}': '画板 {{index}} / {{count}}：{{title}}',
+  'Live preview stopped — the preview navigated away.': '实时预览已停止：预览跳转到了其他页面。',
+  'This preview could not run: a script it needs did not load, or threw while loading. Showing the static preview.': '预览所需的脚本未能加载，或在加载时发生错误。当前显示静态预览。',
   'Comment actions': '批注操作', 'Delete this comment?': '删除此批注吗？', 'Add your comment': '添加你的批注',
   'Send': '发送', 'Done commenting': '结束批注', 'Hide comments': '隐藏批注', 'Show all comments': '显示全部批注',
   'Comment options': '批注选项', 'Filter': '筛选', 'Show resolved': '显示已解决的批注', 'All comments': '全部批注',
-  'No comments yet.': '尚无批注。', 'No open comments.': '没有未解决的批注。', 'Delete thread': '删除批注线程',
+  'No comments yet.': '尚无批注。', 'No comments.': '暂无批注。', 'No open comments.': '没有未解决的批注。', 'Delete thread': '删除批注线程',
   'Sent to agent': '已发送给代理', ' · Resolved': ' · 已解决', '1 reply': '1 条回复',
   'Waiting for the agent': '正在等待代理', 'Working…': '正在处理…', 'You': '你', 'New comment': '新建批注',
   'Resolved comment': '已解决的批注', 'Comments are not available': '批注暂不可用',
@@ -345,11 +405,15 @@ export function createEditorCatalog(kind, sources, translations = EDITOR_UI_ZH) 
     messages.set(id, text);
   }
   const english = Object.fromEntries(messages);
+  const staticMessages = new Map();
+  for (const source of sources) for (const [key, text] of extractStaticChromeMessages(source, translations)) staticMessages.set(key, text);
+  for (const [key, text] of staticMessages) english[key] = text;
   for (const [key, text] of Object.entries(CDS_MESSAGES)) english['cds.' + key] = text;
   for (const [key, text] of Object.entries(CHROME_MESSAGES)) english[key] = text;
   const chinese = {};
   for (const [key, text] of Object.entries(english)) {
-    const translated = translations[text] || CHROME_ZH[text] || CDS_ZH[text];
+    const translated = key === 'ds.coverPreviewTitle' || kind === 'design-system' && key === 'M+FVeeY9De'
+      ? '封面' : translations[text] || CHROME_ZH[text] || CDS_ZH[text];
     if (translated) {
       if (messages.has(key)) assertTranslationArguments(text, translated);
       chinese[key] = translated;
@@ -358,7 +422,8 @@ export function createEditorCatalog(kind, sources, translations = EDITOR_UI_ZH) 
   return {
     kind,
     resources: { en: { editor: english }, zh: { editor: chinese } },
-    coverage: { native: messages.size, translatedNative: [...messages.values()].filter(text => !!translations[text]).length },
+    coverage: { native: messages.size, translatedNative: [...messages.values()].filter(text => !!translations[text]).length,
+      static: staticMessages.size, translatedStatic: [...staticMessages.values()].filter(text => !!translations[text]).length },
   };
 }
 
@@ -367,18 +432,41 @@ export function createEditorCatalog(kind, sources, translations = EDITOR_UI_ZH) 
 export function adaptStaticCommentChrome(source) {
   const marker = '/* codex-design-editor-i18n:chrome */';
   if (source.startsWith(marker)) return source;
-  const messageKeys = new Map(Object.entries(CHROME_MESSAGES).map(([key, text]) => [text, key]));
+  const messageKeys = new Map(Object.entries(CHROME_MESSAGES).filter(([key]) => key !== 'ds.coverPreviewTitle').map(([key, text]) => [text, key]));
+  const staticKeys = new Map([...extractStaticChromeMessages(source)].map(([key, text]) => [text, messageKeys.get(text) || key]));
   const changes = [];
-  const captureLiteral = (match, group = 2) => {
+  const captureLiteral = (match, group = 2, keys = messageKeys) => {
     const literal = match[group];
     let value;
     try { value = JSON.parse(literal); } catch { return; } // Non-UI JS escapes such as \0 are not dictionary keys.
-    const key = messageKeys.get(value);
+    const key = keys.get(value);
     if (!key) return;
     const start = match.index + match[0].lastIndexOf(literal);
     changes.push({ start, end: start + literal.length,
       text: '(globalThis.codexDesignEditorI18n?.t(' + JSON.stringify(key) + ')??' + literal + ')' });
   };
+  // Slides exposes separate UI formatters and native comment-label formatters.
+  // Only the former are adapted; their stable slide ids/anchors remain data.
+  const thumbnailFormatter = /function ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)=0\)\{let ([A-Za-z_$][\w$]*)=\(0,([A-Za-z_$][\w$]*)\.slideDisplayLabel\)\(\2\);(return"Slide "\+[^{}]{0,450})\}/g;
+  for (const match of source.matchAll(thumbnailFormatter)) {
+    const escapedCount = match[5].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const commentFormat = new RegExp('\\+([A-Za-z_$][\\w$]*)\\(' + escapedCount + '\\)$').exec(match[8]);
+    if (!commentFormat) continue;
+    const start = match.index + match[0].indexOf(match[8]);
+    changes.push({ start, end: start, text: 'if(globalThis.codexDesignEditorI18n?.formatSlideLabel)return globalThis.codexDesignEditorI18n.formatSlideLabel({number:' + match[3] + '+1,title:' + match[6] + ',skipped:' + match[2] + '.skipped===!0,thumbnail:' + match[4] + ',comments:' + commentFormat[1] + '(' + match[5] + ')});' });
+  }
+  const presentationLabel = /return"Slide "\+String\(([A-Za-z_$][\w$]*)\+1\)\+" of "\+String\(([A-Za-z_$][\w$]*)\)\+\(([A-Za-z_$][\w$]*)!==""\?": "\+\3:""\)/g;
+  for (const match of source.matchAll(presentationLabel)) changes.push({ start: match.index, end: match.index,
+    text: 'if(globalThis.codexDesignEditorI18n?.formatSlideLabel)return globalThis.codexDesignEditorI18n.formatSlideLabel({number:' + match[1] + '+1,count:' + match[2] + ',title:' + match[3] + '});' });
+  const thumbnailAria = /"aria-label":"Slide "\+String\(([A-Za-z_$][\w$]*)\.n\)\+\(\1\.id===([A-Za-z_$][\w$]*)\?" \(thumbnail\)":""\)\+\(([A-Za-z_$][\w$]*)!==""\?": "\+\3:""\)\+\(0,([A-Za-z_$][\w$]*)\.formatOpenCommentCount\)\(([A-Za-z_$][\w$]*)\?\.get\(\1\.id\)\?\?0\)/g;
+  for (const match of source.matchAll(thumbnailAria)) {
+    const original = match[0].slice('"aria-label":'.length);
+    changes.push({ start: match.index, end: match.index + match[0].length,
+      text: '"aria-label":(globalThis.codexDesignEditorI18n?.formatSlideLabel?.({number:' + match[1] + '.n,thumbnail:' + match[1] + '.id===' + match[2] + ',title:' + match[3] + ',comments:(0,' + match[4] + '.formatOpenCommentCount)(' + match[5] + '?.get(' + match[1] + '.id)??0)})??(' + original + '))' });
+  }
+  const openSlideComments = /return ([A-Za-z_$][\w$]*)>0\?", "\+String\(\1\)\+\(\1===1\?" open comment":" open comments"\):""/g;
+  for (const match of source.matchAll(openSlideComments)) changes.push({ start: match.index, end: match.index + match[0].length,
+    text: 'return ' + match[1] + '>0?(globalThis.codexDesignEditorI18n?.t("slides.openCommentSuffix",{count:' + match[1] + '})??(' + match[0].slice(7) + ')):""' });
   for (const match of source.matchAll(/([A-Za-z_$][\w$]*)===1\?"1 reply":`\$\{\1\} replies`/g)) {
     changes.push({ start: match.index, end: match.index + match[0].length,
       text: '(globalThis.codexDesignEditorI18n?.t("chrome.replies",{count:' + match[1] + '})??(' + match[0] + '))' });
@@ -391,6 +479,54 @@ export function adaptStaticCommentChrome(source) {
     const pattern = new RegExp('([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)===1\\?"1 ' + label + '":String\\(\\1\\)\\+" ' + label + 's"', 'g');
     for (const match of source.matchAll(pattern)) changes.push({ start: match.index, end: match.index + match[0].length,
       text: '(globalThis.codexDesignEditorI18n?.t(' + JSON.stringify(key) + ',{count:' + match[1] + '})??(' + match[0] + '))' });
+  }
+  const pagesLabel = /([A-Za-z_$][\w$]*)\+", "\+\(([A-Za-z_$][\w$]*)>0\?String\(\2\)\+" pages":"pages"\)/g;
+  for (const match of source.matchAll(pagesLabel)) changes.push({ start: match.index, end: match.index + match[0].length,
+    text: '(globalThis.codexDesignEditorI18n?.t(' + match[2] + '>0?"canvas.pagesCountLabel":"canvas.pagesLabel",{title:' + match[1] + ',count:' + match[2] + '})??(' + match[0] + '))' });
+  const emptyCanvas = /\(([A-Za-z_$][\w$]*)\.artboards\.length===0\?"This canvas":"This page"\)\+" has no artboards yet\. Add one, or let the agent add some\."/g;
+  for (const match of source.matchAll(emptyCanvas)) changes.push({ start: match.index, end: match.index + match[0].length,
+    text: '(globalThis.codexDesignEditorI18n?.t(' + match[1] + '.artboards.length===0?"canvas.emptyCanvasArtboards":"canvas.emptyPageArtboards")??(' + match[0] + '))' });
+  const artboardPosition = /return"Artboard "\+String\(([A-Za-z_$][\w$]*)\+1\)\+" of "\+String\(([A-Za-z_$][\w$]*)\)\+": "\+([A-Za-z_$][\w$]*)/g;
+  for (const match of source.matchAll(artboardPosition)) changes.push({ start: match.index, end: match.index + match[0].length,
+    text: 'return(globalThis.codexDesignEditorI18n?.t("canvas.artboardPosition",{index:' + match[1] + '+1,count:' + match[2] + ',title:' + match[3] + '})??(' + match[0].slice(6) + '))' });
+  for (const match of source.matchAll(/label:([A-Za-z_$][\w$]*\.n)>0\?(`Comment \$\{\1\}`)/g)) {
+    const start = match.index + match[0].indexOf(match[2]);
+    changes.push({ start, end: start + match[2].length,
+      text: '(globalThis.codexDesignEditorI18n?.t("chrome.commentPin",{count:' + match[1] + '})??' + match[2] + ')' });
+  }
+  for (const match of source.matchAll(/"aria-label":([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\+", Preview theme"/g)) changes.push({
+    start: match.index, end: match.index + match[0].length,
+    text: '"aria-label":(globalThis.codexDesignEditorI18n?.t("ds.previewThemeLabel",{name:' + match[1] + '})??(' + match[1] + '+", Preview theme"))',
+  });
+  const storageUsage = /"Stored alongside the page: "\+String\(([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\)\+\(\1===1\?" file":" files"\)\+" · "\+([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\)\+" of "\+\2\(([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\)\+" used"/g;
+  for (const match of source.matchAll(storageUsage)) changes.push({ start: match.index, end: match.index + match[0].length,
+    text: '(globalThis.codexDesignEditorI18n?.t("ds.storageUsage",{count:' + match[1] + ',used:' + match[2] + '(' + match[3] + '),limit:' + match[2] + '(' + match[4] + ')})??(' + match[0] + '))' });
+  const syncWidget = /[A-Za-z_$][\w$]*\.message\?\?\(([A-Za-z_$][\w$]*)==="pending"\?"Syncing…":\1==="error"\?"Couldn’t sync — click to retry":"All changes synced"\)/g;
+  for (const match of source.matchAll(syncWidget)) {
+    const next = match[0].replace(/"(?:Syncing…|Couldn’t sync — click to retry|All changes synced)"/g, literal => {
+      const key = messageKeys.get(JSON.parse(literal));
+      return '(globalThis.codexDesignEditorI18n?.t(' + JSON.stringify(key) + ')??' + literal + ')';
+    });
+    changes.push({ start: match.index, end: match.index + match[0].length, text: next });
+  }
+  for (const match of source.matchAll(/(\{status:"saving",message:)("Syncing…")/g)) captureLiteral(match);
+  // The floating comment list has two complete conditional empty-state labels.
+  // Keep these exact UI branches separate from comment status/data enums.
+  for (const match of source.matchAll(/(children:[A-Za-z_$][\w$]*\?)("No comments(?: yet)?\.")(:)("No open comments\.")/g)) {
+    captureLiteral(match, 2);
+    captureLiteral(match, 4);
+  }
+  for (const match of source.matchAll(/(children:\[[A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\.at\),[A-Za-z_$][\w$]*&&)(" · Resolved")/g)) captureLiteral(match);
+  // Empty list text and cover titles are semantic component props. Arbitrary
+  // text fields and image-fit enums named Cover remain untouched.
+  for (const match of source.matchAll(/(\b[A-Za-z_$][\w$]*\.jsx\([A-Za-z_$][\w$]*\.EmptyEditorList,\{text:)("No font files yet")/g)) captureLiteral(match);
+  for (const match of source.matchAll(/(\b[A-Za-z_$][\w$]*\.jsx\([A-Za-z_$][\w$]*\.StaticPreviewFrame,\{[^{}]{0,500},title:)("Cover")/g)) captureLiteral(match, 2, new Map([['Cover', 'ds.coverPreviewTitle']]));
+  // These two complete preview-error sentences are actual UI warning values,
+  // not general conditional identifiers such as icon names or model enums.
+  for (const key of ['ds.previewNavigated', 'ds.previewScriptFailed']) {
+    const literal = JSON.stringify(CHROME_MESSAGES[key]);
+    const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const match of source.matchAll(new RegExp('(\\?)(' + escaped + ')(?=:)', 'g'))) captureLiteral(match);
   }
   // The shared comment client has two tiny date-label functions. Route only
   // their UI formatting through the selected locale; authored dates/values
@@ -406,15 +542,37 @@ export function adaptStaticCommentChrome(source) {
     changes.push({ start, end: start,
       text: 'if(globalThis.codexDesignEditorI18n?.' + formatter + ')return globalThis.codexDesignEditorI18n.' + formatter + '(' + match[2] + ',' + match[3] + ');' });
   }
-  // Comment chrome also has a handful of conditional labels. Guard against
-  // object-property colons so message IDs and source text remain canonical.
-  for (const match of source.matchAll(/(\?\?|\|\||&&|\?|:|\+)("(?:\\.|[^"\\])*")/g)) {
-    if (match[1] === ':' && /[\w$]$/.test(source.slice(0, match.index))) continue;
-    captureLiteral(match);
-  }
+  // Conditional literals are handled only inside the explicit UI properties
+  // below. Global `?:` replacement also changes icon names such as
+  // name:filled?"CommentFilled":"Comment", breaking the icon-codepoint lookup.
   // Match exact static UI properties in the shipped bundle only. In
   // particular, never patch defaultMessage, name, value, or text properties.
-  for (const match of source.matchAll(/((?:"aria-label"|label|title|placeholder|description|content|footnote|children|tooltip|tip|disabledTip|disabledReason|confirmLabel|cancelLabel|group|noUndo|noRedo|cancel|save|saves|noSave):)("(?:\\.|[^"\\])*")/g)) captureLiteral(match);
+  for (const match of source.matchAll(/(?<![\w$])((?:"aria-label"|label|title|placeholder|description|content|footnote|children|tooltip|tip|disabledTip|disabledReason|confirmLabel|cancelLabel|group|noUndo|noRedo|cancel|save|saves|noSave):)("(?:\\.|[^"\\])*")/g)) captureLiteral(match);
+  // Keep conditional rewriting scoped to UI properties. Translating every
+  // string named "Table" or "Text" would corrupt export roles and model data.
+  for (const match of source.matchAll(new RegExp('(' + STATIC_UI_PROPERTIES + ':)("(?:\\\\.|[^"\\\\])*")', 'g'))) captureLiteral(match, 2, staticKeys);
+  for (const match of source.matchAll(new RegExp(STATIC_UI_PROPERTIES + ':([^,;{}]{1,300})', 'g'))) {
+    const expressionStart = match.index + match[0].indexOf(':') + 1;
+    for (const literal of match[1].matchAll(/"(?:\\.|[^"\\])*"/g)) {
+      const synthetic = [literal[0], '', literal[0]];
+      synthetic.index = expressionStart + literal.index;
+      captureLiteral(synthetic, 2, staticKeys);
+    }
+  }
+  for (const match of source.matchAll(WELCOME_ARRAY)) {
+    const expressionStart = match.index + match[0].indexOf('[') + 1;
+    for (const literal of match[1].matchAll(/"(?:\\.|[^"\\])*"/g)) {
+      const synthetic = [literal[0], '', literal[0]]; synthetic.index = expressionStart + literal.index;
+      captureLiteral(synthetic, 2, staticKeys);
+    }
+  }
+  for (const match of source.matchAll(CANVAS_TOOL_LABEL_MAP)) {
+    for (const literal of match[0].matchAll(/:("(?:\\.|[^"\\])*")/g)) {
+      const synthetic = [literal[1], '', literal[1]]; synthetic.index = match.index + literal.index + 1;
+      captureLiteral(synthetic, 2, staticKeys);
+    }
+  }
+  for (const match of source.matchAll(CANVAS_TOOL_BUTTON_LABEL)) captureLiteral(match, 1, staticKeys);
   for (const match of source.matchAll(/(\b(?:label|placeholder|title|description):[A-Za-z_$][\w$]*=)("(?:\\.|[^"\\])*")/g)) captureLiteral(match);
   for (const match of source.matchAll(/([,;]\s*[A-Za-z_$][\w$]*=)("Send to agent")/g)) captureLiteral(match);
   for (const match of source.matchAll(/([,;]\s*[A-Za-z_$][\w$]*=)("(?:\\.|[^"\\])*")/g)) {
@@ -464,7 +622,7 @@ export async function adaptEditorLocalization(pluginRoot, { bundlePath } = {}) {
     if (!html.includes('<head>')) throw new Error('Missing editor head for ' + kind);
     html = html.replace(/<head>\s*/, '<head>\n' + tags);
     for (let i = 0; i < sourceFiles.length; i++) {
-      const patched = adaptStaticCommentChrome(sources[i]);
+      const patched = repairEditorRuntime(adaptStaticCommentChrome(sources[i]));
       if (patched === sources[i]) continue;
       if (path.dirname(sourceFiles[i]) === assets) {
         // Editor assets are served immutable. A new chrome callsite must get a

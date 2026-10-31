@@ -17,9 +17,27 @@ import path from "node:path";
 function readJson(file, fallback = null) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (error2) {
-    if (error2.code === "ENOENT") return fallback;
-    throw new BridgeError("INVALID_BRIDGE_STATE", `Cannot read ${file}: ${error2.message}`);
+  } catch (error3) {
+    if (error3.code === "ENOENT") return fallback;
+    throw new BridgeError("INVALID_BRIDGE_STATE", `Cannot read ${file}: ${error3.message}`);
+  }
+}
+function atomicJson(file, value) {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}
+`, { mode: 384 });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.renameSync(temporary, file);
+        break;
+      } catch (error3) {
+        if (!["EPERM", "EACCES", "EBUSY"].includes(error3.code) || attempt >= 19) throw error3;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+      }
+    }
+  } finally {
+    fs.rmSync(temporary, { force: true });
   }
 }
 function alive(pid) {
@@ -27,8 +45,8 @@ function alive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (error2) {
-    return error2.code === "EPERM";
+  } catch (error3) {
+    return error3.code === "EPERM";
   }
 }
 function canonicalPath(given) {
@@ -55,8 +73,8 @@ function reapDeadReaper(directory, initializationGraceMs) {
   if (marker) {
     try {
       owner = readJson(path.join(directory, marker));
-    } catch (error2) {
-      if (error2.code !== "INVALID_BRIDGE_STATE") throw error2;
+    } catch (error3) {
+      if (error3.code !== "INVALID_BRIDGE_STATE") throw error3;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
@@ -64,8 +82,8 @@ function reapDeadReaper(directory, initializationGraceMs) {
   if (marker) fs.rmSync(path.join(directory, marker), { force: true });
   try {
     fs.rmdirSync(directory);
-  } catch (error2) {
-    if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error2.code)) throw error2;
+  } catch (error3) {
+    if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error3.code)) throw error3;
   }
 }
 function tryReaper(directory, initializationGraceMs) {
@@ -81,16 +99,16 @@ function tryReaper(directory, initializationGraceMs) {
     try {
       fs.renameSync(staging, directory);
       published = true;
-    } catch (error2) {
-      if (["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error2.code)) return null;
-      throw error2;
+    } catch (error3) {
+      if (["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error3.code)) return null;
+      throw error3;
     }
     return () => {
       fs.rmSync(path.join(directory, marker), { force: true });
       try {
         fs.rmdirSync(directory);
-      } catch (error2) {
-        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error2.code)) throw error2;
+      } catch (error3) {
+        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error3.code)) throw error3;
       }
     };
   } finally {
@@ -98,8 +116,8 @@ function tryReaper(directory, initializationGraceMs) {
       fs.rmSync(path.join(staging, marker), { force: true });
       try {
         fs.rmdirSync(staging);
-      } catch (error2) {
-        if (error2.code !== "ENOENT") throw error2;
+      } catch (error3) {
+        if (error3.code !== "ENOENT") throw error3;
       }
     }
   }
@@ -116,8 +134,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
     fs.rmSync(path.join(initializing, "owner.json"), { force: true });
     try {
       fs.rmdirSync(initializing);
-    } catch (error2) {
-      if (error2.code !== "ENOENT") throw error2;
+    } catch (error3) {
+      if (error3.code !== "ENOENT") throw error3;
     }
   };
   try {
@@ -128,8 +146,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
           acquired = true;
           break;
         }
-      } catch (error2) {
-        if (!["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error2.code)) throw error2;
+      } catch (error3) {
+        if (!["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error3.code)) throw error3;
       }
       const reaper = `${lockPath}.reaper`;
       let releaseReaper;
@@ -143,8 +161,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
         let owner;
         try {
           owner = readJson(ownerFile);
-        } catch (error2) {
-          if (error2.code !== "INVALID_BRIDGE_STATE") throw error2;
+        } catch (error3) {
+          if (error3.code !== "INVALID_BRIDGE_STATE") throw error3;
         }
         const stat = fs.statSync(lockPath, { throwIfNoEntry: false });
         const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
@@ -153,8 +171,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
           fs.rmSync(ownerFile, { force: true });
           fs.rmdirSync(lockPath);
         }
-      } catch (error2) {
-        if (!["EEXIST", "ENOENT", "ENOTEMPTY"].includes(error2.code)) throw error2;
+      } catch (error3) {
+        if (!["EEXIST", "ENOENT", "ENOTEMPTY"].includes(error3.code)) throw error3;
       } finally {
         releaseReaper?.();
       }
@@ -167,8 +185,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
       fs.rmSync(ownerFile, { force: true });
       try {
         fs.rmdirSync(lockPath);
-      } catch (error2) {
-        if (error2.code !== "ENOTEMPTY") throw error2;
+      } catch (error3) {
+        if (error3.code !== "ENOTEMPTY") throw error3;
       }
     }
     if (!acquired) removeInitializing();
@@ -188,130 +206,11 @@ var init_bridge_core = __esm({
   }
 });
 
-// source/scripts/worker-core.mjs
-import path5 from "node:path";
-function loadJobs(root) {
-  const state = readJson(path5.join(root, WORKER_JOBS_FILE), { version: 1, jobs: {}, order: [] });
-  if (state.version !== 1 || !state.jobs || typeof state.jobs !== "object" || Array.isArray(state.jobs) || !Array.isArray(state.order)) {
-    throw new BridgeError("INVALID_WORKER_JOBS", "The design worker job journal is invalid; preserve it and inspect it before retrying.");
-  }
-  return state;
-}
-function publicJob(job) {
-  return {
-    id: job.id,
-    status: job.status,
-    kind: job.event.kind,
-    commentId: job.event.data.id,
-    queuedAt: job.queuedAt,
-    ...job.startedAt ? { startedAt: job.startedAt } : {},
-    ...job.completedAt ? { completedAt: job.completedAt } : {},
-    ...job.repliedAt ? { repliedAt: job.repliedAt } : {},
-    ...job.error ? { error: job.error } : {},
-    ...job.ownerThreadId ? { ownerThreadId: job.ownerThreadId } : {}
-  };
-}
-var WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOG_FILE;
-var init_worker_core = __esm({
-  "source/scripts/worker-core.mjs"() {
-    init_bridge_core();
-    WORKER_FILE = ".codex-design-worker.json";
-    WORKER_JOBS_FILE = ".codex-design-worker-jobs.json";
-    WORKER_LOG_FILE = ".codex-design-worker.log";
-  }
-});
-
-// source/scripts/worker-client.mjs
-import path6 from "node:path";
-function readRegistry(root) {
-  const registry = readJson(registryFile(root));
-  if (registry?.url || registry?.token) throw new BridgeError("LEGACY_WORKER_STATE", "A legacy process-backed worker record remains. Preserve and inspect it before registering a native worker.");
-  if (registry && (registry.version !== 1 || !samePath(registry.root, root))) throw new BridgeError("INVALID_WORKER_REGISTRY", "The native worker registry is invalid.");
-  return registry;
-}
-async function getWorkerStatus(root) {
-  const registry = readRegistry(root);
-  const binding = readJson(path6.join(root, BINDING_FILE));
-  const state = loadJobs(root);
-  const jobs = state.order.map((id) => state.jobs[id]).filter(Boolean).map(publicJob);
-  const counts = Object.fromEntries(["pending", "active", "completed", "failed", "superseded"].map((status) => [status, jobs.filter((job) => job.status === status).length]));
-  const listening = Boolean(registry?.listener && registry.listener.expiresAt > Date.now() && alive(registry.listener.pid));
-  return {
-    mode: "native",
-    running: listening,
-    listening,
-    nativeThreadId: registry?.nativeThreadId ?? null,
-    name: registry?.name ?? null,
-    status: registry?.status ?? "unregistered",
-    originThreadId: binding?.threadId ?? null,
-    needsResume: (counts.pending > 0 || counts.active > 0) && !listening,
-    counts,
-    jobs,
-    note: "Local listener presence is not native agent liveness. The parent checks the real native agent before deciding to resume or replace it.",
-    ...registry?.lastSeenAt ? { lastSeenAt: registry.lastSeenAt } : {},
-    log: path6.join(root, WORKER_LOG_FILE)
-  };
-}
-var registryFile;
-var init_worker_client = __esm({
-  "source/scripts/worker-client.mjs"() {
-    init_bridge_core();
-    init_worker_core();
-    registryFile = (root) => path6.join(root, WORKER_FILE);
-  }
-});
-
-// source/scripts/artifact-command.mjs
-async function verifyEditorInstance(state, root, kind) {
-  const fail = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
-  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail();
-  try {
-    const url = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail();
-    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
-    if (!response.ok) throw fail();
-    const session = await response.json();
-    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail();
-    return session;
-  } catch {
-    throw fail();
-  }
-}
-var init_artifact_command = __esm({
-  "source/scripts/artifact-command.mjs"() {
-    init_bridge_core();
-    init_worker_client();
-  }
-});
-
-// source/scripts/library-preview.mjs
-import fs6 from "node:fs";
-import path10 from "node:path";
-import { spawn as spawn2 } from "node:child_process";
-import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
-
-// source/library/index.mjs
-import fs4 from "node:fs/promises";
-import os from "node:os";
-import path4 from "node:path";
-import { randomUUID as randomUUID3 } from "node:crypto";
-
 // source/library/safety.mjs
-init_bridge_core();
 import fs2 from "node:fs/promises";
 import { constants } from "node:fs";
 import path2 from "node:path";
 import { randomUUID as randomUUID2 } from "node:crypto";
-var LibraryError = class extends Error {
-  constructor(code, message, details) {
-    super(message);
-    this.name = "LibraryError";
-    this.code = code;
-    if (details !== void 0) this.details = details;
-  }
-};
-var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-var KINDS = Object.freeze(["slides", "design", "design-system", "dashboard"]);
 function artifactId(id) {
   if (typeof id !== "string" || !UUID.test(id)) throw new LibraryError("INVALID_ID", "Expected a persistent artifact UUID.");
   return id.toLowerCase();
@@ -338,9 +237,9 @@ function within(root, target) {
 async function statOrNull(file) {
   try {
     return await fs2.lstat(file);
-  } catch (error2) {
-    if (error2.code === "ENOENT") return null;
-    throw error2;
+  } catch (error3) {
+    if (error3.code === "ENOENT") return null;
+    throw error3;
   }
 }
 async function safePath(root, relative, { mustExist = true, type } = {}) {
@@ -365,21 +264,20 @@ async function safePath(root, relative, { mustExist = true, type } = {}) {
   }
   return cursor;
 }
-var cursorFor = (root, parts) => within(root, path2.join(root, ...parts));
 async function readJson2(root, relative, fallback) {
   const file = await safePath(root, relative, { mustExist: false });
   try {
     return JSON.parse(await fs2.readFile(file, "utf8"));
-  } catch (error2) {
-    if (error2.code === "ENOENT") {
+  } catch (error3) {
+    if (error3.code === "ENOENT") {
       if (fallback !== void 0) return structuredClone(fallback);
       throw new LibraryError("NOT_FOUND", "The requested JSON file is missing.", { path: relative });
     }
-    if (error2 instanceof LibraryError) throw error2;
+    if (error3 instanceof LibraryError) throw error3;
     throw new LibraryError("INVALID_STATE", "A library JSON file is malformed.", { path: relative });
   }
 }
-async function atomicJson(root, relative, value) {
+async function atomicJson2(root, relative, value) {
   const file = await safePath(root, relative, { mustExist: false });
   await fs2.mkdir(path2.dirname(file), { recursive: true });
   await safePath(root, relative, { mustExist: false });
@@ -391,8 +289,8 @@ async function atomicJson(root, relative, value) {
       try {
         await fs2.rename(temporary, file);
         break;
-      } catch (error2) {
-        if (!["EACCES", "EBUSY", "EPERM"].includes(error2.code) || attempt >= 12) throw error2;
+      } catch (error3) {
+        if (!["EACCES", "EBUSY", "EPERM"].includes(error3.code) || attempt >= 12) throw error3;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
@@ -422,13 +320,27 @@ async function locked(root, action, timeoutMs = 1e4) {
     throw cause;
   }
 }
+var LibraryError, UUID, KINDS, cursorFor;
+var init_safety = __esm({
+  "source/library/safety.mjs"() {
+    init_bridge_core();
+    LibraryError = class extends Error {
+      constructor(code, message, details) {
+        super(message);
+        this.name = "LibraryError";
+        this.code = code;
+        if (details !== void 0) this.details = details;
+      }
+    };
+    UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    KINDS = Object.freeze(["slides", "design", "design-system", "dashboard"]);
+    cursorFor = (root, parts) => within(root, path2.join(root, ...parts));
+  }
+});
 
 // source/library/content.mjs
 import fs3 from "node:fs/promises";
 import path3 from "node:path";
-var INDEX_FILES = Object.freeze({ slides: "project/deck.json", design: "project/canvas.json", "design-system": "project/design-system.json", dashboard: "db/dash/meta.json" });
-var DEFAULT_LIMITS = Object.freeze({ maxFiles: 2048, maxFileBytes: 32 * 1024 * 1024, maxTotalBytes: 128 * 1024 * 1024, maxBundleBytes: 180 * 1024 * 1024 });
-var forbidden = (part) => ["comments.json", "node_modules", "_state", "_trash"].includes(part) || part.startsWith(".") && part !== ".image-slots.state.json";
 function contentPath(kind, relative) {
   relativePath(relative);
   artifactKind(kind);
@@ -460,7 +372,7 @@ async function collectContent(root, kind, limits = DEFAULT_LIMITS, { includeByte
     } else if (info.isFile() && contentPath(kind, relative)) {
       if (info.size > limits.maxFileBytes || total + info.size > limits.maxTotalBytes || found.length >= limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "The artifact exceeds the configured content limits.");
       total += info.size;
-      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), ...includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString("base64"), encoding: "base64" } : {} });
+      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), modifiedAt: info.mtime.toISOString(), ...includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString("base64"), encoding: "base64" } : {} });
     } else if (!info.isFile()) throw new LibraryError("INVALID_CONTENT", "Only regular files are accepted as content.");
   };
   for (const start of kind === "dashboard" ? ["db/files", "db/datasets", "db/dash/meta.json", "db/dash/params.json", "db/dash/look.json", "_blobs"] : ["project"]) await walk(start);
@@ -523,8 +435,6 @@ async function writeContent(root, files) {
     await fs3.writeFile(within(root, absolute), Buffer.from(file.data, "base64"), { flag: "wx" });
   }
 }
-var entry = (file, value) => ({ path: file, encoding: "base64", data: Buffer.from(typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n").toString("base64") });
-var escape = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 function blankContent(kind, title, at2) {
   const marker = { v: 1, at: at2 };
   if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
@@ -537,609 +447,792 @@ function blankContent(kind, title, at2) {
   ];
   return [entry("db/dash/meta.json", { title }), entry("db/dash/params.json", {}), entry("db/files/index.html.json", { text: '<meta name="dash-one-writer"><style>#dash-root{color:#20211f;background:#fafaf8;font-family:Arial,sans-serif}#dash-root .library-blank-title{color:#20211f;font-size:28px;font-weight:500}</style><h1 class="library-blank-title">' + escape(title) + "</h1>" })];
 }
+var INDEX_FILES, DEFAULT_LIMITS, forbidden, entry, escape;
+var init_content = __esm({
+  "source/library/content.mjs"() {
+    init_safety();
+    INDEX_FILES = Object.freeze({ slides: "project/deck.json", design: "project/canvas.json", "design-system": "project/design-system.json", dashboard: "db/dash/meta.json" });
+    DEFAULT_LIMITS = Object.freeze({ maxFiles: 2048, maxFileBytes: 32 * 1024 * 1024, maxTotalBytes: 128 * 1024 * 1024, maxBundleBytes: 180 * 1024 * 1024 });
+    forbidden = (part) => ["comments.json", "node_modules", "_state", "_trash"].includes(part) || part.startsWith(".") && part !== ".image-slots.state.json";
+    entry = (file, value) => ({ path: file, encoding: "base64", data: Buffer.from(typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n").toString("base64") });
+    escape = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  }
+});
 
 // source/library/index.mjs
-var BUNDLE_FORMAT = "codex-design-artifact";
-var catalogFile = "_state/catalog.json";
-var viewFile = "_state/view.json";
-var bindingsFile = "_state/bindings.json";
-var emptyCatalog = () => ({ version: 1, artifacts: {} });
-var libraryTab = () => ({ id: "library", type: "library" });
-var emptyView = () => ({ version: 1, tabs: [libraryTab()], activeTabId: "library" });
-var at = () => (/* @__PURE__ */ new Date()).toISOString();
-var metadata = (value) => {
-  if (value.formatVersion !== void 0 && value.formatVersion !== 1) throw new LibraryError("UNSUPPORTED_FORMAT", "This artifact manifest needs a supported format version.");
-  return {
-    id: artifactId(value.id),
-    kind: artifactKind(value.kind),
-    title: titleText(value.title),
-    formatVersion: 1,
-    createdAt: typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) ? value.createdAt : at(),
-    updatedAt: typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt)) ? value.updatedAt : at(),
-    favorite: value.favorite === true,
-    ...value.sourceArtifactId && UUID.test(value.sourceArtifactId) ? { sourceArtifactId: value.sourceArtifactId } : {},
-    ...typeof value.deletedAt === "string" ? { deletedAt: value.deletedAt } : {}
-  };
-};
-var LibraryStore = class {
-  constructor({ root = path4.join(os.homedir(), ".codex", "CodexDesignLibrary"), isBusy = async () => false, limits = {} } = {}) {
-    if (typeof root !== "string" || !root.trim()) throw new LibraryError("INVALID_PATH", "A library root is required.");
-    if (typeof isBusy !== "function") throw new LibraryError("INVALID_OPTION", "isBusy must be a function.");
-    this.root = path4.resolve(root);
-    this.isBusy = isBusy;
-    this.limits = { ...DEFAULT_LIMITS, ...limits };
-    if (Object.values(this.limits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError("INVALID_OPTION", "Content limits must be positive integers.");
-  }
-  async initialize() {
-    if (!this.ready) this.ready = this._initialize().catch((error2) => {
-      this.ready = null;
-      throw error2;
-    });
-    await this.ready;
-    return this;
-  }
-  async _initialize() {
-    const existing = await statOrNull(this.root);
-    if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) throw new LibraryError("SYMLINK_REFUSED", "The library root must be a real directory.");
-    await fs4.mkdir(this.root, { recursive: true });
-    this.realRoot = await fs4.realpath(this.root);
-    for (const relative of [...KINDS, "_state", "_trash"]) {
-      const directory = await safePath(this.root, relative, { mustExist: false });
-      await fs4.mkdir(directory, { recursive: true });
-      await safePath(this.root, relative, { type: "directory" });
-    }
-    await locked(this.root, async () => {
-      let identity = await readJson2(this.root, "_state/library.json", null);
-      if (!identity) {
-        identity = { version: 1, id: randomUUID3(), createdAt: at() };
-        await atomicJson(this.root, "_state/library.json", identity);
-      }
-      if (identity.version !== 1 || !UUID.test(identity.id)) throw new LibraryError("INVALID_STATE", "The library identity is invalid.");
-      this.libraryId = identity.id;
-      const catalog = await this._catalog();
-      for (const kind of KINDS) {
-        for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
-          if (!UUID.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
-          const relative = `${kind}/${entry2.name}/artifact.json`;
-          if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
-          const manifest = metadata(await readJson2(this.root, relative));
-          if (manifest.id !== entry2.name.toLowerCase() || manifest.kind !== kind) throw new LibraryError("INVALID_MANIFEST", "Artifact directory and identity disagree.");
-          const previous = catalog.artifacts[manifest.id];
-          if (previous && (previous.location === "trash" || previous.kind !== kind) && await statOrNull(await safePath(this.root, this._relative(previous), { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in more than one physical location.");
-          catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
-        }
-      }
-      for (const entry2 of await fs4.readdir(await safePath(this.root, "_trash", { type: "directory" }), { withFileTypes: true })) {
-        if (!UUID.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
-        const relative = `_trash/${entry2.name}/artifact.json`;
-        if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
-        const manifest = metadata(await readJson2(this.root, relative));
-        if (manifest.id !== entry2.name.toLowerCase()) throw new LibraryError("INVALID_MANIFEST", "A recycled artifact has a different directory identity.");
-        const previous = catalog.artifacts[manifest.id];
-        if (previous && previous.location === "active" && await statOrNull(await safePath(this.root, `${previous.kind}/${manifest.id}`, { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in both active storage and trash.");
-        catalog.artifacts[manifest.id] = { ...manifest, location: "trash" };
-      }
-      await this._saveCatalog(catalog);
-      if (!await statOrNull(await safePath(this.root, viewFile, { mustExist: false }))) await atomicJson(this.root, viewFile, emptyView());
-      if (!await statOrNull(await safePath(this.root, bindingsFile, { mustExist: false }))) await atomicJson(this.root, bindingsFile, { version: 1, artifacts: {} });
-    });
-  }
-  async _checkRoot() {
-    await this.initialize();
-    if ((await fs4.lstat(this.root)).isSymbolicLink() || await fs4.realpath(this.root) !== this.realRoot) throw new LibraryError("ROOT_CHANGED", "The library root changed after initialization.");
-  }
-  async _catalog() {
-    const value = await readJson2(this.root, catalogFile, emptyCatalog());
-    if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "The library catalog is invalid.");
-    for (const [id, record] of Object.entries(value.artifacts)) {
-      if (artifactId(id) !== record.id || !["active", "trash"].includes(record.location)) throw new LibraryError("INVALID_STATE", "A catalog identity is invalid.");
-      metadata(record);
-    }
-    return value;
-  }
-  _saveCatalog(catalog) {
-    return atomicJson(this.root, catalogFile, catalog);
-  }
-  _relative(record) {
-    return record.location === "trash" ? `_trash/${record.id}` : `${artifactKind(record.kind)}/${artifactId(record.id)}`;
-  }
-  async _artifactPath(record, mustExist = true) {
-    return safePath(this.root, this._relative(record), { mustExist, type: "directory" });
-  }
-  async _raw(id, { includeDeleted = false } = {}) {
-    id = artifactId(id);
-    const catalog = await this._catalog();
-    const record = catalog.artifacts[id];
-    if (!record || !includeDeleted && record.location === "trash") throw new LibraryError("NOT_FOUND", "No such artifact.");
-    return { record, catalog };
-  }
-  async _inspect(record) {
-    const result = { ...metadata(record), path: path4.join(this.root, ...this._relative(record).split("/")), contentStatus: "ok", deleted: record.location === "trash" };
-    try {
-      const root = await this._artifactPath(record);
-      const manifest = metadata(await readJson2(root, "artifact.json"));
-      if (manifest.id !== record.id || manifest.kind !== record.kind) throw new LibraryError("INVALID_MANIFEST", "The artifact identity changed.");
-      const listed = await collectContent(root, record.kind, this.limits, { includeBytes: false });
-      const needed = /* @__PURE__ */ new Set([INDEX_FILES[record.kind], "project/tokens.json", "db/files/index.html.json"]);
-      const files = [];
-      for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, this.limits.maxFileBytes)).toString("base64") : "" });
-      const native = validateFiles(record.kind, files);
-      Object.assign(result, manifest, { title: native.title });
-    } catch (error2) {
-      result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error2.code) ? "missing" : "invalid";
-      result.contentError = { code: error2.code || "INVALID_CONTENT", message: error2.message };
-    }
-    return result;
-  }
-  async _busy(record) {
-    const result = await this.isBusy(await this._inspect(record));
-    if (result === true || result?.busy) throw new LibraryError("ARTIFACT_BUSY", result?.reason || "This artifact still has an active editor task. No agent was stopped.");
-  }
-  async list({ kind, query = "", favoritesOnly = false, includeDeleted = false } = {}) {
-    await this._checkRoot();
-    if (kind) artifactKind(kind);
-    if (typeof query !== "string" || query.length > 500) throw new LibraryError("INVALID_QUERY", "Search text is too long.");
-    const needle = query.trim().toLocaleLowerCase();
-    const catalog = await this._catalog();
-    const records = [];
-    for (const entry2 of Object.values(catalog.artifacts)) {
-      if (kind && entry2.kind !== kind || !includeDeleted && entry2.location === "trash" || favoritesOnly && !entry2.favorite) continue;
-      const record = await this._inspect(entry2);
-      if (!needle || `${record.title} ${record.kind}`.toLocaleLowerCase().includes(needle)) records.push(record);
-    }
-    return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title));
-  }
-  async get(id, options = {}) {
-    await this._checkRoot();
-    return this._inspect((await this._raw(id, options)).record);
-  }
-  async _stage() {
-    const relative = `_state/staging/${randomUUID3()}`;
-    const absolute = await safePath(this.root, relative, { mustExist: false });
-    await fs4.mkdir(absolute, { recursive: true });
-    await safePath(this.root, relative, { type: "directory" });
-    return { relative, absolute };
-  }
-  async _removeStage(stage) {
-    const absolute = await safePath(this.root, stage.relative, { mustExist: false });
-    within(path4.join(this.root, "_state/staging"), absolute);
-    await fs4.rm(absolute, { recursive: true, force: true });
-  }
-  _retitle(kind, files, title) {
-    return files.map((file) => {
-      if (file.path !== INDEX_FILES[kind]) return file;
-      const value = JSON.parse(Buffer.from(file.data, "base64").toString("utf8"));
-      value.title = title;
-      return { ...file, data: Buffer.from(JSON.stringify(value, null, 2) + "\n").toString("base64") };
-    });
-  }
-  async _create(kind, title, files, extra = {}) {
-    artifactKind(kind);
-    title = titleText(title);
-    files = this._retitle(kind, files, title);
-    validateFiles(kind, files);
-    const manifest = metadata({ id: randomUUID3(), kind, title, createdAt: at(), updatedAt: at(), favorite: false, ...extra });
-    const stage = await this._stage();
-    try {
-      await writeContent(stage.absolute, files);
-      await atomicJson(stage.absolute, "artifact.json", manifest);
-      const destination = await safePath(this.root, `${kind}/${manifest.id}`, { mustExist: false });
-      if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The new identity already exists.");
-      await fs4.rename(stage.absolute, destination);
-      const catalog = await this._catalog();
-      catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
-      await this._saveCatalog(catalog);
-      return this._inspect(catalog.artifacts[manifest.id]);
-    } finally {
-      await this._removeStage(stage);
-    }
-  }
-  async create({ kind, title = `Untitled ${kind}` } = {}) {
-    await this._checkRoot();
-    artifactKind(kind);
-    title = titleText(title);
-    return locked(this.root, () => this._create(kind, title, blankContent(kind, title, at())));
-  }
-  async _updateMetadata(id, update, { touchContentTitle = false } = {}) {
-    const { record, catalog } = await this._raw(id);
-    if (touchContentTitle) await this._busy(record);
-    const root = await this._artifactPath(record);
-    const manifest = metadata(await readJson2(root, "artifact.json"));
-    const next = metadata({ ...manifest, ...update, updatedAt: at() });
-    if (touchContentTitle) {
-      const index = await readJson2(root, INDEX_FILES[record.kind]);
-      index.title = next.title;
-      await atomicJson(root, INDEX_FILES[record.kind], index);
-    }
-    await atomicJson(root, "artifact.json", next);
-    catalog.artifacts[id] = { ...next, location: "active" };
-    await this._saveCatalog(catalog);
-    return this._inspect(catalog.artifacts[id]);
-  }
-  async rename(id, title) {
-    id = artifactId(id);
-    title = titleText(title);
-    await this._checkRoot();
-    return locked(this.root, () => this._updateMetadata(id, { title }, { touchContentTitle: true }));
-  }
-  async setFavorite(id, favorite = true) {
-    id = artifactId(id);
-    if (typeof favorite !== "boolean") throw new LibraryError("INVALID_OPTION", "favorite must be boolean.");
-    await this._checkRoot();
-    return locked(this.root, () => this._updateMetadata(id, { favorite }));
-  }
-  async _export(record) {
-    await this._busy(record);
-    const root = await this._artifactPath(record);
-    const files = await collectContent(root, record.kind, this.limits);
-    const native = validateFiles(record.kind, files);
-    const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native.title, files: files.map(({ path: path11, encoding, data }) => ({ path: path11, encoding, data })) };
-    if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
-    return bundle;
-  }
-  async exportArtifact(id) {
-    await this._checkRoot();
-    return locked(this.root, async () => this._export((await this._raw(id)).record));
-  }
-  async duplicate(id, { title } = {}) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record } = await this._raw(id);
-      const bundle = await this._export(record);
-      return this._create(record.kind, title || bundle.title + " copy", bundle.files, { sourceArtifactId: record.id });
-    });
-  }
-  _bundle(input, kind) {
-    let bundle = input;
-    if (typeof bundle === "string" || Buffer.isBuffer(bundle)) {
-      if (Buffer.byteLength(bundle) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle is too large.");
-      try {
-        bundle = JSON.parse(String(bundle));
-      } catch {
-        throw new LibraryError("INVALID_BUNDLE", "Expected a native library JSON bundle.");
-      }
-    }
-    if (!bundle || bundle.format !== BUNDLE_FORMAT || bundle.version !== 1 || !Array.isArray(bundle.files)) throw new LibraryError("INVALID_BUNDLE", "Unsupported native artifact bundle.");
-    artifactKind(bundle.kind);
-    if (kind && kind !== bundle.kind) throw new LibraryError("INVALID_KIND", "Bundle and selected kind disagree.");
-    if (bundle.files.length > this.limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "Too many files in the native bundle.");
-    const files = [], keys = /* @__PURE__ */ new Set();
-    let total = 0, encoded = 0;
-    for (const file of bundle.files) {
-      const relative = relativePath(file?.path);
-      const key = relative.normalize("NFC").toLowerCase();
-      if (keys.has(key)) throw new LibraryError("INVALID_BUNDLE", "Duplicate or case-colliding bundle path.");
-      keys.add(key);
-      if (!contentPath(bundle.kind, relative)) continue;
-      if (file.encoding !== "base64" || typeof file.data !== "string" || file.data.length > Math.ceil(this.limits.maxFileBytes / 3) * 4 || file.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file.data)) throw new LibraryError("INVALID_BUNDLE", "Invalid or oversized base64 file.");
-      const padding = file.data.indexOf("=");
-      if (padding >= 0 && (padding < file.data.length - 2 || !/^={1,2}$/.test(file.data.slice(padding)))) throw new LibraryError("INVALID_BUNDLE", "Invalid base64 padding.");
-      const bytes = Buffer.from(file.data, "base64");
-      encoded += file.data.length;
-      total += bytes.length;
-      if (bytes.toString("base64") !== file.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
-      files.push({ path: relative, encoding: "base64", data: file.data });
-    }
-    const native = validateFiles(bundle.kind, files);
-    return { kind: bundle.kind, title: native.title, files };
-  }
-  async _source(sourcePath, kind) {
-    if (typeof sourcePath !== "string" || !path4.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
-    const info = await fs4.lstat(sourcePath).catch((error2) => {
-      if (error2.code === "ENOENT") throw new LibraryError("NOT_FOUND", "The import source is missing.");
-      throw error2;
-    });
-    if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The import source cannot be a symbolic link.");
-    if (info.isFile()) return this._bundle(await readBytes(path4.dirname(sourcePath), path4.basename(sourcePath), this.limits.maxBundleBytes), kind);
-    if (!info.isDirectory()) throw new LibraryError("INVALID_CONTENT", "The import source is not a native folder or bundle.");
-    const matches = [];
-    for (const candidate of KINDS) if (await statOrNull(await safePath(sourcePath, INDEX_FILES[candidate], { mustExist: false }))) matches.push(candidate);
-    if (!kind) {
-      if (matches.length !== 1) throw new LibraryError(matches.length ? "AMBIGUOUS_KIND" : "MISSING_CONTENT", "Select one native artifact kind with an existing index.");
-      kind = matches[0];
-    }
-    artifactKind(kind);
-    if (!matches.includes(kind)) throw new LibraryError("MISSING_CONTENT", "The chosen source has no native index for this kind.");
-    const busy = await this.isBusy({ id: null, kind, path: sourcePath });
-    if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
-    const files = await collectContent(sourcePath, kind, this.limits);
-    const native = validateFiles(kind, files);
-    return { kind, title: native.title, files };
-  }
-  async importArtifact({ bundle, sourcePath, kind, title } = {}) {
-    await this._checkRoot();
-    if (bundle === void 0 === (sourcePath === void 0)) throw new LibraryError("INVALID_OPTION", "Provide exactly one native bundle or explicitly chosen source path.");
-    if (kind) artifactKind(kind);
-    if (title !== void 0) titleText(title);
-    return locked(this.root, async () => {
-      const source = bundle === void 0 ? await this._source(sourcePath, kind) : this._bundle(bundle, kind);
-      return this._create(source.kind, title || source.title, source.files);
-    });
-  }
-  async listFiles(id) {
-    await this._checkRoot();
-    const { record } = await this._raw(id);
-    const root = await this._artifactPath(record);
-    return collectContent(root, record.kind, this.limits, { includeBytes: false });
-  }
-  async readFile(id, relative, { encoding = "utf8" } = {}) {
-    await this._checkRoot();
-    const { record } = await this._raw(id);
-    relativePath(relative);
-    if (!contentPath(record.kind, relative)) throw new LibraryError("CONTENT_ONLY", "This route exposes only artwork and material files, not comments, chats, tasks, or runtime bindings.");
-    if (!["utf8", "base64"].includes(encoding)) throw new LibraryError("INVALID_OPTION", "Unsupported file encoding.");
-    const root = await this._artifactPath(record), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
-    if (encoding === "utf8" && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError("BINARY_ENCODING_REQUIRED", "Read binary material using base64.");
-    return { path: relative, contentType: type, bytes: bytes.length, ...encoding === "base64" ? { encoding, data: bytes.toString("base64") } : { text: bytes.toString("utf8") } };
-  }
-  async trash(id) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record, catalog } = await this._raw(id);
-      await this._busy(record);
-      const source = await this._artifactPath(record), destination = await safePath(this.root, `_trash/${record.id}`, { mustExist: false });
-      if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The recycle location already exists.");
-      await fs4.rename(source, destination);
-      const next = metadata({ ...record, deletedAt: at(), updatedAt: at() });
-      await atomicJson(destination, "artifact.json", next);
-      catalog.artifacts[record.id] = { ...next, location: "trash" };
-      await this._saveCatalog(catalog);
-      const view = await this._view(catalog);
-      view.tabs = view.tabs.filter((tab) => tab.id !== record.id);
-      if (view.activeTabId === record.id) view.activeTabId = "library";
-      await atomicJson(this.root, viewFile, view);
-      return this._inspect(catalog.artifacts[record.id]);
-    });
-  }
-  async restore(id) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record, catalog } = await this._raw(id, { includeDeleted: true });
-      if (record.location !== "trash") return this._inspect(record);
-      await this._busy(record);
-      const source = await this._artifactPath(record), destination = await safePath(this.root, `${record.kind}/${record.id}`, { mustExist: false });
-      if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "An active directory already occupies this identity.");
-      await fs4.rename(source, destination);
-      const { deletedAt, ...old } = record;
-      const next = metadata({ ...old, updatedAt: at() });
-      await atomicJson(destination, "artifact.json", next);
-      catalog.artifacts[record.id] = { ...next, location: "active" };
-      await this._saveCatalog(catalog);
-      return this._inspect(catalog.artifacts[record.id]);
-    });
-  }
-  async snapshot(id, { label = "Snapshot" } = {}) {
-    label = titleText(label);
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record } = await this._raw(id), bundle = await this._export(record);
-      const snapshot = { id: randomUUID3(), artifactId: record.id, label, createdAt: at(), bundle };
-      await atomicJson(this.root, `_state/snapshots/${record.id}/${snapshot.id}.json`, snapshot);
-      return this._snapshotSummary(snapshot);
-    });
-  }
-  _snapshotSummary(snapshot) {
-    return { id: snapshot.id, artifactId: snapshot.artifactId, label: snapshot.label, createdAt: snapshot.createdAt, files: snapshot.bundle.files.length, bytes: snapshot.bundle.files.reduce((sum, file) => sum + Buffer.byteLength(file.data, "base64"), 0) };
-  }
-  async listSnapshots(id) {
-    id = artifactId(id);
-    await this._checkRoot();
-    await this._raw(id, { includeDeleted: true });
-    const relative = `_state/snapshots/${id}`, directory = await safePath(this.root, relative, { mustExist: false });
-    if (!await statOrNull(directory)) return [];
-    const result = [];
-    for (const name of await fs4.readdir(directory)) if (/^[0-9a-f-]+\.json$/i.test(name) && UUID.test(name.slice(0, -5))) {
-      const snapshot = await readJson2(this.root, relative + "/" + name);
-      if (snapshot.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
-      this._bundle(snapshot.bundle);
-      result.push(this._snapshotSummary(snapshot));
-    }
-    return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-  async restoreSnapshot(id, snapshotId) {
-    id = artifactId(id);
-    snapshotId = artifactId(snapshotId);
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record, catalog } = await this._raw(id);
-      await this._busy(record);
-      const saved = await readJson2(this.root, `_state/snapshots/${id}/${snapshotId}.json`);
-      if (saved.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
-      const bundle = this._bundle(saved.bundle, record.kind);
-      const root = await this._artifactPath(record), current = await collectContent(root, record.kind, this.limits, { includeBytes: false }), stage = await this._stage();
-      const originalManifest = await readJson2(root, "artifact.json");
-      let manifestWritten = false;
-      const before = path4.join(stage.absolute, "before"), after = path4.join(stage.absolute, "after");
-      await fs4.mkdir(before);
-      await fs4.mkdir(after);
-      await writeContent(after, bundle.files);
-      const moved = [], added = [];
-      try {
-        for (const file of current) {
-          const from = await safePath(root, file.path, { type: "file" }), to = await safePath(before, file.path, { mustExist: false });
-          await fs4.mkdir(path4.dirname(to), { recursive: true });
-          await fs4.rename(from, to);
-          moved.push(file.path);
-        }
-        for (const file of bundle.files) {
-          const from = await safePath(after, file.path, { type: "file" }), to = await safePath(root, file.path, { mustExist: false });
-          if (await statOrNull(to)) throw new LibraryError("CONTENT_CHANGED", "A file changed while restoring a snapshot.");
-          await fs4.mkdir(path4.dirname(to), { recursive: true });
-          await fs4.rename(from, to);
-          added.push(file.path);
-        }
-        const next = metadata({ ...record, title: bundle.title, updatedAt: at() });
-        await atomicJson(root, "artifact.json", next);
-        manifestWritten = true;
-        catalog.artifacts[id] = { ...next, location: "active" };
-        await this._saveCatalog(catalog);
-        return this._inspect(catalog.artifacts[id]);
-      } catch (error2) {
-        for (const relative of added) await fs4.unlink(await safePath(root, relative, { type: "file" }));
-        for (const relative of moved) {
-          const from = await safePath(before, relative, { type: "file" }), to = await safePath(root, relative, { mustExist: false });
-          await fs4.mkdir(path4.dirname(to), { recursive: true });
-          await fs4.rename(from, to);
-        }
-        if (manifestWritten) await atomicJson(root, "artifact.json", originalManifest);
-        throw error2;
-      } finally {
-        await this._removeStage(stage);
-      }
-    });
-  }
-  async scanLegacy() {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const state = await readJson2(this.root, "_state/legacy-imports.json", { version: 1, sources: {} });
-      if (state.version !== 1 || !state.sources) throw new LibraryError("INVALID_STATE", "The legacy registration state is invalid.");
-      const results = [];
-      for (const kind of KINDS) for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
-        if (entry2.name.startsWith(".")) continue;
-        const relative = `${kind}/${entry2.name}`;
-        if (entry2.isSymbolicLink()) {
-          results.push({ kind, path: path4.join(this.root, relative), status: "invalid", code: "SYMLINK_REFUSED" });
-          continue;
-        }
-        if (!entry2.isDirectory()) continue;
-        const source = await safePath(this.root, relative, { type: "directory" });
-        if (await statOrNull(await safePath(source, "artifact.json", { mustExist: false }))) continue;
-        if (state.sources[relative]) {
-          const registered = (await this._catalog()).artifacts[state.sources[relative]];
-          const status = registered ? (await this._inspect(registered)).contentStatus : "missing";
-          results.push({ kind, path: source, status: status === "ok" ? "registered" : status, artifactId: state.sources[relative] });
-          continue;
-        }
-        try {
-          const content = await this._source(source, kind);
-          const imported = await this._create(kind, content.title, content.files);
-          state.sources[relative] = imported.id;
-          await atomicJson(this.root, "_state/legacy-imports.json", state);
-          results.push({ kind, path: source, status: "imported", artifactId: imported.id });
-        } catch (error2) {
-          results.push({ kind, path: source, status: ["MISSING_CONTENT", "NOT_FOUND"].includes(error2.code) ? "missing" : "invalid", code: error2.code || "INVALID_CONTENT", message: error2.message });
-        }
-      }
-      return results;
-    });
-  }
-  async _bindings() {
-    const value = await readJson2(this.root, bindingsFile, { version: 1, artifacts: {} });
-    if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "Chat bindings are invalid.");
-    return value;
-  }
-  async getBinding(id) {
-    id = artifactId(id);
-    await this._checkRoot();
-    await this._raw(id);
-    return structuredClone((await this._bindings()).artifacts[id] || null);
-  }
-  async bindChat(id, { threadId, projectId } = {}) {
-    id = artifactId(id);
-    for (const value of [threadId, ...projectId === void 0 ? [] : [projectId]]) if (typeof value !== "string" || !value.trim() || value.length > 300 || /[\u0000-\u001f\u007f]/.test(value)) throw new LibraryError("INVALID_BINDING", "Use an actual nonempty host identifier.");
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      await this._raw(id);
-      const state = await this._bindings(), previous = state.artifacts[id];
-      if (previous && previous.threadId !== threadId) throw new LibraryError("BINDING_CONFLICT", "This artifact already has a different editing conversation; unlink it explicitly first.");
-      const binding = { artifactId: id, threadId, ...projectId ? { projectId } : {}, boundAt: previous?.boundAt || at(), updatedAt: at() };
-      state.artifacts[id] = binding;
-      await atomicJson(this.root, bindingsFile, state);
-      return binding;
-    });
-  }
-  async unbindChat(id) {
-    id = artifactId(id);
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      await this._raw(id);
-      const state = await this._bindings();
-      delete state.artifacts[id];
-      await atomicJson(this.root, bindingsFile, state);
-      return null;
-    });
-  }
-  async _view(catalog) {
-    const value = await readJson2(this.root, viewFile, emptyView());
-    if (value.version !== 1 || !Array.isArray(value.tabs)) throw new LibraryError("INVALID_STATE", "The saved library view is invalid.");
-    const tabs = [libraryTab()], seen = /* @__PURE__ */ new Set(["library"]);
-    for (const tab of value.tabs) if (tab?.type === "artifact" && typeof tab.artifactId === "string" && UUID.test(tab.artifactId)) {
-      const id = tab.artifactId.toLowerCase();
-      if (!seen.has(id) && catalog.artifacts[id]?.location === "active") {
-        tabs.push({ id, type: "artifact", artifactId: id });
-        seen.add(id);
-      }
-    }
-    return { version: 1, tabs, activeTabId: seen.has(value.activeTabId) ? value.activeTabId : "library" };
-  }
-  async getViewState() {
-    await this._checkRoot();
-    return this._view(await this._catalog());
-  }
-  async _viewUpdate(fn) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const catalog = await this._catalog(), view = await this._view(catalog);
-      await fn(view, catalog);
-      await atomicJson(this.root, viewFile, view);
-      return view;
-    });
-  }
-  async openTab(id) {
-    id = artifactId(id);
-    return this._viewUpdate((view, catalog) => {
-      if (catalog.artifacts[id]?.location !== "active") throw new LibraryError("NOT_FOUND", "No active artifact has this id.");
-      if (!view.tabs.some((tab) => tab.id === id)) view.tabs.push({ id, type: "artifact", artifactId: id });
-      view.activeTabId = id;
-    });
-  }
-  async activateTab(id) {
-    if (id !== "library") id = artifactId(id);
-    return this._viewUpdate((view) => {
-      if (!view.tabs.some((tab) => tab.id === id)) throw new LibraryError("NOT_FOUND", "This tab is not open.");
-      view.activeTabId = id;
-    });
-  }
-  async closeTab(id) {
-    if (id !== "library") id = artifactId(id);
-    return this._viewUpdate((view) => {
-      if (id === "library") return;
-      view.tabs = view.tabs.filter((tab) => tab.id !== id);
-      if (view.activeTabId === id) view.activeTabId = view.tabs.at(-1).id;
-    });
-  }
-  async reorderTabs(ids) {
-    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new LibraryError("INVALID_VIEW", "Expected an ordered list of tab ids.");
-    return this._viewUpdate((view) => {
-      const requested = ids.filter((id) => id !== "library");
-      const current = view.tabs.filter((tab) => tab.type === "artifact");
-      if (new Set(requested).size !== requested.length || requested.length !== current.length || requested.some((id) => !current.some((tab) => tab.id === id))) throw new LibraryError("INVALID_VIEW", "Tab order must contain each open artifact once.");
-      view.tabs = [libraryTab(), ...requested.map((id) => current.find((tab) => tab.id === id))];
-    });
-  }
-};
+import fs4 from "node:fs/promises";
+import os from "node:os";
+import path4 from "node:path";
+import { createHash as createHash2, randomUUID as randomUUID3 } from "node:crypto";
 function createLibraryStore(options) {
   return new LibraryStore(options);
 }
+var BUNDLE_FORMAT, catalogFile, viewFile, bindingsFile, emptyCatalog, libraryTab, emptyView, at, metadata, LibraryStore;
+var init_library = __esm({
+  "source/library/index.mjs"() {
+    init_safety();
+    init_content();
+    BUNDLE_FORMAT = "codex-design-artifact";
+    catalogFile = "_state/catalog.json";
+    viewFile = "_state/view.json";
+    bindingsFile = "_state/bindings.json";
+    emptyCatalog = () => ({ version: 1, artifacts: {} });
+    libraryTab = () => ({ id: "library", type: "library" });
+    emptyView = () => ({ version: 1, tabs: [libraryTab()], activeTabId: "library" });
+    at = () => (/* @__PURE__ */ new Date()).toISOString();
+    metadata = (value) => {
+      if (value.formatVersion !== void 0 && value.formatVersion !== 1) throw new LibraryError("UNSUPPORTED_FORMAT", "This artifact manifest needs a supported format version.");
+      return {
+        id: artifactId(value.id),
+        kind: artifactKind(value.kind),
+        title: titleText(value.title),
+        formatVersion: 1,
+        createdAt: typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) ? value.createdAt : at(),
+        updatedAt: typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt)) ? value.updatedAt : at(),
+        favorite: value.favorite === true,
+        ...value.sourceArtifactId && UUID.test(value.sourceArtifactId) ? { sourceArtifactId: value.sourceArtifactId } : {},
+        ...typeof value.deletedAt === "string" ? { deletedAt: value.deletedAt } : {}
+      };
+    };
+    LibraryStore = class {
+      constructor({ root = path4.join(os.homedir(), ".codex", "CodexDesignLibrary"), isBusy = async () => false, limits = {} } = {}) {
+        if (typeof root !== "string" || !root.trim()) throw new LibraryError("INVALID_PATH", "A library root is required.");
+        if (typeof isBusy !== "function") throw new LibraryError("INVALID_OPTION", "isBusy must be a function.");
+        this.root = path4.resolve(root);
+        this.isBusy = isBusy;
+        this.limits = { ...DEFAULT_LIMITS, ...limits };
+        if (Object.values(this.limits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError("INVALID_OPTION", "Content limits must be positive integers.");
+      }
+      async initialize() {
+        if (!this.ready) this.ready = this._initialize().catch((error3) => {
+          this.ready = null;
+          throw error3;
+        });
+        await this.ready;
+        return this;
+      }
+      async _initialize() {
+        const existing = await statOrNull(this.root);
+        if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) throw new LibraryError("SYMLINK_REFUSED", "The library root must be a real directory.");
+        await fs4.mkdir(this.root, { recursive: true });
+        this.realRoot = await fs4.realpath(this.root);
+        for (const relative of [...KINDS, "_state", "_trash"]) {
+          const directory = await safePath(this.root, relative, { mustExist: false });
+          await fs4.mkdir(directory, { recursive: true });
+          await safePath(this.root, relative, { type: "directory" });
+        }
+        await locked(this.root, async () => {
+          let identity = await readJson2(this.root, "_state/library.json", null);
+          if (!identity) {
+            identity = { version: 1, id: randomUUID3(), createdAt: at() };
+            await atomicJson2(this.root, "_state/library.json", identity);
+          }
+          if (identity.version !== 1 || !UUID.test(identity.id)) throw new LibraryError("INVALID_STATE", "The library identity is invalid.");
+          this.libraryId = identity.id;
+          const catalog = await this._catalog();
+          for (const kind of KINDS) {
+            for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
+              if (!UUID.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
+              const relative = `${kind}/${entry2.name}/artifact.json`;
+              if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
+              const manifest = metadata(await readJson2(this.root, relative));
+              if (manifest.id !== entry2.name.toLowerCase() || manifest.kind !== kind) throw new LibraryError("INVALID_MANIFEST", "Artifact directory and identity disagree.");
+              const previous = catalog.artifacts[manifest.id];
+              if (previous && (previous.location === "trash" || previous.kind !== kind) && await statOrNull(await safePath(this.root, this._relative(previous), { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in more than one physical location.");
+              catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
+            }
+          }
+          for (const entry2 of await fs4.readdir(await safePath(this.root, "_trash", { type: "directory" }), { withFileTypes: true })) {
+            if (!UUID.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
+            const relative = `_trash/${entry2.name}/artifact.json`;
+            if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
+            const manifest = metadata(await readJson2(this.root, relative));
+            if (manifest.id !== entry2.name.toLowerCase()) throw new LibraryError("INVALID_MANIFEST", "A recycled artifact has a different directory identity.");
+            const previous = catalog.artifacts[manifest.id];
+            if (previous && previous.location === "active" && await statOrNull(await safePath(this.root, `${previous.kind}/${manifest.id}`, { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in both active storage and trash.");
+            catalog.artifacts[manifest.id] = { ...manifest, location: "trash" };
+          }
+          await this._saveCatalog(catalog);
+          if (!await statOrNull(await safePath(this.root, viewFile, { mustExist: false }))) await atomicJson2(this.root, viewFile, emptyView());
+          if (!await statOrNull(await safePath(this.root, bindingsFile, { mustExist: false }))) await atomicJson2(this.root, bindingsFile, { version: 1, artifacts: {} });
+        });
+      }
+      async _checkRoot() {
+        await this.initialize();
+        if ((await fs4.lstat(this.root)).isSymbolicLink() || await fs4.realpath(this.root) !== this.realRoot) throw new LibraryError("ROOT_CHANGED", "The library root changed after initialization.");
+      }
+      async _catalog() {
+        const value = await readJson2(this.root, catalogFile, emptyCatalog());
+        if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "The library catalog is invalid.");
+        for (const [id, record] of Object.entries(value.artifacts)) {
+          if (artifactId(id) !== record.id || !["active", "trash"].includes(record.location)) throw new LibraryError("INVALID_STATE", "A catalog identity is invalid.");
+          metadata(record);
+        }
+        return value;
+      }
+      _saveCatalog(catalog) {
+        return atomicJson2(this.root, catalogFile, catalog);
+      }
+      _relative(record) {
+        return record.location === "trash" ? `_trash/${record.id}` : `${artifactKind(record.kind)}/${artifactId(record.id)}`;
+      }
+      async _artifactPath(record, mustExist = true) {
+        return safePath(this.root, this._relative(record), { mustExist, type: "directory" });
+      }
+      async _raw(id, { includeDeleted = false } = {}) {
+        id = artifactId(id);
+        const catalog = await this._catalog();
+        const record = catalog.artifacts[id];
+        if (!record || !includeDeleted && record.location === "trash") throw new LibraryError("NOT_FOUND", "No such artifact.");
+        return { record, catalog };
+      }
+      async _inspect(record) {
+        const result = { ...metadata(record), path: path4.join(this.root, ...this._relative(record).split("/")), contentStatus: "ok", deleted: record.location === "trash" };
+        try {
+          const root = await this._artifactPath(record);
+          const manifest = metadata(await readJson2(root, "artifact.json"));
+          if (manifest.id !== record.id || manifest.kind !== record.kind) throw new LibraryError("INVALID_MANIFEST", "The artifact identity changed.");
+          const listed = await collectContent(root, record.kind, this.limits, { includeBytes: false });
+          const needed = /* @__PURE__ */ new Set([INDEX_FILES[record.kind], "project/tokens.json", "db/files/index.html.json"]);
+          const files = [];
+          for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, this.limits.maxFileBytes)).toString("base64") : "" });
+          const native = validateFiles(record.kind, files);
+          const changedAt = listed.reduce((latest, file) => file.modifiedAt > latest ? file.modifiedAt : latest, manifest.updatedAt);
+          Object.assign(result, manifest, { title: native.title, updatedAt: changedAt });
+        } catch (error3) {
+          result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error3.code) ? "missing" : "invalid";
+          result.contentError = { code: error3.code || "INVALID_CONTENT", message: error3.message };
+        }
+        return result;
+      }
+      async _busy(record) {
+        const result = await this.isBusy(await this._inspect(record));
+        if (result === true || result?.busy) throw new LibraryError("ARTIFACT_BUSY", result?.reason || "This artifact still has an active editor task. No agent was stopped.");
+      }
+      async list({ kind, query = "", favoritesOnly = false, includeDeleted = false } = {}) {
+        await this._checkRoot();
+        if (kind) artifactKind(kind);
+        if (typeof query !== "string" || query.length > 500) throw new LibraryError("INVALID_QUERY", "Search text is too long.");
+        const needle = query.trim().toLocaleLowerCase();
+        const catalog = await this._catalog();
+        const records = [];
+        for (const entry2 of Object.values(catalog.artifacts)) {
+          if (kind && entry2.kind !== kind || !includeDeleted && entry2.location === "trash" || favoritesOnly && !entry2.favorite) continue;
+          const record = await this._inspect(entry2);
+          if (!needle || `${record.title} ${record.kind}`.toLocaleLowerCase().includes(needle)) records.push(record);
+        }
+        return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title));
+      }
+      async get(id, options = {}) {
+        await this._checkRoot();
+        return this._inspect((await this._raw(id, options)).record);
+      }
+      async _stage() {
+        const relative = `_state/staging/${randomUUID3()}`;
+        const absolute = await safePath(this.root, relative, { mustExist: false });
+        await fs4.mkdir(absolute, { recursive: true });
+        await safePath(this.root, relative, { type: "directory" });
+        return { relative, absolute };
+      }
+      async _removeStage(stage) {
+        const absolute = await safePath(this.root, stage.relative, { mustExist: false });
+        within(path4.join(this.root, "_state/staging"), absolute);
+        await fs4.rm(absolute, { recursive: true, force: true });
+      }
+      _retitle(kind, files, title) {
+        return files.map((file) => {
+          if (file.path !== INDEX_FILES[kind]) return file;
+          const value = JSON.parse(Buffer.from(file.data, "base64").toString("utf8"));
+          value.title = title;
+          return { ...file, data: Buffer.from(JSON.stringify(value, null, 2) + "\n").toString("base64") };
+        });
+      }
+      async _create(kind, title, files, extra = {}) {
+        artifactKind(kind);
+        title = titleText(title);
+        files = this._retitle(kind, files, title);
+        validateFiles(kind, files);
+        const manifest = metadata({ id: randomUUID3(), kind, title, createdAt: at(), updatedAt: at(), favorite: false, ...extra });
+        const stage = await this._stage();
+        try {
+          await writeContent(stage.absolute, files);
+          await atomicJson2(stage.absolute, "artifact.json", manifest);
+          const destination = await safePath(this.root, `${kind}/${manifest.id}`, { mustExist: false });
+          if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The new identity already exists.");
+          await fs4.rename(stage.absolute, destination);
+          const catalog = await this._catalog();
+          catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
+          await this._saveCatalog(catalog);
+          return this._inspect(catalog.artifacts[manifest.id]);
+        } finally {
+          await this._removeStage(stage);
+        }
+      }
+      async create({ kind, title = `Untitled ${kind}` } = {}) {
+        await this._checkRoot();
+        artifactKind(kind);
+        title = titleText(title);
+        return locked(this.root, () => this._create(kind, title, blankContent(kind, title, at())));
+      }
+      async _updateMetadata(id, update, { touchContentTitle = false } = {}) {
+        const { record, catalog } = await this._raw(id);
+        if (touchContentTitle) await this._busy(record);
+        const root = await this._artifactPath(record);
+        const manifest = metadata(await readJson2(root, "artifact.json"));
+        const next = metadata({ ...manifest, ...update, updatedAt: at() });
+        if (touchContentTitle) {
+          const index = await readJson2(root, INDEX_FILES[record.kind]);
+          index.title = next.title;
+          await atomicJson2(root, INDEX_FILES[record.kind], index);
+        }
+        await atomicJson2(root, "artifact.json", next);
+        catalog.artifacts[id] = { ...next, location: "active" };
+        await this._saveCatalog(catalog);
+        return this._inspect(catalog.artifacts[id]);
+      }
+      async rename(id, title) {
+        id = artifactId(id);
+        title = titleText(title);
+        await this._checkRoot();
+        return locked(this.root, () => this._updateMetadata(id, { title }, { touchContentTitle: true }));
+      }
+      async setFavorite(id, favorite = true) {
+        id = artifactId(id);
+        if (typeof favorite !== "boolean") throw new LibraryError("INVALID_OPTION", "favorite must be boolean.");
+        await this._checkRoot();
+        return locked(this.root, () => this._updateMetadata(id, { favorite }));
+      }
+      async _export(record) {
+        await this._busy(record);
+        const root = await this._artifactPath(record);
+        const files = await collectContent(root, record.kind, this.limits);
+        const native = validateFiles(record.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
+        if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
+        return bundle;
+      }
+      async exportArtifact(id) {
+        await this._checkRoot();
+        return locked(this.root, async () => this._export((await this._raw(id)).record));
+      }
+      async duplicate(id, { title } = {}) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record } = await this._raw(id);
+          const bundle = await this._export(record);
+          return this._create(record.kind, title || bundle.title + " copy", bundle.files, { sourceArtifactId: record.id });
+        });
+      }
+      _bundle(input, kind) {
+        let bundle = input;
+        if (typeof bundle === "string" || Buffer.isBuffer(bundle)) {
+          if (Buffer.byteLength(bundle) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle is too large.");
+          try {
+            bundle = JSON.parse(String(bundle));
+          } catch {
+            throw new LibraryError("INVALID_BUNDLE", "Expected a native library JSON bundle.");
+          }
+        }
+        if (!bundle || bundle.format !== BUNDLE_FORMAT || bundle.version !== 1 || !Array.isArray(bundle.files)) throw new LibraryError("INVALID_BUNDLE", "Unsupported native artifact bundle.");
+        artifactKind(bundle.kind);
+        if (kind && kind !== bundle.kind) throw new LibraryError("INVALID_KIND", "Bundle and selected kind disagree.");
+        if (bundle.files.length > this.limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "Too many files in the native bundle.");
+        const files = [], keys = /* @__PURE__ */ new Set();
+        let total = 0, encoded = 0;
+        for (const file of bundle.files) {
+          const relative = relativePath(file?.path);
+          const key = relative.normalize("NFC").toLowerCase();
+          if (keys.has(key)) throw new LibraryError("INVALID_BUNDLE", "Duplicate or case-colliding bundle path.");
+          keys.add(key);
+          if (!contentPath(bundle.kind, relative)) continue;
+          if (file.encoding !== "base64" || typeof file.data !== "string" || file.data.length > Math.ceil(this.limits.maxFileBytes / 3) * 4 || file.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file.data)) throw new LibraryError("INVALID_BUNDLE", "Invalid or oversized base64 file.");
+          const padding = file.data.indexOf("=");
+          if (padding >= 0 && (padding < file.data.length - 2 || !/^={1,2}$/.test(file.data.slice(padding)))) throw new LibraryError("INVALID_BUNDLE", "Invalid base64 padding.");
+          const bytes = Buffer.from(file.data, "base64");
+          encoded += file.data.length;
+          total += bytes.length;
+          if (bytes.toString("base64") !== file.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
+          files.push({ path: relative, encoding: "base64", data: file.data });
+        }
+        const native = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native.title, files };
+      }
+      async _source(sourcePath, kind) {
+        if (typeof sourcePath !== "string" || !path4.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
+        const info = await fs4.lstat(sourcePath).catch((error3) => {
+          if (error3.code === "ENOENT") throw new LibraryError("NOT_FOUND", "The import source is missing.");
+          throw error3;
+        });
+        if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The import source cannot be a symbolic link.");
+        if (info.isFile()) return this._bundle(await readBytes(path4.dirname(sourcePath), path4.basename(sourcePath), this.limits.maxBundleBytes), kind);
+        if (!info.isDirectory()) throw new LibraryError("INVALID_CONTENT", "The import source is not a native folder or bundle.");
+        const matches = [];
+        for (const candidate of KINDS) if (await statOrNull(await safePath(sourcePath, INDEX_FILES[candidate], { mustExist: false }))) matches.push(candidate);
+        if (!kind) {
+          if (matches.length !== 1) throw new LibraryError(matches.length ? "AMBIGUOUS_KIND" : "MISSING_CONTENT", "Select one native artifact kind with an existing index.");
+          kind = matches[0];
+        }
+        artifactKind(kind);
+        if (!matches.includes(kind)) throw new LibraryError("MISSING_CONTENT", "The chosen source has no native index for this kind.");
+        const busy = await this.isBusy({ id: null, kind, path: sourcePath });
+        if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
+        const files = await collectContent(sourcePath, kind, this.limits);
+        const native = validateFiles(kind, files);
+        return { kind, title: native.title, files };
+      }
+      async importArtifact({ bundle, sourcePath, kind, title } = {}) {
+        await this._checkRoot();
+        if (bundle === void 0 === (sourcePath === void 0)) throw new LibraryError("INVALID_OPTION", "Provide exactly one native bundle or explicitly chosen source path.");
+        if (kind) artifactKind(kind);
+        if (title !== void 0) titleText(title);
+        return locked(this.root, async () => {
+          const source = bundle === void 0 ? await this._source(sourcePath, kind) : this._bundle(bundle, kind);
+          return this._create(source.kind, title || source.title, source.files);
+        });
+      }
+      async listFiles(id) {
+        await this._checkRoot();
+        const { record } = await this._raw(id);
+        const root = await this._artifactPath(record);
+        return collectContent(root, record.kind, this.limits, { includeBytes: false });
+      }
+      async readFile(id, relative, { encoding = "utf8" } = {}) {
+        await this._checkRoot();
+        const { record } = await this._raw(id);
+        relativePath(relative);
+        if (!contentPath(record.kind, relative)) throw new LibraryError("CONTENT_ONLY", "This route exposes only artwork and material files, not comments, chats, tasks, or runtime bindings.");
+        if (!["utf8", "base64"].includes(encoding)) throw new LibraryError("INVALID_OPTION", "Unsupported file encoding.");
+        const root = await this._artifactPath(record), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
+        if (encoding === "utf8" && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError("BINARY_ENCODING_REQUIRED", "Read binary material using base64.");
+        return {
+          path: relative,
+          contentType: type,
+          bytes: bytes.length,
+          revision: { sha256: createHash2("sha256").update(bytes).digest("hex"), observedAt: at() },
+          ...encoding === "base64" ? { encoding, data: bytes.toString("base64") } : { text: bytes.toString("utf8") }
+        };
+      }
+      async trash(id) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record, catalog } = await this._raw(id);
+          await this._busy(record);
+          const source = await this._artifactPath(record), destination = await safePath(this.root, `_trash/${record.id}`, { mustExist: false });
+          if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The recycle location already exists.");
+          await fs4.rename(source, destination);
+          const next = metadata({ ...record, deletedAt: at(), updatedAt: at() });
+          await atomicJson2(destination, "artifact.json", next);
+          catalog.artifacts[record.id] = { ...next, location: "trash" };
+          await this._saveCatalog(catalog);
+          const view = await this._view(catalog);
+          view.tabs = view.tabs.filter((tab) => tab.id !== record.id);
+          if (view.activeTabId === record.id) view.activeTabId = "library";
+          await atomicJson2(this.root, viewFile, view);
+          return this._inspect(catalog.artifacts[record.id]);
+        });
+      }
+      async restore(id) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record, catalog } = await this._raw(id, { includeDeleted: true });
+          if (record.location !== "trash") return this._inspect(record);
+          await this._busy(record);
+          const source = await this._artifactPath(record), destination = await safePath(this.root, `${record.kind}/${record.id}`, { mustExist: false });
+          if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "An active directory already occupies this identity.");
+          await fs4.rename(source, destination);
+          const { deletedAt, ...old } = record;
+          const next = metadata({ ...old, updatedAt: at() });
+          await atomicJson2(destination, "artifact.json", next);
+          catalog.artifacts[record.id] = { ...next, location: "active" };
+          await this._saveCatalog(catalog);
+          return this._inspect(catalog.artifacts[record.id]);
+        });
+      }
+      async snapshot(id, { label = "Snapshot" } = {}) {
+        label = titleText(label);
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record } = await this._raw(id), bundle = await this._export(record);
+          const snapshot = { id: randomUUID3(), artifactId: record.id, label, createdAt: at(), bundle };
+          await atomicJson2(this.root, `_state/snapshots/${record.id}/${snapshot.id}.json`, snapshot);
+          return this._snapshotSummary(snapshot);
+        });
+      }
+      _snapshotSummary(snapshot) {
+        return { id: snapshot.id, artifactId: snapshot.artifactId, label: snapshot.label, createdAt: snapshot.createdAt, files: snapshot.bundle.files.length, bytes: snapshot.bundle.files.reduce((sum, file) => sum + Buffer.byteLength(file.data, "base64"), 0) };
+      }
+      async listSnapshots(id) {
+        id = artifactId(id);
+        await this._checkRoot();
+        await this._raw(id, { includeDeleted: true });
+        const relative = `_state/snapshots/${id}`, directory = await safePath(this.root, relative, { mustExist: false });
+        if (!await statOrNull(directory)) return [];
+        const result = [];
+        for (const name of await fs4.readdir(directory)) if (/^[0-9a-f-]+\.json$/i.test(name) && UUID.test(name.slice(0, -5))) {
+          const snapshot = await readJson2(this.root, relative + "/" + name);
+          if (snapshot.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
+          this._bundle(snapshot.bundle);
+          result.push(this._snapshotSummary(snapshot));
+        }
+        return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      }
+      async restoreSnapshot(id, snapshotId) {
+        id = artifactId(id);
+        snapshotId = artifactId(snapshotId);
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record, catalog } = await this._raw(id);
+          await this._busy(record);
+          const saved = await readJson2(this.root, `_state/snapshots/${id}/${snapshotId}.json`);
+          if (saved.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
+          const bundle = this._bundle(saved.bundle, record.kind);
+          const root = await this._artifactPath(record), current = await collectContent(root, record.kind, this.limits, { includeBytes: false }), stage = await this._stage();
+          const originalManifest = await readJson2(root, "artifact.json");
+          let manifestWritten = false;
+          const before = path4.join(stage.absolute, "before"), after = path4.join(stage.absolute, "after");
+          await fs4.mkdir(before);
+          await fs4.mkdir(after);
+          await writeContent(after, bundle.files);
+          const moved = [], added = [];
+          try {
+            for (const file of current) {
+              const from = await safePath(root, file.path, { type: "file" }), to = await safePath(before, file.path, { mustExist: false });
+              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.rename(from, to);
+              moved.push(file.path);
+            }
+            for (const file of bundle.files) {
+              const from = await safePath(after, file.path, { type: "file" }), to = await safePath(root, file.path, { mustExist: false });
+              if (await statOrNull(to)) throw new LibraryError("CONTENT_CHANGED", "A file changed while restoring a snapshot.");
+              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.rename(from, to);
+              added.push(file.path);
+            }
+            const next = metadata({ ...record, title: bundle.title, updatedAt: at() });
+            await atomicJson2(root, "artifact.json", next);
+            manifestWritten = true;
+            catalog.artifacts[id] = { ...next, location: "active" };
+            await this._saveCatalog(catalog);
+            return this._inspect(catalog.artifacts[id]);
+          } catch (error3) {
+            for (const relative of added) await fs4.unlink(await safePath(root, relative, { type: "file" }));
+            for (const relative of moved) {
+              const from = await safePath(before, relative, { type: "file" }), to = await safePath(root, relative, { mustExist: false });
+              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.rename(from, to);
+            }
+            if (manifestWritten) await atomicJson2(root, "artifact.json", originalManifest);
+            throw error3;
+          } finally {
+            await this._removeStage(stage);
+          }
+        });
+      }
+      async scanLegacy() {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const state = await readJson2(this.root, "_state/legacy-imports.json", { version: 1, sources: {} });
+          if (state.version !== 1 || !state.sources) throw new LibraryError("INVALID_STATE", "The legacy registration state is invalid.");
+          const results = [];
+          for (const kind of KINDS) for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
+            if (entry2.name.startsWith(".")) continue;
+            const relative = `${kind}/${entry2.name}`;
+            if (entry2.isSymbolicLink()) {
+              results.push({ kind, path: path4.join(this.root, relative), status: "invalid", code: "SYMLINK_REFUSED" });
+              continue;
+            }
+            if (!entry2.isDirectory()) continue;
+            const source = await safePath(this.root, relative, { type: "directory" });
+            if (await statOrNull(await safePath(source, "artifact.json", { mustExist: false }))) continue;
+            if (state.sources[relative]) {
+              const registered = (await this._catalog()).artifacts[state.sources[relative]];
+              const status = registered ? (await this._inspect(registered)).contentStatus : "missing";
+              results.push({ kind, path: source, status: status === "ok" ? "registered" : status, artifactId: state.sources[relative] });
+              continue;
+            }
+            try {
+              const content = await this._source(source, kind);
+              const imported = await this._create(kind, content.title, content.files);
+              state.sources[relative] = imported.id;
+              await atomicJson2(this.root, "_state/legacy-imports.json", state);
+              results.push({ kind, path: source, status: "imported", artifactId: imported.id });
+            } catch (error3) {
+              results.push({ kind, path: source, status: ["MISSING_CONTENT", "NOT_FOUND"].includes(error3.code) ? "missing" : "invalid", code: error3.code || "INVALID_CONTENT", message: error3.message });
+            }
+          }
+          return results;
+        });
+      }
+      async _bindings() {
+        const value = await readJson2(this.root, bindingsFile, { version: 1, artifacts: {} });
+        if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "Chat bindings are invalid.");
+        return value;
+      }
+      async getBinding(id) {
+        id = artifactId(id);
+        await this._checkRoot();
+        await this._raw(id);
+        return structuredClone((await this._bindings()).artifacts[id] || null);
+      }
+      async bindChat(id, { threadId, projectId } = {}) {
+        id = artifactId(id);
+        for (const value of [threadId, ...projectId === void 0 ? [] : [projectId]]) if (typeof value !== "string" || !value.trim() || value.length > 300 || /[\u0000-\u001f\u007f]/.test(value)) throw new LibraryError("INVALID_BINDING", "Use an actual nonempty host identifier.");
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          await this._raw(id);
+          const state = await this._bindings(), previous = state.artifacts[id];
+          if (previous && previous.threadId !== threadId) throw new LibraryError("BINDING_CONFLICT", "This artifact already has a different editing conversation; unlink it explicitly first.");
+          const binding = { artifactId: id, threadId, ...projectId ? { projectId } : {}, boundAt: previous?.boundAt || at(), updatedAt: at() };
+          state.artifacts[id] = binding;
+          await atomicJson2(this.root, bindingsFile, state);
+          return binding;
+        });
+      }
+      async unbindChat(id) {
+        id = artifactId(id);
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          await this._raw(id);
+          const state = await this._bindings();
+          delete state.artifacts[id];
+          await atomicJson2(this.root, bindingsFile, state);
+          return null;
+        });
+      }
+      async _view(catalog) {
+        const value = await readJson2(this.root, viewFile, emptyView());
+        if (value.version !== 1 || !Array.isArray(value.tabs)) throw new LibraryError("INVALID_STATE", "The saved library view is invalid.");
+        const tabs = [libraryTab()], seen = /* @__PURE__ */ new Set(["library"]);
+        for (const tab of value.tabs) if (tab?.type === "artifact" && typeof tab.artifactId === "string" && UUID.test(tab.artifactId)) {
+          const id = tab.artifactId.toLowerCase();
+          if (!seen.has(id) && catalog.artifacts[id]?.location === "active") {
+            tabs.push({ id, type: "artifact", artifactId: id });
+            seen.add(id);
+          }
+        }
+        return { version: 1, tabs, activeTabId: seen.has(value.activeTabId) ? value.activeTabId : "library" };
+      }
+      async getViewState() {
+        await this._checkRoot();
+        return this._view(await this._catalog());
+      }
+      async _viewUpdate(fn) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const catalog = await this._catalog(), view = await this._view(catalog);
+          await fn(view, catalog);
+          await atomicJson2(this.root, viewFile, view);
+          return view;
+        });
+      }
+      async openTab(id) {
+        id = artifactId(id);
+        return this._viewUpdate((view, catalog) => {
+          if (catalog.artifacts[id]?.location !== "active") throw new LibraryError("NOT_FOUND", "No active artifact has this id.");
+          if (!view.tabs.some((tab) => tab.id === id)) view.tabs.push({ id, type: "artifact", artifactId: id });
+          view.activeTabId = id;
+        });
+      }
+      async activateTab(id) {
+        if (id !== "library") id = artifactId(id);
+        return this._viewUpdate((view) => {
+          if (!view.tabs.some((tab) => tab.id === id)) throw new LibraryError("NOT_FOUND", "This tab is not open.");
+          view.activeTabId = id;
+        });
+      }
+      async closeTab(id) {
+        if (id !== "library") id = artifactId(id);
+        return this._viewUpdate((view) => {
+          if (id === "library") return;
+          view.tabs = view.tabs.filter((tab) => tab.id !== id);
+          if (view.activeTabId === id) view.activeTabId = view.tabs.at(-1).id;
+        });
+      }
+      async reorderTabs(ids) {
+        if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new LibraryError("INVALID_VIEW", "Expected an ordered list of tab ids.");
+        return this._viewUpdate((view) => {
+          const requested = ids.filter((id) => id !== "library");
+          const current = view.tabs.filter((tab) => tab.type === "artifact");
+          if (new Set(requested).size !== requested.length || requested.length !== current.length || requested.some((id) => !current.some((tab) => tab.id === id))) throw new LibraryError("INVALID_VIEW", "Tab order must contain each open artifact once.");
+          view.tabs = [libraryTab(), ...requested.map((id) => current.find((tab) => tab.id === id))];
+        });
+      }
+    };
+  }
+});
+
+// source/scripts/worker-core.mjs
+import path5 from "node:path";
+function loadJobs(root) {
+  const state = readJson(path5.join(root, WORKER_JOBS_FILE), { version: 1, jobs: {}, order: [] });
+  if (state.version !== 1 || !state.jobs || typeof state.jobs !== "object" || Array.isArray(state.jobs) || !Array.isArray(state.order)) {
+    throw new BridgeError("INVALID_WORKER_JOBS", "The design worker job journal is invalid; preserve it and inspect it before retrying.");
+  }
+  return state;
+}
+function publicJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    kind: job.event.kind,
+    commentId: job.event.data.id,
+    queuedAt: job.queuedAt,
+    ...job.startedAt ? { startedAt: job.startedAt } : {},
+    ...job.completedAt ? { completedAt: job.completedAt } : {},
+    ...job.repliedAt ? { repliedAt: job.repliedAt } : {},
+    ...job.error ? { error: job.error } : {},
+    ...job.restorePoint ? { restorePoint: job.restorePoint } : {},
+    ...job.ownerThreadId ? { ownerThreadId: job.ownerThreadId } : {}
+  };
+}
+var WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOG_FILE, WORKER_LOCK_FILE, saveJobs;
+var init_worker_core = __esm({
+  "source/scripts/worker-core.mjs"() {
+    init_bridge_core();
+    WORKER_FILE = ".codex-design-worker.json";
+    WORKER_JOBS_FILE = ".codex-design-worker-jobs.json";
+    WORKER_LOG_FILE = ".codex-design-worker.log";
+    WORKER_LOCK_FILE = ".codex-design-worker.lock";
+    saveJobs = (root, state) => atomicJson(path5.join(root, WORKER_JOBS_FILE), state);
+  }
+});
+
+// source/scripts/worker-client.mjs
+import path6 from "node:path";
+function readRegistry(root) {
+  const registry = readJson(registryFile(root));
+  if (registry?.url || registry?.token) throw new BridgeError("LEGACY_WORKER_STATE", "A legacy process-backed worker record remains. Preserve and inspect it before registering a native worker.");
+  if (registry && (registry.version !== 1 || !samePath(registry.root, root))) throw new BridgeError("INVALID_WORKER_REGISTRY", "The native worker registry is invalid.");
+  return registry;
+}
+async function getWorkerStatus(root) {
+  const registry = readRegistry(root);
+  const binding = readJson(path6.join(root, BINDING_FILE));
+  const state = loadJobs(root);
+  const jobs = state.order.map((id) => state.jobs[id]).filter(Boolean).map(publicJob);
+  const counts = Object.fromEntries(["pending", "active", "completed", "failed", "superseded"].map((status) => [status, jobs.filter((job) => job.status === status).length]));
+  const listening = Boolean(registry?.listener && registry.listener.expiresAt > Date.now() && alive(registry.listener.pid));
+  return {
+    mode: "native",
+    running: listening,
+    listening,
+    nativeThreadId: registry?.nativeThreadId ?? null,
+    name: registry?.name ?? null,
+    status: registry?.status ?? "unregistered",
+    originThreadId: binding?.threadId ?? null,
+    needsResume: (counts.pending > 0 || counts.active > 0) && !listening,
+    counts,
+    jobs,
+    note: "Local listener presence is not native agent liveness. The parent checks the real native agent before deciding to resume or replace it.",
+    ...registry?.lastSeenAt ? { lastSeenAt: registry.lastSeenAt } : {},
+    log: path6.join(root, WORKER_LOG_FILE)
+  };
+}
+async function stopWorker(root, { onlyWhenIdle = false } = {}) {
+  return await withJobs(root, async () => {
+    const registry = readRegistry(root);
+    const state = loadJobs(root);
+    if (onlyWhenIdle && Object.values(state.jobs).some((job) => job.status === "active")) {
+      throw new BridgeError("ARTIFACT_BUSY", "An active native design job owns this artwork. Its parent must coordinate ownership before stopping the editor or moving its files.");
+    }
+    if (!registry) return { paused: false, interruptRequired: false, nativeThreadId: null };
+    let active = false;
+    for (const job of Object.values(state.jobs)) if (job.status === "active") {
+      active = true;
+      job.status = "pending";
+      job.pausedAt = now();
+    }
+    registry.status = "paused";
+    registry.pausedAt = now();
+    delete registry.listener;
+    delete registry.activeJobId;
+    saveJobs(root, state);
+    saveRegistry(root, registry);
+    return {
+      paused: true,
+      nativeThreadId: registry.nativeThreadId,
+      interruptRequired: active,
+      note: "This pauses the local listener only. The parent must use native agent tools to interrupt a child that is still editing."
+    };
+  });
+}
+var registryFile, withJobs, saveRegistry, now;
+var init_worker_client = __esm({
+  "source/scripts/worker-client.mjs"() {
+    init_bridge_core();
+    init_worker_core();
+    init_library();
+    registryFile = (root) => path6.join(root, WORKER_FILE);
+    withJobs = (root, action) => withLock(path6.join(root, WORKER_LOCK_FILE), action, { timeoutMs: 1e4, staleMs: 0 });
+    saveRegistry = (root, registry) => atomicJson(registryFile(root), registry);
+    now = () => (/* @__PURE__ */ new Date()).toISOString();
+  }
+});
+
+// source/scripts/design-system-search.mjs
+var init_design_system_search = __esm({
+  "source/scripts/design-system-search.mjs"() {
+  }
+});
+
+// source/scripts/artifact-command.mjs
+async function verifyEditorInstance(state, root, kind) {
+  const fail2 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail2();
+  try {
+    const url = new URL("__codex/editor-session", state.url);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail2();
+    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
+    if (!response.ok) throw fail2();
+    const session = await response.json();
+    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail2();
+    return session;
+  } catch {
+    throw fail2();
+  }
+}
+var init_artifact_command = __esm({
+  "source/scripts/artifact-command.mjs"() {
+    init_bridge_core();
+    init_worker_client();
+    init_design_system_search();
+    init_library();
+    init_safety();
+    init_worker_core();
+  }
+});
+
+// source/scripts/library-preview.mjs
+init_library();
+init_safety();
+import fs7 from "node:fs";
+import path11 from "node:path";
+import { spawn as spawn3 } from "node:child_process";
+import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
 
 // source/server/http-preview.mjs
-import http from "node:http";
-import fs5 from "node:fs/promises";
-import path9 from "node:path";
-import { randomBytes, randomUUID as randomUUID4 } from "node:crypto";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+init_library();
+init_safety();
 init_worker_client();
+import http from "node:http";
+import fs6 from "node:fs/promises";
+import path10 from "node:path";
+import { randomBytes, randomUUID as randomUUID5 } from "node:crypto";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // source/server/service.mjs
 init_bridge_core();
 init_artifact_command();
-import { spawn } from "node:child_process";
-import path8 from "node:path";
+import { spawn as spawn2 } from "node:child_process";
+import { createHash as createHash5 } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path9 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // source/library/thumbnail.mjs
+init_safety();
 import path7 from "node:path";
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var LIMITS = { maxSourceBytes: 512 * 1024, maxAssetBytes: 2 * 1024 * 1024, maxTotalBytes: 4 * 1024 * 1024, maxDocumentBytes: 6 * 1024 * 1024 };
 var escape2 = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 var decode = (value) => String(value).replace(/&(?:#(x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (match, number) => {
@@ -1285,10 +1378,10 @@ async function sanitize(html, base, context, defaults = {}) {
       continue;
     }
     const rendered = [];
-    for (let [attribute, value] of attrs) {
-      if (attribute.startsWith("sc-camel-")) attribute = attribute.slice(9);
-      if (attribute.startsWith("on") || attribute.startsWith("data-") || ["nonce", "srcset", "formaction", "action", "autofocus", "contenteditable"].includes(attribute)) continue;
-      if (["src", "href", "xlink:href", "poster", "background"].includes(attribute)) {
+    for (let [attribute2, value] of attrs) {
+      if (attribute2.startsWith("sc-camel-")) attribute2 = attribute2.slice(9);
+      if (attribute2.startsWith("on") || attribute2.startsWith("data-") || ["nonce", "srcset", "formaction", "action", "autofocus", "contenteditable"].includes(attribute2)) continue;
+      if (["src", "href", "xlink:href", "poster", "background"].includes(attribute2)) {
         if (name === "use" && /^#[A-Za-z_][\w:.-]*$/.test(value)) rendered.push('href="' + escape2(value) + '"');
         else if (["img", "image"].includes(name)) {
           const uri = await context.asset(value, base, "image");
@@ -1296,12 +1389,12 @@ async function sanitize(html, base, context, defaults = {}) {
         }
         continue;
       }
-      if (!ATTRS.has(attribute) || value.length > 65536) continue;
-      if (name === "x-shape" && attribute === "style") continue;
-      if (attribute === "style") value = await sanitizedCss(value, base, context);
+      if (!ATTRS.has(attribute2) || value.length > 65536) continue;
+      if (name === "x-shape" && attribute2 === "style") continue;
+      if (attribute2 === "style") value = await sanitizedCss(value, base, context);
       else if (/url\s*\(/i.test(value)) value = await sanitizedCss(value, base, context);
-      if (attribute === "type" && name === "input" && !["text", "email", "number", "date", "range", "checkbox", "radio", "button"].includes(value)) value = "text";
-      rendered.push((ATTR_NAMES[attribute] || attribute) + '="' + escape2(value) + '"');
+      if (attribute2 === "type" && name === "input" && !["text", "email", "number", "date", "range", "checkbox", "radio", "button"].includes(value)) value = "text";
+      rendered.push((ATTR_NAMES[attribute2] || attribute2) + '="' + escape2(value) + '"');
     }
     if (name === "x-shape") {
       const kind = attrs.get("kind");
@@ -1345,7 +1438,7 @@ function tokenCss(tokens) {
   let css = ":root{" + declarations.join(";") + "}";
   for (const group of tokens.type?.groups || []) for (const style of group.styles || []) if (/^[A-Za-z_][\w-]*$/.test(style.name || "")) {
     const properties = [];
-    for (const [key, attribute] of Object.entries({ fontSize: "font-size", lineHeight: "line-height", fontWeight: "font-weight", letterSpacing: "letter-spacing", textTransform: "text-transform" })) if (safeValue(style[key])) properties.push(attribute + ":" + style[key]);
+    for (const [key, attribute2] of Object.entries({ fontSize: "font-size", lineHeight: "line-height", fontWeight: "font-weight", letterSpacing: "letter-spacing", textTransform: "text-transform" })) if (safeValue(style[key])) properties.push(attribute2 + ":" + style[key]);
     if (/^[A-Za-z_][\w-]*$/.test(group.family || "")) properties.push("font-family:var(--font-" + group.family + ")");
     css += "." + style.name + "{" + properties.join(";") + "}";
   }
@@ -1357,7 +1450,7 @@ async function createArtifactThumbnail(store, id, options = {}) {
   const record = await store.get(id);
   if (record.contentStatus !== "ok") throw new LibraryError(record.contentError?.code || "ARTIFACT_CONTENT_UNAVAILABLE", "Artwork content is unavailable for a real preview.");
   const listed = await store.listFiles(id), files = new Map(listed.map((file) => [file.path, file]));
-  const hash = createHash2("sha256");
+  const hash = createHash3("sha256");
   hash.update(JSON.stringify({ artifactId: record.id, kind: record.kind, title: record.title, files: listed.map((file) => ({ path: file.path, bytes: file.bytes })).sort((a, b) => a.path < b.path ? -1 : 1) }));
   const read = /* @__PURE__ */ new Map(), assets = /* @__PURE__ */ new Map(), visiting = /* @__PURE__ */ new Set(), notes = [];
   let total = 0;
@@ -1412,8 +1505,8 @@ async function createArtifactThumbnail(store, id, options = {}) {
         context.note("A recursive image reference was omitted.");
         return null;
       }
-      const info = files.get(file), mime = info.contentType || "application/octet-stream";
-      if (!(mime.startsWith("image/") || purpose === "style" && mime.startsWith("font/")) || info.bytes > limits.maxAssetBytes || total + info.bytes > limits.maxTotalBytes) {
+      const info = files.get(file), mime2 = info.contentType || "application/octet-stream";
+      if (!(mime2.startsWith("image/") || purpose === "style" && mime2.startsWith("font/")) || info.bytes > limits.maxAssetBytes || total + info.bytes > limits.maxTotalBytes) {
         context.note("An unsupported or large material was omitted.");
         return null;
       }
@@ -1423,8 +1516,8 @@ async function createArtifactThumbnail(store, id, options = {}) {
         total += resource.bytes;
         hash.update(file + "\0" + resource.data);
         let data = resource.data;
-        if (mime === "image/svg+xml") data = Buffer.from(await sanitize(Buffer.from(data, "base64").toString("utf8"), file, context)).toString("base64");
-        const uri = "data:" + mime + ";base64," + data;
+        if (mime2 === "image/svg+xml") data = Buffer.from(await sanitize(Buffer.from(data, "base64").toString("utf8"), file, context)).toString("base64");
+        const uri = "data:" + mime2 + ";base64," + data;
         assets.set(file, uri);
         return uri;
       } finally {
@@ -1493,6 +1586,936 @@ async function createArtifactThumbnail(store, id, options = {}) {
   return { artifactId: record.id, id: record.id, kind: record.kind, title: record.title, revision, cacheKey: record.id + ":" + revision, srcdoc, previewWidth: width, previewHeight: height, fidelity, sourceFile, notes };
 }
 
+// source/server/editor-transport.mjs
+import { randomUUID as randomUUID4 } from "node:crypto";
+
+// source/scripts/base64.mjs
+function isValidBase64(value) {
+  if (typeof value !== "string" || value.length % 4 || /[^A-Za-z0-9+/=]/.test(value)) return false;
+  const padding = value.indexOf("=");
+  return padding < 0 || value.length - padding <= 2 && /^={1,2}$/.test(value.slice(padding));
+}
+
+// source/server/editor-transport.mjs
+var fail = (code, message) => Object.assign(new Error(message), { code });
+var METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
+var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]);
+var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control"];
+var MAX_BODY = 32 * 1024 * 1024;
+var MAX_RESPONSE = 64 * 1024 * 1024;
+function editorRequestUrl(base, relative) {
+  const root = new URL(base);
+  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
+  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
+  const path12 = relative.split(/[?#]/, 1)[0];
+  let decoded;
+  try {
+    decoded = decodeURIComponent(path12);
+  } catch {
+    throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
+  }
+  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  const target = new URL(relative, root);
+  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  return target;
+}
+async function limitedBody(response, limit) {
+  if (!response.body) return Buffer.alloc(0);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.byteLength;
+    if (size > limit) throw fail("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, size);
+}
+function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {}) {
+  const streams = /* @__PURE__ */ new Map();
+  const get = async (id, relative) => {
+    const editor = await editorFor(id);
+    return { editor, url: editorRequestUrl(editor.url, relative) };
+  };
+  const close = (stream) => {
+    stream.closed = true;
+    clearTimeout(stream.expiry);
+    stream.abort.abort();
+    streams.delete(stream.id);
+  };
+  const touch = (stream) => {
+    clearTimeout(stream.expiry);
+    stream.expiry = setTimeout(() => close(stream), idleMs);
+    stream.expiry.unref?.();
+  };
+  const pump = async (stream) => {
+    let buffer = "";
+    const decoder = new TextDecoder();
+    const record = (block) => {
+      const lines = block.split("\n");
+      let event = "message", data = [], id;
+      for (const line of lines) {
+        if (!line || line.startsWith(":")) continue;
+        const separator = line.indexOf(":");
+        const field = separator < 0 ? line : line.slice(0, separator);
+        const value = separator < 0 ? "" : line.slice(separator + 1).replace(/^ /, "");
+        if (field === "event") event = value;
+        else if (field === "data") data.push(value);
+        else if (field === "id") id = value;
+      }
+      if (!data.length) return;
+      stream.events.push({ cursor: ++stream.cursor, event, data: data.join("\n"), ...id === void 0 ? {} : { id } });
+      if (stream.events.length > 128) stream.events.shift();
+      for (const wake of stream.waiters) wake();
+      stream.waiters.clear();
+    };
+    try {
+      for await (const chunk of stream.response.body) {
+        buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
+        if (buffer.length > 4 * 1024 * 1024) throw fail("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
+        let end;
+        while ((end = buffer.indexOf("\n\n")) >= 0) {
+          record(buffer.slice(0, end));
+          buffer = buffer.slice(end + 2);
+        }
+      }
+    } catch (error3) {
+      if (!stream.closed) stream.error = { code: error3.code || "EDITOR_EVENTS_FAILED", message: error3.message };
+    } finally {
+      stream.ended = true;
+      for (const wake of stream.waiters) wake();
+      stream.waiters.clear();
+    }
+  };
+  return {
+    async request(id, request = {}) {
+      const { url } = await get(id, request.path);
+      const method = String(request.method || "GET").toUpperCase();
+      if (!METHODS.has(method)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
+      const headers = new Headers();
+      if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
+      for (const [name, value] of Object.entries(request.headers || {})) {
+        if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+        headers.set(name, value);
+      }
+      headers.set("origin", url.origin);
+      let body;
+      if (request.body !== void 0) {
+        if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+        body = Buffer.from(request.body, "base64");
+        if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+      }
+      const response = await fetcher(url, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
+        await response.body?.cancel();
+        throw fail("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
+      }
+      const bytes = await limitedBody(response, MAX_RESPONSE);
+      return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
+    },
+    async openEvents(id, path12) {
+      const { url } = await get(id, path12);
+      if (!/(?:^|\/)events$/.test(url.pathname)) throw fail("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
+      const abort = new AbortController();
+      let response;
+      const startup = setTimeout(() => abort.abort(), 1e4);
+      try {
+        response = await fetcher(url, { headers: { accept: "text/event-stream", origin: url.origin }, redirect: "error", signal: abort.signal });
+      } finally {
+        clearTimeout(startup);
+      }
+      if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+        abort.abort();
+        throw fail("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
+      }
+      const stream = { id: randomUUID4(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
+      streams.set(stream.id, stream);
+      touch(stream);
+      void pump(stream);
+      return { subscriptionId: stream.id, cursor: 0 };
+    },
+    async pollEvents(id, subscriptionId, cursor = 0) {
+      const stream = streams.get(subscriptionId);
+      if (!stream || stream.artifactId !== id || stream.closed) throw fail("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
+      touch(stream);
+      if (!stream.ended && stream.cursor <= cursor) await new Promise((resolve) => {
+        const wake = () => {
+          clearTimeout(timer);
+          stream.waiters.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, 1e3);
+        stream.waiters.add(wake);
+      });
+      return { events: stream.events.filter((event) => event.cursor > cursor), cursor: stream.cursor, ended: stream.ended, ...stream.error ? { error: stream.error } : {} };
+    },
+    async closeEvents(id, subscriptionId) {
+      const stream = streams.get(subscriptionId);
+      if (stream && stream.artifactId === id) close(stream);
+      return { closed: true };
+    },
+    dispose() {
+      for (const stream of streams.values()) close(stream);
+    }
+  };
+}
+
+// source/server/editor-document.mjs
+import { createHash as createHash4 } from "node:crypto";
+
+// source/scripts/editor-runtime-adapter.mjs
+function repairEditorRuntime(source) {
+  const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
+  const initialize = /\([\w$]+,"initializeSheetMeasurement",\(\)=>([\w$]+)/.exec(source)?.[1];
+  if (hookName && initialize) {
+    const escaped = hookName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hook = new RegExp(`function ${escaped}\\([^)]*\\)\\{(?=let [\\w$]+=[\\w$]+\\.useContext\\([\\w$]+\\.sheetParentContext\\))`);
+    source = source.replace(hook, (match) => `${match}${initialize}();`);
+  }
+  return source.replace(
+    /([\w$]+)\.jsx\(([\w$]+)\.baseFieldsetRoot,\{(?=ref:[\w$]+,"data-cds":"Form",)/g,
+    (match, jsx, registry) => `${jsx}.jsx(${registry}.baseFieldsetRoot,{render:${jsx}.jsx("form",{}),`
+  );
+}
+
+// source/scripts/comment-floating-adapter.mjs
+var identifier = "[\\w$]+";
+function readCommentComponent(source, pattern) {
+  const match = pattern.exec(source);
+  if (!match) return null;
+  let depth = 1, quote = null, escaped = false;
+  const begin = match.index + match[0].length;
+  for (let index = begin; index < source.length; index++) {
+    const character = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = null;
+    } else if (character === '"' || character === "'" || character === "`") quote = character;
+    else if (character === "{") depth++;
+    else if (character === "}" && --depth === 0) return { match, start: match.index, end: index + 1, text: source.slice(match.index, index + 1) };
+  }
+  throw new Error("The packaged comment component could not be read.");
+}
+function adaptFloatingCommentAccess(source) {
+  const root = readCommentComponent(source, /function ([\w$]+)\(\{controller:([\w$]+),modeShortcut:([\w$]+)="C",launcher:([\w$]+)=\{bottom:16\},header:[\w$]+=!1,seats:[\w$]+,pinSide:[\w$]+\}\)\{/);
+  if (!root || root.text.includes("__codexFloatingCommentList")) return source;
+  const split = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,modeShortcut:[\w$]+,panelOpen:[\w$]+,onPanel:[\w$]+\}\)/.exec(source)?.[1];
+  const list = readCommentComponent(source, /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,dark:([\w$]+),top:([\w$]+),onClose:[\w$]+\}\)\{/);
+  const state = /(?:const|let) ([\w$]+)=(?:\(0,)?[\w$]+\.useSyncExternalStore(?:\))?\(/.exec(root.text)?.[1];
+  const dark = /\{dark:([\w$]+),remScale:/.exec(root.text)?.[1];
+  const panel = /\[([\w$]+),([\w$]+)\]=(?:\(0,)?[\w$]+\.useState(?:\))?\(!1\)/.exec(root.text);
+  if (!split || !list || !state || !dark || !panel) throw new Error("The packaged comment controls changed; native floating adaptation was refused.");
+  const controller = root.match[2], shortcut = root.match[3], launcher = root.match[4];
+  let replacements = 0;
+  const floating = root.text.replace(
+    /children:(?:\(0,)?([\w$]+)\.jsx(?:\))?\(([\w$]+),\{variant:"ghost",iconOnly:!0,icon:"Comment",[\s\S]*?onClick:\(\)=>[\w$]+\.setMode\(![\w$]+\.mode\)\}\)/,
+    (match, jsx) => {
+      replacements++;
+      const original = match.slice("children:".length);
+      return `children:globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?(0,${jsx}.jsxs)(${jsx}.Fragment,{children:[(0,${jsx}.jsx)(${split},{controller:${controller},state:${state},modeShortcut:${shortcut}??void 0,panelOpen:${panel[1]},onPanel:${panel[2]}}),${panel[1]}&&(0,${jsx}.jsx)(${list.match[1]},{controller:${controller},state:${state},dark:${dark},top:0,onClose:()=>${panel[2]}(!1),__codexFloatingCommentList:!0,__codexFloatBottom:${launcher}.bottom??16})]}):${original}`;
+    }
+  );
+  if (replacements !== 1) throw new Error("The canonical floating comment launcher was not found.");
+  const listDark = list.match[2], top = list.match[3];
+  let panelStyles = 0;
+  const escapedDark = listDark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedTop = top.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const style = new RegExp(`style:\\{top:${escapedTop},right:(${identifier}),[\\s\\S]*?\\.\\.\\.${identifier}\\(${escapedDark}\\)\\}`);
+  let listText = list.text.replace(/,onClose:([\w$]+)\}\)\{/, ",onClose:$1,__codexFloatingCommentList:__cfx=!1,__codexFloatBottom:__cfb=16}){");
+  listText = listText.replace(style, (match, margin) => {
+    panelStyles++;
+    return match.slice(0, -1) + `,...(__cfx?{position:"absolute",top:"auto",right:0,bottom:"calc(100% + 8px)",maxHeight:\`calc(100dvh - 100% - \${__cfb+${margin}+8}px)\`}:{})}`;
+  });
+  if (panelStyles !== 1) throw new Error("The canonical comment list position was not found.");
+  const changes = [{ ...root, replacement: floating }, { ...list, replacement: listText }].sort((a, b) => b.start - a.start);
+  for (const change of changes) source = source.slice(0, change.start) + change.replacement + source.slice(change.end);
+  return source;
+}
+
+// source/server/editor-document.mjs
+var error = (code, message) => Object.assign(new Error(message), { code });
+var scriptText = (value) => value.replace(/<\/script/gi, "<\\/script");
+var attribute = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+var mime = (value) => ({ woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml", webp: "image/webp", wasm: "application/wasm" })[value.split(".").pop().toLowerCase()] || "application/octet-stream";
+async function replaceAsync2(source, expression, transform) {
+  const matches = [...source.matchAll(expression)];
+  const replacements = await Promise.all(matches.map((match) => transform(match)));
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i];
+    source = source.slice(0, match.index) + replacements[i] + source.slice(match.index + match[0].length);
+  }
+  return source;
+}
+function adaptInlineEditorScript(source, scriptUrl) {
+  source = repairEditorRuntime(source);
+  source = adaptFloatingCommentAccess(source);
+  source = source.replace(/\bwindow\.parent===window\b/g, "(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)");
+  source = source.replace(
+    /function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
+    (match, name, win) => `function ${name}(${win}){return (globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&${win}===globalThis.window)||${win}.parent===${win}?null:{post:`
+  );
+  source = source.replace(
+    /localComments:([\w$]+)=>([\w$]+)\(\{base:\1,toolbar:!0\}\)/g,
+    (match, base, create) => `localComments:${base}=>${create}({base:${base},toolbar:!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__})`
+  );
+  source = source.replace(/(?<![\w$.])(?:[\w$]+\.)?crypto\.randomUUID\(\)/g, (call) => {
+    const crypto = call.slice(0, -".randomUUID()".length);
+    return `((c)=>{if(c.randomUUID)return c.randomUUID();let b=new Uint8Array(16);c.getRandomValues(b);b[6]=b[6]&15|64;b[8]=b[8]&63|128;return Array.from(b,(v,i)=>([4,6,8,10].includes(i)?String.fromCharCode(45):String())+(v+256).toString(16).slice(1)).join(String())})(${crypto})`;
+  });
+  source = source.replace(/\bimport\.meta\.url\b/g, JSON.stringify(scriptUrl));
+  source = source.replace(
+    /new URL\((["'])\.\/\1,([\w$]+)\.location\.href\)\.href/g,
+    (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`
+  );
+  source = source.replace(
+    /new URL\((["'])\.\/\1,location\.href\)\.href/g,
+    (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`
+  );
+  source = source.replace(
+    /([\w$]+)=([\w$]+)\(([\w$]+)\),([\w$]+)=\1\?null:([\w$]+)\.localComments\?\.\(([\w$]+)\)/g,
+    (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`
+  );
+  source = source.replace(
+    /return ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\),\5&&\(\5\.onMessage\(async ([\w$]+)=>\{if\(\6\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(\2,\4\);/g,
+    (match, listen, win, base, client, parent, request, saved, flush) => `return globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match.slice(7)}`
+  );
+  source = source.replace(
+    /new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,
+    (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.language??${match})`
+  );
+  return source;
+}
+async function buildEditorDocument({ baseUrl, fetchLocal, config = {}, maxBytes = 24 * 1024 * 1024 } = {}) {
+  const base = new URL(baseUrl);
+  if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password) {
+    throw error("EDITOR_INVALID_URL", "An authenticated loopback editor session is required.");
+  }
+  if (typeof fetchLocal !== "function") throw new TypeError("A scoped editor fetch function is required.");
+  const virtual = new URL(config.virtualBase || config.baseUrl || "https://codex-design.invalid/");
+  if (virtual.protocol !== "https:" || virtual.hostname !== "codex-design.invalid" || virtual.username || virtual.password) {
+    throw error("EDITOR_INVALID_URL", "The native editor virtual base is invalid.");
+  }
+  let total = 0;
+  const requests = /* @__PURE__ */ new Map();
+  const scripts = /* @__PURE__ */ new Map();
+  const resolveLocal = (value, relative = base) => {
+    const url = new URL(value, relative);
+    if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname) || url.username || url.password || url.hash) {
+      throw error("EDITOR_ASSET_REFUSED", "An editor asset points outside its verified session.");
+    }
+    return url;
+  };
+  const bytes = (value, relative) => {
+    const url = resolveLocal(value, relative);
+    if (!requests.has(url.href)) requests.set(url.href, (async () => {
+      const response = await fetchLocal(url.href);
+      if (!response.ok) throw error("EDITOR_ASSET_FAILED", `An editor asset failed to load (HTTP ${response.status}).`);
+      const length = Number(response.headers?.get?.("content-length"));
+      if (length > maxBytes) throw error("EDITOR_DOCUMENT_TOO_LARGE", "An editor asset exceeds the native document limit.");
+      const buffer = Buffer.from(await response.arrayBuffer());
+      total += buffer.length;
+      if (total > maxBytes) throw error("EDITOR_DOCUMENT_TOO_LARGE", "The native editor document exceeds its content limit.");
+      return buffer;
+    })());
+    return requests.get(url.href);
+  };
+  const dataUrl = async (value, relative) => {
+    const url = resolveLocal(value, relative);
+    const data = await bytes(url.href);
+    return `data:${mime(url.pathname)};base64,${data.toString("base64")}`;
+  };
+  const script = (value, relative, chain = []) => {
+    const url = resolveLocal(value, relative);
+    if (chain.includes(url.href)) throw error("EDITOR_MODULE_CYCLE", "The editor module graph needs a prebuilt native bundle.");
+    if (!scripts.has(url.href)) scripts.set(url.href, (async () => {
+      let code = (await bytes(url.href)).toString("utf8");
+      const virtualScript = new URL(url.pathname.slice(base.pathname.length), virtual).href;
+      code = adaptInlineEditorScript(code, virtualScript);
+      code = await replaceAsync2(code, /\bimport\(\s*(["'])(\.[^"']+)\1\s*\)/g, async (match) => {
+        const dependency = await script(match[2], url, [...chain, url.href]);
+        return `import(${JSON.stringify("data:text/javascript;base64," + Buffer.from(dependency).toString("base64"))})`;
+      });
+      return code;
+    })());
+    return scripts.get(url.href);
+  };
+  const css = async (value, relative) => {
+    const url = resolveLocal(value, relative);
+    let code = (await bytes(url.href)).toString("utf8");
+    code = await replaceAsync2(code, /url\(\s*(["']?)([^"')]+)\1\s*\)/g, async (match) => {
+      if (/^(?:data:|blob:|#)/i.test(match[2])) return match[0];
+      return `url("${await dataUrl(match[2], url)}")`;
+    });
+    return code;
+  };
+  let html = (await bytes(base.href)).toString("utf8");
+  if (!/<head\b[^>]*>/i.test(html)) throw error("EDITOR_INVALID_DOCUMENT", "The editor did not return an HTML document.");
+  html = html.replace("appifact_extra_export_formats:window.parent===window", "appifact_extra_export_formats:true");
+  html = html.replace(/<base\b[^>]*>/gi, "");
+  html = await replaceAsync2(html, /<link\b([^>]*\bhref\s*=\s*(["'])([^"']+)\2[^>]*)>/gi, async (match) => {
+    if (/\brel\s*=\s*(["'])stylesheet\1/i.test(match[1])) return `<style>
+${(await css(match[3], base)).replace(/<\/style/gi, "<\\/style")}
+</style>`;
+    if (/\brel\s*=\s*(["'])(?:modulepreload|preload)\1/i.test(match[1])) return "";
+    return match[0];
+  });
+  html = await replaceAsync2(html, /<script\b([^>]*\bsrc\s*=\s*(["'])([^"']+)\2[^>]*)>\s*<\/script>/gi, async (match) => {
+    const code = await script(match[3], base);
+    const module = /\btype\s*=\s*(["'])module\1/i.test(match[1]);
+    const deferred = !module && /\bdefer\b/i.test(match[1]);
+    const body = deferred ? `if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>{${code}
+},{once:true});}else{${code}
+}` : code;
+    return `<script${module ? ' type="module"' : ""}>
+${scriptText(body)}
+</script>`;
+  });
+  const bootstrap = typeof config.bootstrap === "string" ? config.bootstrap : "";
+  html = html.replace(/<head\b[^>]*>/i, (match) => `${match}
+<meta http-equiv="Content-Security-Policy" content="form-action 'none'">
+<base href="${attribute(virtual.href)}">
+<script>${scriptText(bootstrap)}</script>`);
+  const outputBytes = Buffer.byteLength(html);
+  if (outputBytes > maxBytes) throw error("EDITOR_DOCUMENT_TOO_LARGE", "The assembled native editor exceeds its content limit.");
+  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash4("sha256").update(html).digest("hex"), virtualBase: virtual.href };
+}
+
+// source/scripts/editor-native-transport.js
+function installNativeEditorTransport(configuration, target) {
+  "use strict";
+  target ??= window;
+  const base = new URL(configuration.baseUrl);
+  const channel = configuration.channel;
+  if (target.document) {
+    const host = configuration.hostDepth === 2 ? target.parent.parent : target.parent;
+    let blocked = 0;
+    for (const property of ["document", "codexDesignBridge"]) {
+      try {
+        void host[property];
+      } catch (error3) {
+        if (error3?.name === "SecurityError") blocked++;
+        else throw error3;
+      }
+    }
+    const isolated = blocked === 2;
+    if (!isolated) {
+      target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: "The editor origin is not isolated from its host. Opening was refused." }, "*");
+      throw new DOMException("The editor must remain isolated from its MCP host.", "SecurityError");
+    }
+    target.document.documentElement?.setAttribute("data-codex-parent-isolation", "blocked");
+    target.document.documentElement?.setAttribute("data-codex-editor-origin", target.location?.origin || "null");
+  }
+  const pending = /* @__PURE__ */ new Map();
+  const pendingWrites = /* @__PURE__ */ new Set();
+  const sources = /* @__PURE__ */ new Set();
+  const assetCache = /* @__PURE__ */ new Map();
+  const assetAliases = /* @__PURE__ */ new Map();
+  const assetIds = /* @__PURE__ */ new Set();
+  let assetBytes = 0;
+  if (target.crypto && typeof target.crypto.randomUUID !== "function" && typeof target.crypto.getRandomValues === "function") {
+    const randomUUID6 = () => {
+      const bytes = target.crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = bytes[6] & 15 | 64;
+      bytes[8] = bytes[8] & 63 | 128;
+      return Array.from(bytes, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
+    };
+    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID6, configurable: true });
+  }
+  const originalFetch = target.fetch.bind(target);
+  let sequence = 0;
+  target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId };
+  target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || "system", systemLocale: configuration.locale };
+  const bytesToBase64 = (bytes) => {
+    let value = "";
+    for (let offset = 0; offset < bytes.length; offset += 16384) value += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
+    return target.btoa(value);
+  };
+  const base64ToBytes = (text) => Uint8Array.from(target.atob(text), (character) => character.charCodeAt(0));
+  const rpc = (action, payload = {}, signal) => new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason || new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const requestId = String(++sequence);
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      pending.delete(requestId);
+    };
+    const abort = () => {
+      cleanup();
+      reject(signal.reason || new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(Object.assign(new Error("The artwork editor connection timed out."), { code: "EDITOR_TRANSPORT_TIMEOUT" }));
+    }, 45e3);
+    pending.set(requestId, { resolve: (value) => {
+      cleanup();
+      resolve(value);
+    }, reject: (error3) => {
+      cleanup();
+      reject(error3);
+    } });
+    signal?.addEventListener("abort", abort, { once: true });
+    target.parent.postMessage({ type: "codex-design:editor-request", channel, requestId, action, payload }, "*");
+  });
+  if (target.crypto && !target.crypto.subtle) {
+    Object.defineProperty(target.crypto, "subtle", { configurable: true, value: {
+      async digest(algorithm, data) {
+        if (String(typeof algorithm === "object" ? algorithm?.name : algorithm).toUpperCase() !== "SHA-256") throw new DOMException("Only SHA-256 is available in this isolated editor.", "NotSupportedError");
+        const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
+        if (bytes.byteLength > 32 * 1024 * 1024) throw new DOMException("The digest input exceeds the transfer limit.", "OperationError");
+        const result = await rpc("editor.digest", { algorithm: "SHA-256", base64: bytesToBase64(bytes) });
+        return base64ToBytes(result.base64).buffer;
+      }
+    } });
+  }
+  const downloads = { async save({ filename, data }) {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    try {
+      return await rpc("editor.download", { filename: filename || "download", mimeType: blob.type || "application/octet-stream", base64: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) });
+    } catch (error3) {
+      if (error3.code === "DOWNLOAD_CANCELLED") error3.code = "declined";
+      throw error3;
+    }
+  } };
+  for (const name of ["slidesHost", "designHost", "designSystemHost", "codex", "claude"]) {
+    const current = Object.getOwnPropertyDescriptor(target, name);
+    if (current && !current.configurable) continue;
+    let host = current?.value;
+    const wrap = (value) => {
+      if (!value || typeof value !== "object") return value;
+      const originalUse = typeof value.use === "function" ? value.use.bind(value) : null;
+      value.downloads = downloads;
+      if (originalUse) value.use = (capability, ...args) => capability === "downloads" ? Promise.resolve(downloads) : originalUse(capability, ...args);
+      return value;
+    };
+    host = wrap(host);
+    Object.defineProperty(target, name, { configurable: true, enumerable: true, get: () => host, set: (value) => {
+      host = wrap(value);
+    } });
+  }
+  target.addEventListener("message", (event) => {
+    const message = event.data;
+    if (event.source !== target.parent || message?.channel !== channel) return;
+    if (message.type === "codex-design:editor-flush") {
+      void (async () => {
+        try {
+          target.document?.activeElement?.blur?.();
+          if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === "function") {
+            const saved = await target.__CODEX_DESIGN_EDITOR_FLUSH__();
+            if (saved !== true) throw new Error("The editor still has unsaved changes.");
+          } else {
+            const deadline = Date.now() + 8e3;
+            while (!target.dispatchEvent(new Event("beforeunload", { cancelable: true }))) {
+              if (Date.now() >= deadline) throw new Error("The editor still has unsaved changes.");
+              if (pendingWrites.size) await Promise.all([...pendingWrites]);
+              else await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          }
+          await Promise.all([...pendingWrites]);
+          target.parent.postMessage({ type: "codex-design:editor-flushed", channel, requestId: message.requestId, saved: true }, "*");
+        } catch (error3) {
+          target.parent.postMessage({
+            type: "codex-design:editor-flushed",
+            channel,
+            requestId: message.requestId,
+            saved: false,
+            error: { code: "EDITOR_UNSAVED_CHANGES", message: String(error3.message || error3) }
+          }, "*");
+        }
+      })();
+      return;
+    }
+    if (message.type === "codex-design:host-context-changed") {
+      const root = target.document?.documentElement;
+      const context = message.context;
+      if (!root || !context || typeof context !== "object") return;
+      if (context.theme === "dark" || context.theme === "light") root.setAttribute("data-theme", context.theme);
+      const variables = context.styles?.variables || {};
+      if (typeof variables["--font-sans"] === "string") {
+        root.style.setProperty("--cds-font-sans", variables["--font-sans"]);
+        root.style.setProperty("--cds-font-sans-display", variables["--font-sans"]);
+      }
+      if (typeof variables["--font-mono"] === "string") root.style.setProperty("--cds-font-mono-ui", variables["--font-mono"]);
+      const size = Number.parseFloat(variables["--font-text-md-size"]);
+      if (Number.isFinite(size) && size >= 10 && size <= 32) root.style.setProperty("--cds-rem-scale", String(size / 16));
+      if (typeof context.styles?.css?.fonts === "string") {
+        let style = target.document.getElementById("codex-native-host-fonts");
+        if (!style) {
+          style = target.document.createElement("style");
+          style.id = "codex-native-host-fonts";
+          target.document.head.appendChild(style);
+        }
+        style.textContent = context.styles.css.fonts;
+      }
+      return;
+    }
+    if (message.type !== "codex-design:editor-response") return;
+    const call = pending.get(message.requestId);
+    if (!call) return;
+    message.error ? call.reject(Object.assign(new Error(message.error.message || "The editor request failed."), { code: message.error.code })) : call.resolve(message.result);
+  });
+  const relative = (value) => {
+    const url = new URL(value, base);
+    if (url.origin !== base.origin) return null;
+    if (!url.pathname.startsWith(base.pathname)) {
+      if (!/^\/(?:_api(?:\/|$)|_blob\/|_files\.json$|__comments(?:\/|$)|__deck\/|__design(?:-system)?\/|project\/|db\/)/.test(url.pathname)) return null;
+      return url.pathname.slice(1) + url.search;
+    }
+    return url.pathname.slice(base.pathname.length) + url.search;
+  };
+  const originalAssets = async (text) => {
+    if (!text.includes("data:")) return text;
+    for (const [embedded, reference] of assetAliases) if (text.includes(embedded)) text = text.split(embedded).join(reference);
+    for (const embedded of new Set(text.match(/data:[a-z0-9.+\/-]+;base64,[A-Za-z0-9+/]+={0,2}/gi) || [])) {
+      const base64 = embedded.slice(embedded.indexOf(",") + 1);
+      if (base64.length > 44739244) continue;
+      const digest = await rpc("editor.digest", { algorithm: "SHA-256", base64 });
+      const id = Array.from(base64ToBytes(digest.base64), (value) => (value + 256).toString(16).slice(1)).join("").slice(0, 32);
+      if (assetIds.has(id)) text = text.split(embedded).join("/_blob/" + id);
+    }
+    return text;
+  };
+  const preserveAssetReferences = async (bytes) => {
+    let body;
+    try {
+      body = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      return bytes;
+    }
+    const walk = async (value) => {
+      if (typeof value === "string") return originalAssets(value);
+      if (Array.isArray(value)) return await Promise.all(value.map(walk));
+      if (value && typeof value === "object") for (const key of Object.keys(value)) value[key] = await walk(value[key]);
+      return value;
+    };
+    await walk(body);
+    if (body.files && typeof body.files === "object") for (const [file, content] of Object.entries(body.files)) {
+      if (!/\.(?:html?|css|js|mjs|json|svg|md)$/i.test(file) || typeof content?.base64 !== "string") continue;
+      try {
+        const original = new TextDecoder("utf-8", { fatal: true }).decode(base64ToBytes(content.base64));
+        const restored = await originalAssets(original);
+        if (restored !== original) content.base64 = bytesToBase64(new TextEncoder().encode(restored));
+      } catch {
+      }
+    }
+    return new TextEncoder().encode(JSON.stringify(body));
+  };
+  target.fetch = async (input, init) => {
+    const url = typeof input === "string" || input instanceof URL ? new URL(String(input), base).href : input.url;
+    const path12 = relative(url);
+    if (path12 === null) return originalFetch(input, init);
+    const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
+    const headers = {};
+    for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
+    let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
+    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path12.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
+    const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
+    const responseTask = rpc("editor.request", { request: { path: path12, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
+    const writing = !["GET", "HEAD"].includes(request.method);
+    if (writing) pendingWrites.add(responseTask);
+    let response;
+    try {
+      response = await responseTask;
+    } finally {
+      if (writing) pendingWrites.delete(responseTask);
+    }
+    const result = new Response([101, 204, 205, 304].includes(response.status) || request.method === "HEAD" ? null : base64ToBytes(response.body), { status: response.status, statusText: response.statusText, headers: response.headers });
+    Object.defineProperty(result, "url", { value: url });
+    return result;
+  };
+  target.__CODEX_DESIGN_EDITOR_RESOLVE_ASSET__ = async (reference) => {
+    const id = /(?:^|\/)\_blob\/([0-9a-f]{32})(?:[?#].*)?$/.exec(String(reference))?.[1];
+    if (!id) throw new TypeError("Only artwork upload references can be embedded.");
+    const key = "_blob/" + id;
+    if (!assetCache.has(key)) {
+      const entry2 = { size: 0 };
+      entry2.promise = (async () => {
+        const response = await target.fetch(key);
+        if (!response.ok) throw new Error("The artwork image or font could not be loaded.");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > 32 * 1024 * 1024) throw new Error("The artwork asset exceeds its transfer limit.");
+        const url = "data:" + (response.headers.get("content-type")?.split(";")[0] || "application/octet-stream") + ";base64," + bytesToBase64(bytes);
+        entry2.size = bytes.byteLength;
+        entry2.ready = true;
+        entry2.url = url;
+        assetBytes += entry2.size;
+        assetIds.add(id);
+        assetAliases.set(url, "/_blob/" + id);
+        for (const [oldKey, old] of assetCache) {
+          if (assetCache.size <= 128 && assetBytes <= 64 * 1024 * 1024) break;
+          if (oldKey === key || !old.ready) continue;
+          assetCache.delete(oldKey);
+          assetBytes -= old.size;
+          assetAliases.delete(old.url);
+        }
+        return url;
+      })().catch((error3) => {
+        assetCache.delete(key);
+        throw error3;
+      });
+      assetCache.set(key, entry2);
+    }
+    return assetCache.get(key).promise;
+  };
+  function installPreviewTransport() {
+    let resolveAsset, fetcher, crypto;
+    try {
+      resolveAsset = window.parent.__CODEX_DESIGN_EDITOR_RESOLVE_ASSET__;
+      fetcher = window.parent.fetch.bind(window.parent);
+      crypto = window.parent.crypto;
+    } catch {
+      return;
+    }
+    if (typeof resolveAsset !== "function") return;
+    window.fetch = (input, init) => {
+      const method = String(init?.method || input?.method || "GET").toUpperCase();
+      const url = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
+      if (!["GET", "HEAD"].includes(method) || typeof url !== "string" || !/^(?:blob:|data:|\/?_blob\/[0-9a-f]{32}(?:[?#]|$))/.test(url)) return Promise.reject(new TypeError("A preview can only read its uploaded artwork assets."));
+      return fetcher(input, init);
+    };
+    if (!window.crypto.randomUUID && crypto?.randomUUID) Object.defineProperty(window.crypto, "randomUUID", { value: crypto.randomUUID.bind(crypto), configurable: true });
+    if (!window.crypto.subtle && crypto?.subtle) Object.defineProperty(window.crypto, "subtle", { value: crypto.subtle, configurable: true });
+    const reference = /(?:\/?_blob\/[0-9a-f]{32})/g;
+    const seen = /* @__PURE__ */ new WeakMap();
+    const transform = async (element, attribute2, value) => {
+      if (typeof value !== "string" || !value.includes("_blob/")) return;
+      let state = seen.get(element);
+      if (!state) {
+        state = /* @__PURE__ */ new Map();
+        seen.set(element, state);
+      }
+      if (state.get(attribute2) === value) return;
+      state.set(attribute2, value);
+      try {
+        let next = value;
+        for (const match of new Set(value.match(reference) || [])) next = next.split(match).join(await resolveAsset(match));
+        if (!element.isConnected || state.get(attribute2) !== value) return;
+        if (attribute2 === "textContent") {
+          if (element.textContent === value) element.textContent = next;
+        } else if (element.getAttribute(attribute2) === value) element.setAttribute(attribute2, next);
+      } catch (error3) {
+        console.error("Codex Design could not display an artwork asset.", error3);
+      }
+    };
+    const inspect = (element) => {
+      if (element.nodeType !== 1) return;
+      for (const attribute2 of ["src", "href", "poster", "style", "srcset"]) if (element.hasAttribute(attribute2)) void transform(element, attribute2, element.getAttribute(attribute2));
+      if (element.tagName === "STYLE") void transform(element, "textContent", element.textContent);
+      for (const child of element.querySelectorAll("[src],[href],[poster],[style],[srcset],style")) {
+        for (const attribute2 of ["src", "href", "poster", "style", "srcset"]) if (child.hasAttribute(attribute2)) void transform(child, attribute2, child.getAttribute(attribute2));
+        if (child.tagName === "STYLE") void transform(child, "textContent", child.textContent);
+      }
+    };
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === "attributes") inspect(record.target);
+        else if (record.type === "characterData" && record.target.parentElement?.tagName === "STYLE") inspect(record.target.parentElement);
+        else for (const node of record.addedNodes) inspect(node);
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "href", "poster", "style", "srcset"], characterData: true });
+    inspect(document.documentElement);
+  }
+  const framePrototype = target.HTMLIFrameElement?.prototype;
+  const srcdoc = framePrototype && Object.getOwnPropertyDescriptor(framePrototype, "srcdoc");
+  if (srcdoc?.set && srcdoc.get) {
+    const originals = /* @__PURE__ */ new WeakMap();
+    Object.defineProperty(framePrototype, "srcdoc", {
+      configurable: true,
+      enumerable: srcdoc.enumerable,
+      get() {
+        return originals.has(this) ? originals.get(this) : srcdoc.get.call(this);
+      },
+      set(value) {
+        const source = String(value).replace(/<script data-codex-native-preview-transport>[\s\S]*?<\/script>/gi, "");
+        originals.set(this, source);
+        let preview = source;
+        for (const vendor of configuration.previewVendors || []) {
+          const relative2 = "artifact-type/vendor/" + vendor.file;
+          const url = new URL(relative2, base);
+          for (const path12 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path12).join(vendor.url);
+        }
+        const runtime = "<script data-codex-native-preview-transport>(" + installPreviewTransport.toString() + ")();</script>";
+        srcdoc.set.call(this, /<head\b[^>]*>/i.test(preview) ? preview.replace(/<head\b[^>]*>/i, (head) => head + runtime) : runtime + preview);
+      }
+    });
+    const elementPrototype = target.Element?.prototype;
+    if (elementPrototype) {
+      const setAttribute = elementPrototype.setAttribute;
+      elementPrototype.setAttribute = function(name, value) {
+        if (this instanceof target.HTMLIFrameElement && String(name).toLowerCase() === "srcdoc") {
+          this.srcdoc = value;
+          return;
+        }
+        return setAttribute.call(this, name, value);
+      };
+    }
+  }
+  class EditorEventSource extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSED = 2;
+    CONNECTING = 0;
+    OPEN = 1;
+    CLOSED = 2;
+    readyState = 0;
+    withCredentials = false;
+    onopen = null;
+    onmessage = null;
+    onerror = null;
+    constructor(url) {
+      super();
+      this.url = new URL(String(url), base).href;
+      this.path = relative(this.url);
+      this.controller = new AbortController();
+      if (this.path === null) throw new TypeError("Only events from this artwork editor can be subscribed.");
+      sources.add(this);
+      void this.listen();
+    }
+    emit(type, data) {
+      const event = data === void 0 ? new Event(type) : new MessageEvent(type, { data: data.data, lastEventId: data.id || "", origin: base.origin });
+      this.dispatchEvent(event);
+      this["on" + type]?.(event);
+    }
+    async listen() {
+      try {
+        const opened = await rpc("editor.events.open", { path: this.path }, this.controller.signal);
+        if (this.readyState === 2) {
+          void rpc("editor.events.close", { subscriptionId: opened.subscriptionId }).catch(() => {
+          });
+          return;
+        }
+        this.subscriptionId = opened.subscriptionId;
+        this.readyState = 1;
+        let cursor = opened.cursor;
+        this.emit("open");
+        while (this.readyState !== 2) {
+          const result = await rpc("editor.events.poll", { subscriptionId: this.subscriptionId, cursor }, this.controller.signal);
+          for (const event of result.events || []) this.emit(event.event, event);
+          cursor = result.cursor;
+          if (result.ended || result.error) throw new Error(result.error?.message || "The editor event connection closed.");
+        }
+      } catch {
+        if (this.readyState === 2) return;
+        this.readyState = 2;
+        sources.delete(this);
+        this.emit("error");
+      }
+    }
+    close() {
+      if (this.readyState === 2 && !this.subscriptionId) return;
+      this.readyState = 2;
+      sources.delete(this);
+      this.controller.abort();
+      if (this.subscriptionId) void rpc("editor.events.close", { subscriptionId: this.subscriptionId }).catch(() => {
+      });
+    }
+  }
+  target.EventSource = EditorEventSource;
+  const anchorPrototype = target.HTMLAnchorElement?.prototype;
+  if (anchorPrototype) {
+    const click = anchorPrototype.click;
+    anchorPrototype.click = function() {
+      if (!this.hasAttribute("download") || !/^(?:blob:|data:)/i.test(this.href)) return click.call(this);
+      const filename = this.download || "download";
+      void (async () => {
+        const resource = await originalFetch(this.href);
+        const bytes = new Uint8Array(await resource.arrayBuffer());
+        await rpc("editor.download", { filename, mimeType: resource.headers.get("content-type") || "application/octet-stream", base64: bytesToBase64(bytes) });
+      })().catch((error3) => target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(error3.message || error3).slice(0, 500) }, "*"));
+    };
+  }
+  target.addEventListener("unload", () => {
+    for (const source of sources) source.close();
+  });
+  target.addEventListener("error", (event) => {
+    if (!event.message) return;
+    target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(event.message).slice(0, 500) }, "*");
+  });
+  target.parent.postMessage({ type: "codex-design:editor-transport-ready", channel }, "*");
+  if (target.document && target.MutationObserver) {
+    let ready = false;
+    const observe = () => {
+      if (ready || !target.document.querySelector("[data-cds],#root button,.dash-page")) return;
+      ready = true;
+      observer.disconnect();
+      target.parent.postMessage({ type: "codex-design:editor-app-ready", channel }, "*");
+    };
+    const observer = new target.MutationObserver(observe);
+    observer.observe(target.document.documentElement, { childList: true, subtree: true });
+    observe();
+  }
+}
+
+// source/server/service.mjs
+init_worker_client();
+
+// source/server/editor-lifecycle.mjs
+init_bridge_core();
+import { spawn } from "node:child_process";
+import fs5 from "node:fs";
+import path8 from "node:path";
+var failure = (code, message) => Object.assign(new Error(message), { code });
+async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 15e3 } = {}) {
+  const stateFile = path8.join(record.path, ".artifact-server.json");
+  if (!fs5.existsSync(stateFile)) return { stopped: false };
+  const state = readJson(stateFile);
+  if (!state || state.kind !== record.kind || !samePath(state.root, record.path)) {
+    throw failure("EDITOR_IDENTITY_UNVERIFIED", "The selected artwork editor record is invalid. Its process and files were preserved.");
+  }
+  const cli = path8.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, "stop", record.path], {
+      cwd: pluginRoot,
+      env,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "", stderr = "", finished = false;
+    const finish = (error3, result) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      error3 ? reject(error3) : resolve(result);
+    };
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout = (stdout + chunk).slice(-65536);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = (stderr + chunk).slice(-8e3);
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(failure("EDITOR_STOP_TIMEOUT", "The selected editor did not finish stopping. Artwork files were not moved."));
+    }, timeoutMs);
+    child.once("error", (error3) => finish(failure("EDITOR_STOP_FAILED", error3.message)));
+    child.once("close", (code) => {
+      if (finished) return;
+      if (code !== 0) {
+        let detail2;
+        try {
+          detail2 = JSON.parse(stderr.trim().split(/\r?\n/).at(-1));
+        } catch {
+        }
+        return finish(failure(detail2?.error || "EDITOR_STOP_FAILED", detail2?.message || stderr.trim().slice(-2e3) || `Editor stop exited ${code}.`));
+      }
+      try {
+        const result = JSON.parse(stdout.trim());
+        if (alive(state.pid)) return finish(failure("EDITOR_STOP_FAILED", "The verified editor is still running. Artwork files were not moved."));
+        finish(null, result);
+      } catch {
+        finish(failure("EDITOR_STOP_FAILED", "The selected editor stop returned invalid data. Artwork files were not moved."));
+      }
+    });
+  });
+}
+
 // source/server/contract.mjs
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
 var READ_ACTIONS = Object.freeze(["library.list", "library.get", "view.get", "conversation.get", "reference.get", "reference.readFile"]);
@@ -1514,29 +2537,35 @@ var ACTIONS = Object.freeze([
   "view.activateTab",
   "view.closeTab",
   "view.reorderTabs",
-  "editor.open"
+  "editor.open",
+  "editor.document",
+  "editor.request",
+  "editor.digest",
+  "editor.events.open",
+  "editor.events.poll",
+  "editor.events.close"
 ]);
 var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 var referenceUri = (id) => `codex-design://artifacts/${encodeURIComponent(id)}/reference`;
 var fileUri = (id, relative) => `codex-design://artifacts/${encodeURIComponent(id)}/files/${encodeURIComponent(relative)}`;
 
 // source/server/service.mjs
-var failure = (code, message) => Object.assign(new Error(message), { code });
+var failure2 = (code, message) => Object.assign(new Error(message), { code });
 var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function idOf(value) {
-  if (typeof value !== "string" || !UUID2.test(value)) throw failure("INVALID_ID", "An artifact UUID is required.");
+  if (typeof value !== "string" || !UUID2.test(value)) throw failure2("INVALID_ID", "An artifact UUID is required.");
   return value.toLowerCase();
 }
 function titleOf(value) {
-  if (typeof value !== "string" || !value.trim() || value.length > 200) throw failure("INVALID_TITLE", "Provide a title of at most 200 characters.");
+  if (typeof value !== "string" || !value.trim() || value.length > 200) throw failure2("INVALID_TITLE", "Provide a title of at most 200 characters.");
   return value.trim();
 }
 function kindOf(value) {
-  if (!KINDS2.includes(value)) throw failure("INVALID_KIND", "Unsupported artifact kind.");
+  if (!KINDS2.includes(value)) throw failure2("INVALID_KIND", "Unsupported artifact kind.");
   return value;
 }
 function relativeOf(value) {
-  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path8.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
+  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path9.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
   return value;
 }
 var capabilityState = () => ({
@@ -1547,10 +2576,10 @@ var capabilityState = () => ({
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
 async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 3e4 } = {}) {
-  const current = readJson(path8.join(record.path, ".artifact-server.json"));
+  const current = readJson(path9.join(record.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record.path, record.kind);
-    const binding = readJson(path8.join(record.path, ".codex-design-bridge.json"));
+    const binding = readJson(path9.join(record.path, ".codex-design-bridge.json"));
     return {
       url: current.url,
       artifactId: record.id,
@@ -1561,9 +2590,9 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     };
   }
   const skill = `codex-${record.kind}`;
-  const cli = path8.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
+  const cli = path9.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, "open", record.path, "--delivery", "native"], {
+    const child = spawn2(process.execPath, [cli, "open", record.path, "--delivery", "native"], {
       cwd: record.path,
       env,
       shell: false,
@@ -1571,12 +2600,12 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "", stderr = "", settled = false, timedOut = false;
-    const finish = (error2, result) => {
+    const finish = (error3, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(hardTimer);
-      error2 ? reject(error2) : resolve(result);
+      error3 ? reject(error3) : resolve(result);
     };
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -1592,46 +2621,55 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     }, timeoutMs);
     const hardTimer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(failure("EDITOR_TIMEOUT", "The local editor did not finish starting."));
+      finish(failure2("EDITOR_TIMEOUT", "The local editor did not finish starting."));
       child.stdout.destroy();
       child.stderr.destroy();
       child.unref();
     }, timeoutMs + 1e3);
-    child.once("error", (error2) => finish(failure("EDITOR_START_FAILED", error2.message)));
+    child.once("error", (error3) => finish(failure2("EDITOR_START_FAILED", error3.message)));
     child.once("close", (code) => {
-      if (timedOut) return finish(failure("EDITOR_TIMEOUT", "The local editor did not finish starting."));
-      if (code !== 0) return finish(failure("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
+      if (timedOut) return finish(failure2("EDITOR_TIMEOUT", "The local editor did not finish starting."));
+      if (code !== 0) return finish(failure2("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
       let result;
       try {
         result = JSON.parse(stdout.trim());
       } catch {
-        return finish(failure("EDITOR_INVALID_RESPONSE", "The local editor returned invalid startup data."));
+        return finish(failure2("EDITOR_INVALID_RESPONSE", "The local editor returned invalid startup data."));
       }
       let url;
       try {
         url = new URL(result.url);
       } catch {
-        return finish(failure("EDITOR_INVALID_RESPONSE", "The local editor did not return a URL."));
+        return finish(failure2("EDITOR_INVALID_RESPONSE", "The local editor did not return a URL."));
       }
       if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) || url.username || url.password) {
-        return finish(failure("EDITOR_INVALID_RESPONSE", "Only a local editor URL is accepted."));
+        return finish(failure2("EDITOR_INVALID_RESPONSE", "Only a local editor URL is accepted."));
       }
       finish(null, { url: url.href, artifactId: record.id, kind: record.kind, delivery: "native", nativeConversationBound: false });
     });
   });
 }
-function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", import.meta.url)), editorOpen = openLocalEditor } = {}) {
+function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
   if (!store) throw new TypeError("A LibraryStore is required.");
   const opening = /* @__PURE__ */ new Map();
+  const trashing = /* @__PURE__ */ new Set();
   const requireRecord = async (id) => {
     const record = await store.get(idOf(id));
-    if (!record || record.deletedAt) throw failure("ARTIFACT_UNAVAILABLE", "The artifact is missing or in the trash.");
+    if (!record || record.deletedAt) throw failure2("ARTIFACT_UNAVAILABLE", "The artifact is missing or in the trash.");
     return record;
   };
   const initialize = async () => {
     await store.initialize();
     return store;
   };
+  const editorFor = async (id) => {
+    const record = await requireRecord(id);
+    if (trashing.has(record.id)) throw failure2("ARTIFACT_BUSY", "This artwork is being moved to the trash.");
+    if (record.contentStatus !== "ok") throw failure2("ARTIFACT_CONTENT_UNAVAILABLE", "Missing or invalid artifact content cannot open as a blank replacement.");
+    if (!opening.has(record.id)) opening.set(record.id, Promise.resolve().then(() => editorOpen(record, { pluginRoot })).finally(() => opening.delete(record.id)));
+    return await opening.get(record.id);
+  };
+  const transport = createEditorTransport({ editorFor });
   const reference = async (id) => {
     await initialize();
     const artifact = await requireRecord(id);
@@ -1664,14 +2702,14 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
     async readReferenceFile(id, relative, encoding = "utf8") {
       await initialize();
       await requireRecord(id);
-      if (!["utf8", "base64"].includes(encoding)) throw failure("INVALID_ENCODING", "Choose utf8 or base64.");
+      if (!["utf8", "base64"].includes(encoding)) throw failure2("INVALID_ENCODING", "Choose utf8 or base64.");
       return await store.readFile(idOf(id), relativeOf(relative), { encoding });
     },
     async invoke(action, payload = {}) {
       await initialize();
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw failure("INVALID_ARGUMENTS", "An action payload must be an object.");
-      if (action === "conversation.send") throw failure(UNSUPPORTED_CHAT_CODE, "The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.");
-      if (!ACTIONS.includes(action)) throw failure("UNKNOWN_ACTION", "Unsupported library action.");
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw failure2("INVALID_ARGUMENTS", "An action payload must be an object.");
+      if (action === "conversation.send") throw failure2(UNSUPPORTED_CHAT_CODE, "The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.");
+      if (!ACTIONS.includes(action)) throw failure2("UNKNOWN_ACTION", "Unsupported library action.");
       switch (action) {
         case "library.list":
           return await store.list({ kind: payload.kind === void 0 ? void 0 : kindOf(payload.kind), query: typeof payload.query === "string" ? payload.query.slice(0, 200) : "", favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
@@ -1684,16 +2722,28 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
         case "library.rename":
           return await store.rename(idOf(payload.id), titleOf(payload.title));
         case "library.setFavorite":
-          if (typeof payload.favorite !== "boolean") throw failure("INVALID_ARGUMENTS", "favorite must be a boolean.");
+          if (typeof payload.favorite !== "boolean") throw failure2("INVALID_ARGUMENTS", "favorite must be a boolean.");
           return await store.setFavorite(idOf(payload.id), payload.favorite);
         case "library.duplicate":
           return await store.duplicate(idOf(payload.id), { ...payload.title === void 0 ? {} : { title: titleOf(payload.title) } });
-        case "library.trash":
-          return await store.trash(idOf(payload.id));
+        case "library.trash": {
+          const id = idOf(payload.id);
+          if (trashing.has(id)) throw failure2("ARTIFACT_BUSY", "This artwork is already being moved to the trash.");
+          trashing.add(id);
+          try {
+            const record = await requireRecord(id);
+            if (opening.has(id)) await opening.get(id);
+            await stopWorker(record.path, { onlyWhenIdle: true });
+            await editorStop(record, { pluginRoot });
+            return await store.trash(id);
+          } finally {
+            trashing.delete(id);
+          }
+        }
         case "library.restore":
           return await store.restore(idOf(payload.id));
         case "library.snapshot":
-          return await store.snapshot(idOf(payload.id));
+          return await store.snapshot(idOf(payload.id), payload.label === void 0 ? {} : { label: titleOf(payload.label) });
         case "library.listSnapshots":
           return await store.listSnapshots(idOf(payload.id));
         case "library.restoreSnapshot":
@@ -1702,7 +2752,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
           return await store.exportArtifact(idOf(payload.id));
         case "library.importArtifact": {
           if (!payload.bundle || typeof payload.bundle !== "object" || Array.isArray(payload.bundle) || Object.hasOwn(payload, "sourcePath")) {
-            throw failure("INVALID_IMPORT", "Choose a native artwork package; browser calls cannot import an arbitrary local path.");
+            throw failure2("INVALID_IMPORT", "Choose a native artwork package; browser calls cannot import an arbitrary local path.");
           }
           return await store.importArtifact({ bundle: payload.bundle, ...payload.title === void 0 ? {} : { title: titleOf(payload.title) } });
         }
@@ -1715,14 +2765,61 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
         case "view.closeTab":
           return await store.closeTab(payload.id === "library" ? "library" : idOf(payload.id));
         case "view.reorderTabs":
-          if (!Array.isArray(payload.ids)) throw failure("INVALID_ARGUMENTS", "ids must be an array.");
+          if (!Array.isArray(payload.ids)) throw failure2("INVALID_ARGUMENTS", "ids must be an array.");
           return await store.reorderTabs(payload.ids.map((id) => id === "library" ? "library" : idOf(id)));
-        case "editor.open": {
-          const record = await requireRecord(payload.id);
-          if (record.contentStatus !== "ok") throw failure("ARTIFACT_CONTENT_UNAVAILABLE", "Missing or invalid artifact content cannot open as a blank replacement.");
-          if (!opening.has(record.id)) opening.set(record.id, Promise.resolve().then(() => editorOpen(record, { pluginRoot })).finally(() => opening.delete(record.id)));
-          return await opening.get(record.id);
+        case "editor.open":
+          return await editorFor(payload.id);
+        case "editor.document": {
+          const id = idOf(payload.id);
+          if (typeof payload.channel !== "string" || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure2("INVALID_EDITOR_REQUEST", "A unique editor channel is required.");
+          const language = /^zh(?:-|$)/i.test(String(payload.language)) ? "zh" : "en";
+          const editor = await editorFor(id);
+          const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
+          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };
+          if (editor.kind === "design-system") {
+            configuration.previewVendors = await Promise.all([
+              ["react.production.min.js", "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"],
+              ["react-dom.production.min.js", "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"]
+            ].map(async ([file, expected]) => {
+              const bytes = await readFile(path9.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
+              if (bytes.length > 256 * 1024 || createHash5("sha256").update(bytes).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
+              return { file, url: "data:text/javascript;base64," + bytes.toString("base64") };
+            }));
+          }
+          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, "\\u003c")});`;
+          const root = new URL(editor.url);
+          const fetchLocal = async (value) => {
+            const url = new URL(String(value));
+            if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) throw failure2("INVALID_EDITOR_REQUEST", "Editor assets must stay inside their artwork session.");
+            const relative = url.pathname.slice(root.pathname.length);
+            editorRequestUrl(root.href, relative + url.search);
+            let asset;
+            if (!relative) asset = path9.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
+            else if (relative === "__codex/annotations.js") asset = path9.join(pluginRoot, "scripts/browser-annotations.js");
+            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
+              asset = path9.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
+            } else throw failure2("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
+            const bytes = await readFile(asset);
+            return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
+          };
+          const document2 = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap } });
+          return { ...editor, ...document2, artifactId: id, channel: payload.channel, transport: "mcp" };
         }
+        case "editor.request":
+          return await transport.request(idOf(payload.id), payload.request);
+        case "editor.digest": {
+          await requireRecord(payload.id);
+          if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase64(payload.base64)) throw failure2("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");
+          const bytes = Buffer.from(payload.base64, "base64");
+          if (bytes.length > 32 * 1024 * 1024) throw failure2("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
+          return { base64: createHash5("sha256").update(bytes).digest("base64") };
+        }
+        case "editor.events.open":
+          return await transport.openEvents(idOf(payload.id), payload.path);
+        case "editor.events.poll":
+          return await transport.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
+        case "editor.events.close":
+          return await transport.closeEvents(idOf(payload.id), payload.subscriptionId);
         case "conversation.get": {
           const record = await requireRecord(payload.id);
           return {
@@ -1748,7 +2845,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
 // source/server/http-preview.mjs
 var PREVIEW_STATE = "_state/library-preview.json";
 var KIND = "codex-design-library-preview";
-var error = (code, message) => Object.assign(new Error(message), { code });
+var error2 = (code, message) => Object.assign(new Error(message), { code });
 var alive2 = (pid) => {
   try {
     process.kill(pid, 0);
@@ -1758,7 +2855,7 @@ var alive2 = (pid) => {
   }
 };
 var detail = (cause) => ({ code: cause.code || "PREVIEW_ERROR", message: String(cause.message || cause).slice(0, 2e3) });
-var samePath2 = (a, b) => process.platform === "win32" ? path9.resolve(a).toLowerCase() === path9.resolve(b).toLowerCase() : path9.resolve(a) === path9.resolve(b);
+var samePath2 = (a, b) => process.platform === "win32" ? path10.resolve(a).toLowerCase() === path10.resolve(b).toLowerCase() : path10.resolve(a) === path10.resolve(b);
 async function previewNativeActivity(record) {
   try {
     const status = await getWorkerStatus(record.path);
@@ -1768,18 +2865,18 @@ async function previewNativeActivity(record) {
   }
 }
 function verifiedState(state, root) {
-  if (!state || state.version !== 1 || state.kind !== KIND || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state.token) || typeof state.instanceId !== "string" || !samePath2(state.root, root)) throw error("INVALID_PREVIEW_STATE", "The preview record cannot identify this library.");
+  if (!state || state.version !== 1 || state.kind !== KIND || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state.token) || typeof state.instanceId !== "string" || !samePath2(state.root, root)) throw error2("INVALID_PREVIEW_STATE", "The preview record cannot identify this library.");
   let url;
   try {
     url = new URL(state.url);
   } catch {
-    throw error("INVALID_PREVIEW_STATE", "The preview URL is invalid.");
+    throw error2("INVALID_PREVIEW_STATE", "The preview URL is invalid.");
   }
-  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.username || url.password || url.pathname !== `/${state.token}/` || !url.port) throw error("INVALID_PREVIEW_STATE", "Only the recorded loopback preview URL is accepted.");
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.username || url.password || url.pathname !== `/${state.token}/` || !url.port) throw error2("INVALID_PREVIEW_STATE", "Only the recorded loopback preview URL is accepted.");
   return url;
 }
 async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutMs = 2e3 } = {}) {
-  root = path9.resolve(root);
+  root = path10.resolve(root);
   if (!await statOrNull(root)) return { running: false, root };
   const state = await readJson2(root, PREVIEW_STATE, null);
   if (!state) return { running: false, root };
@@ -1788,10 +2885,10 @@ async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutM
   try {
     const response = await fetch(new URL("session", url), { redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
     const session = response.ok ? await response.json() : null;
-    if (!session || session.kind !== KIND || session.pid !== state.pid || session.instanceId !== state.instanceId || !samePath2(session.root, root)) throw error("PREVIEW_IDENTITY_UNVERIFIED", "A live PID did not confirm this preview identity.");
+    if (!session || session.kind !== KIND || session.pid !== state.pid || session.instanceId !== state.instanceId || !samePath2(session.root, root)) throw error2("PREVIEW_IDENTITY_UNVERIFIED", "A live PID did not confirm this preview identity.");
     return { running: true, root, url: state.url, pid: state.pid, instanceId: state.instanceId, state };
   } catch {
-    throw error("PREVIEW_IDENTITY_UNVERIFIED", "The recorded live process did not confirm this library preview. No process was stopped.");
+    throw error2("PREVIEW_IDENTITY_UNVERIFIED", "The recorded live process did not confirm this library preview. No process was stopped.");
   }
 }
 async function stopLibraryPreview(options = {}) {
@@ -1800,7 +2897,7 @@ async function stopLibraryPreview(options = {}) {
   const url = new URL(status.url);
   const response = await fetch(new URL("shutdown", url), { method: "POST", redirect: "error", signal: AbortSignal.timeout(5e3), headers: { Origin: url.origin, "Content-Type": "application/json" }, body: JSON.stringify({ instanceId: status.instanceId }) });
   const result = await response.json();
-  if (!response.ok || result.instanceId !== status.instanceId || result.stopping !== true) throw error("PREVIEW_STOP_REFUSED", "The preview did not accept its authenticated shutdown.");
+  if (!response.ok || result.instanceId !== status.instanceId || result.stopping !== true) throw error2("PREVIEW_STOP_REFUSED", "The preview did not accept its authenticated shutdown.");
   const deadline = Date.now() + 5e3;
   while (Date.now() < deadline) {
     const recorded = await readJson2(status.root, PREVIEW_STATE, null);
@@ -1810,21 +2907,21 @@ async function stopLibraryPreview(options = {}) {
   return { stopped: false, stopping: true, root: status.root, pid: status.pid };
 }
 function builtHtml(html, endpoint, eventsUrl, nonce) {
-  if (typeof html !== "string" || Buffer.byteLength(html) > 8 * 1024 * 1024 || !/<head\b/i.test(html)) throw error("INVALID_PREVIEW_UI", "The built UI is missing or exceeds its size limit.");
+  if (typeof html !== "string" || Buffer.byteLength(html) > 8 * 1024 * 1024 || !/<head\b/i.test(html)) throw error2("INVALID_PREVIEW_UI", "The built UI is missing or exceeds its size limit.");
   const scripts = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
-  for (const match of html.matchAll(scripts)) if (/\bsrc\s*=/i.test(match[1])) throw error("UI_NOT_BUNDLED", "Use a published or staged plugin whose ui/index.html has inline assets.");
-  if (/<link\b[^>]*\brel\s*=\s*["']stylesheet["']/i.test(html.replace(scripts, ""))) throw error("UI_NOT_BUNDLED", "Use a published or staged plugin whose ui/index.html has inline assets.");
+  for (const match of html.matchAll(scripts)) if (/\bsrc\s*=/i.test(match[1])) throw error2("UI_NOT_BUNDLED", "Use a published or staged plugin whose ui/index.html has inline assets.");
+  if (/<link\b[^>]*\brel\s*=\s*["']stylesheet["']/i.test(html.replace(scripts, ""))) throw error2("UI_NOT_BUNDLED", "Use a published or staged plugin whose ui/index.html has inline assets.");
   const config = `<script nonce="${nonce}">window.codexDesignHttpEndpoint=${JSON.stringify(endpoint)};window.codexDesignEventsUrl=${JSON.stringify(eventsUrl)};</script>`;
   return html.replace(scripts, (_, attributes2, body) => `<script nonce="${nonce}"${attributes2}>${body}</script>`).replace(/<head\b[^>]*>/i, (head) => head + config);
 }
 async function requestJson(request, maximum) {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] || "")) {
     request.resume();
-    throw error("UNSUPPORTED_MEDIA_TYPE", "Expected application/json.");
+    throw error2("UNSUPPORTED_MEDIA_TYPE", "Expected application/json.");
   }
   if (Number(request.headers["content-length"] || 0) > maximum) {
     request.resume();
-    throw error("REQUEST_TOO_LARGE", "The request exceeds the preview limit.");
+    throw error2("REQUEST_TOO_LARGE", "The request exceeds the preview limit.");
   }
   const chunks = [];
   let bytes = 0;
@@ -1832,7 +2929,7 @@ async function requestJson(request, maximum) {
     bytes += chunk.length;
     if (bytes > maximum) {
       request.resume();
-      throw error("REQUEST_TOO_LARGE", "The request exceeds the preview limit.");
+      throw error2("REQUEST_TOO_LARGE", "The request exceeds the preview limit.");
     }
     chunks.push(chunk);
   }
@@ -1841,18 +2938,18 @@ async function requestJson(request, maximum) {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
     return value;
   } catch {
-    throw error("INVALID_JSON", "Expected one JSON object.");
+    throw error2("INVALID_JSON", "Expected one JSON object.");
   }
 }
 async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("../", import.meta.url)), store, service, html, port = 0, maxRequestBytes = 17 * 1024 * 1024 } = {}) {
-  if (!Number.isInteger(port) || port < 0 || port > 65535 || !Number.isSafeInteger(maxRequestBytes) || maxRequestBytes < 1) throw error("INVALID_PREVIEW_OPTION", "Invalid preview port or request limit.");
+  if (!Number.isInteger(port) || port < 0 || port > 65535 || !Number.isSafeInteger(maxRequestBytes) || maxRequestBytes < 1) throw error2("INVALID_PREVIEW_OPTION", "Invalid preview port or request limit.");
   store ||= createLibraryStore({ ...root === void 0 ? {} : { root }, isBusy: previewNativeActivity });
   await store.initialize();
   root = store.root;
-  pluginRoot = path9.resolve(pluginRoot);
+  pluginRoot = path10.resolve(pluginRoot);
   service ||= createDesignService({ store, pluginRoot });
-  if (html === void 0) html = await fs5.readFile(path9.join(pluginRoot, "ui", "index.html"), "utf8");
-  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID4(), nonce = randomBytes(18).toString("base64");
+  if (html === void 0) html = await fs6.readFile(path10.join(pluginRoot, "ui", "index.html"), "utf8");
+  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID5(), nonce = randomBytes(18).toString("base64");
   const prefix = `/${token}/`, subscribers = /* @__PURE__ */ new Set(), timers = /* @__PURE__ */ new Map();
   let origin, servedHtml, state, closed = false;
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; connect-src 'self'; frame-src 'self' http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'self'`;
@@ -1881,7 +2978,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
     });
     await locked(root, async () => {
       const recorded = await readJson2(root, PREVIEW_STATE, null);
-      if (recorded?.instanceId === instanceId) await fs5.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
+      if (recorded?.instanceId === instanceId) await fs6.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
     });
   };
   server = http.createServer({ maxHeaderSize: 8192 }, async (request, response) => {
@@ -1961,7 +3058,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
   try {
     await locked(root, async () => {
       const previous = await libraryPreviewStatus({ root });
-      if (previous.running) throw error("PREVIEW_ALREADY_RUNNING", "This library preview is already running at " + previous.url);
+      if (previous.running) throw error2("PREVIEW_ALREADY_RUNNING", "This library preview is already running at " + previous.url);
       await new Promise((resolve, reject) => {
         server.once("error", reject);
         server.listen(port, "127.0.0.1", resolve);
@@ -1969,7 +3066,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
       origin = `http://127.0.0.1:${server.address().port}`;
       state = { version: 1, kind: KIND, root, pluginRoot, pid: process.pid, instanceId, token, url: origin + prefix, startedAt: (/* @__PURE__ */ new Date()).toISOString() };
       servedHtml = builtHtml(html, origin + prefix + "api", origin + prefix + "events", nonce);
-      await atomicJson(root, PREVIEW_STATE, state);
+      await atomicJson2(root, PREVIEW_STATE, state);
     });
   } catch (cause) {
     if (server.listening) await new Promise((resolve) => server.close(resolve));
@@ -1987,7 +3084,7 @@ function parse(argv) {
     if (!match) throw new Error("Use --root, --plugin-root, or --port.");
     const value = match[2] ?? arguments_[++i];
     if (!value || value.startsWith("--")) throw new Error("Missing option value.");
-    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path10.resolve(value);
+    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path11.resolve(value);
   }
   return { command, options };
 }
@@ -2025,11 +3122,11 @@ async function main(argv = process.argv.slice(2)) {
     const store = createLibraryStore({ root });
     await store.initialize();
     const log = await safePath(root, "_state/library-preview.log", { mustExist: false });
-    const fd = fs6.openSync(log, "a");
+    const fd = fs7.openSync(log, "a");
     const entrypoint = fileURLToPath3(import.meta.url), childArgs = [entrypoint, "serve", "--root", root, "--plugin-root", options.pluginRoot || fileURLToPath3(new URL("../", import.meta.url)), ...options.port === void 0 ? [] : ["--port", String(options.port)]];
-    const child = spawn2(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
+    const child = spawn3(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
     child.unref();
-    fs6.closeSync(fd);
+    fs7.closeSync(fd);
     let childError;
     child.once("error", (cause) => {
       childError = cause;
@@ -2048,7 +3145,7 @@ async function main(argv = process.argv.slice(2)) {
   }
   console.log("Usage: node scripts/library-preview.mjs open|serve|status|stop [--root <library>] [--plugin-root <built-plugin>] [--port <number>]");
 }
-if (process.argv[1] && pathToFileURL(path10.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
+if (process.argv[1] && pathToFileURL(path11.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
   console.error(JSON.stringify({ error: cause.code || "LIBRARY_PREVIEW_ERROR", message: cause.message }));
   process.exitCode = 1;
 });

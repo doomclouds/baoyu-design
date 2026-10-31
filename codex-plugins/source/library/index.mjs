@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { LibraryError, KINDS, UUID, artifactId, artifactKind, titleText, relativePath, within, statOrNull, safePath, readJson, atomicJson, readBytes, locked } from './safety.mjs';
 import { INDEX_FILES, DEFAULT_LIMITS, contentPath, contentType, collectContent, validateFiles, writeContent, blankContent } from './content.mjs';
 
@@ -106,7 +106,10 @@ export class LibraryStore {
       const files = [];
       for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, this.limits.maxFileBytes)).toString('base64') : '' });
       const native = validateFiles(record.kind, files);
-      Object.assign(result, manifest, { title: native.title });
+      // The native editors write content directly. Their saves must be visible
+      // to recent/sort even when no library metadata command was invoked.
+      const changedAt = listed.reduce((latest, file) => file.modifiedAt > latest ? file.modifiedAt : latest, manifest.updatedAt);
+      Object.assign(result, manifest, { title: native.title, updatedAt: changedAt });
     } catch (error) {
       result.contentStatus = ['NOT_FOUND', 'MISSING_CONTENT'].includes(error.code) ? 'missing' : 'invalid';
       result.contentError = { code: error.code || 'INVALID_CONTENT', message: error.message };
@@ -227,7 +230,9 @@ export class LibraryStore {
     if (!['utf8', 'base64'].includes(encoding)) throw new LibraryError('INVALID_OPTION', 'Unsupported file encoding.');
     const root = await this._artifactPath(record), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
     if (encoding === 'utf8' && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError('BINARY_ENCODING_REQUIRED', 'Read binary material using base64.');
-    return { path: relative, contentType: type, bytes: bytes.length, ...(encoding === 'base64' ? { encoding, data: bytes.toString('base64') } : { text: bytes.toString('utf8') }) };
+    return { path: relative, contentType: type, bytes: bytes.length,
+      revision: { sha256: createHash('sha256').update(bytes).digest('hex'), observedAt: at() },
+      ...(encoding === 'base64' ? { encoding, data: bytes.toString('base64') } : { text: bytes.toString('utf8') }) };
   }
   async trash(id) {
     await this._checkRoot(); return locked(this.root, async () => {

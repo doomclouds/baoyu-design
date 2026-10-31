@@ -34,7 +34,7 @@ export async function collectContent(root, kind, limits = DEFAULT_LIMITS, { incl
     } else if (info.isFile() && contentPath(kind, relative)) {
       if (info.size > limits.maxFileBytes || total + info.size > limits.maxTotalBytes || found.length >= limits.maxFiles) throw new LibraryError('LIMIT_EXCEEDED', 'The artifact exceeds the configured content limits.');
       total += info.size;
-      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), ...(includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString('base64'), encoding: 'base64' } : {}) });
+      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), modifiedAt: info.mtime.toISOString(), ...(includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString('base64'), encoding: 'base64' } : {}) });
     } else if (!info.isFile()) throw new LibraryError('INVALID_CONTENT', 'Only regular files are accepted as content.');
   };
   for (const start of kind === 'dashboard' ? ['db/files', 'db/datasets', 'db/dash/meta.json', 'db/dash/params.json', 'db/dash/look.json', '_blobs'] : ['project']) await walk(start);

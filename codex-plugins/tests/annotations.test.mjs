@@ -290,6 +290,21 @@ test('native toolbar receives bounded top-document metadata without any filename
   assert.doesNotMatch(browserSource, /createElement\s*\(/);
 });
 
+test('localized Slides accessible labels keep native annotation file and slide identity stable', async () => {
+  for (const label of ['Slide 1 (thumbnail): Original title', '幻灯片 1（缩略图）：Original title']) {
+    const { target, document, requests } = await browser({ skill: 'codex-slides', setupDOM({ defaultTarget }) {
+      defaultTarget.setAttribute('aria-label', label);
+      defaultTarget.setAttribute('aria-current', 'true');
+      return defaultTarget;
+    } });
+    const metadata = nativeMetadata(target);
+    assert.equal(metadata.file, 'project/slides/cover.html');
+    assert.equal(metadata.objectId, 'cover'); assert.equal(metadata.page, 1);
+    assert.equal(target.getAttribute('data-slide-id'), 'cover');
+    assertNoAddedUI(document, requests);
+  }
+});
+
 test('reused DOM proxies lose stale native metadata and restore original attributes', async () => {
   const original = '{"owner":"editor"}';
   const {window, document, target, requests, observed} = await browser({initialAttributes: {'oai-annotatable': 'Original editor object', 'oai-annotation-metadata': original}});

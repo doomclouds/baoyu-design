@@ -68,6 +68,9 @@ test('SDK hostcontextchanged supplies params directly and merged partial updates
   const f = host(t, { context: { locale: 'zh-CN' } });
   const bridge = await createMcpBridge({ app: f.app });
   t.after(() => bridge.dispose());
+  assert.equal(bridge.hostContext.locale, 'zh-CN');
+  assert.deepEqual(bridge.diagnostics().host, { name: 'test-host', version: '1' });
+  assert.equal(bridge.diagnostics().transport, 'mcp');
   const params = [], events = [];
   f.app.addEventListener('hostcontextchanged', value => params.push(value));
   bridge.subscribe(event => events.push(event));
@@ -77,6 +80,10 @@ test('SDK hostcontextchanged supplies params directly and merged partial updates
   await until(() => params.length === 2);
   assert.deepEqual(params, [{ locale: 'en-GB' }, { displayMode: 'fullscreen' }]);
   assert.equal(bridge.language, 'en-GB');
+  assert.deepEqual(bridge.hostContext, { locale: 'en-GB', displayMode: 'fullscreen' });
+  assert.deepEqual(events.filter(event => event.type === 'host-context.changed').map(event => event.context), [
+    { locale: 'en-GB' }, { locale: 'en-GB', displayMode: 'fullscreen' },
+  ]);
   assert.deepEqual(events.filter(event => event.type === 'language.changed'), [{ type: 'language.changed', language: 'en-GB' }]);
   assert.equal(f.calls().length, 0);
 });
@@ -179,4 +186,15 @@ test('installation mounts once; later context and tool-result events update the 
   await until(() => bridge.initialState?.viewState?.activeTabId === firstId);
   assert.equal(mounts, 1);
   assert.equal(fakeWindow.codexDesignBridge, bridge);
+});
+
+test('an external artwork deep link keeps the current editor open when its unsaved navigation guard fails', async t => {
+  const f = host(t, { initialState: { artifacts: [], viewState: artifactView(firstId) } });
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  bridge.beforeNavigate = async () => { throw Object.assign(new Error('Still saving.'), { code: 'EDITOR_UNSAVED_CHANGES' }); };
+  f.context({ 'openai/deepLink': { url: `/artifacts/${secondId}` } });
+  await until(() => bridge.navigationError?.code === 'EDITOR_UNSAVED_CHANGES');
+  assert.equal(f.calls().length, 0);
+  assert.equal(bridge.initialState.viewState.activeTabId, firstId);
 });

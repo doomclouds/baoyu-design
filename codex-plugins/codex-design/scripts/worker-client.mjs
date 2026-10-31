@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BINDING_FILE, BridgeError, atomicJson, alive, readJson, withLock, normalizeEvent, deliveryKey, samePath } from './bridge-core.mjs';
 import { WORKER_FILE, WORKER_LOCK_FILE, WORKER_LOG_FILE, loadJobs, saveJobs, appendWorkerLog, matchingReply, publicJob, workerPrompt, userRevisionHash } from './worker-core.mjs';
+import { createLibraryStore } from '../library/index.mjs';
 
 const nativeMode = (binding) => binding && ['native', 'worker'].includes(binding.deliveryMode);
 const registryFile = (root) => path.join(root, WORKER_FILE);
@@ -122,6 +123,28 @@ async function editorAvailable(root, binding) {
   } catch { return false; }
 }
 
+async function prepareRestorePoint(root, job, resumed) {
+  const kind = path.basename(path.dirname(root));
+  const id = path.basename(root);
+  const libraryRoot = path.dirname(path.dirname(root));
+  // Legacy/project artifacts keep their existing workflow. A real library
+  // artifact has both its manifest and the surrounding persistent library identity.
+  if (!['slides', 'design', 'design-system', 'dashboard'].includes(kind)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    || !fs.existsSync(path.join(root, 'artifact.json'))
+    || !fs.existsSync(path.join(libraryRoot, '_state', 'library.json'))) return null;
+  // This job has already reserved the active journal entry. The controller,
+  // rather than a competing writer, is creating its own pre-edit checkpoint.
+  const store = createLibraryStore({ root: libraryRoot });
+  const record = await store.get(id);
+  if (record.kind !== kind || !samePath(record.path, root) || record.deletedAt) throw new BridgeError('ARTIFACT_UNAVAILABLE', 'The artwork no longer belongs to its active library location.');
+  if (job.restorePoint) {
+    const existing = (await store.listSnapshots(id)).find(item => item.id === job.restorePoint.id && item.artifactId === id);
+    if (existing) return existing;
+  }
+  return store.snapshot(id, { label: resumed ? 'Before resumed AI edit' : 'Before AI edit' });
+}
+
 export async function nextNativeJob(root, { env = process.env, timeoutSeconds = 60, verifyEditor = editorAvailable } = {}) {
   root = fs.realpathSync(root);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0 || timeoutSeconds > 300) throw new BridgeError('INVALID_TIMEOUT', 'worker-next timeout must be between 0 and 300 seconds.');
@@ -163,8 +186,23 @@ export async function nextNativeJob(root, { env = process.env, timeoutSeconds = 
         registry.lastSeenAt = now(); delete registry.listener;
         if (job) {
           const resumed = job.status === 'active';
-          job.status = 'active'; job.ownerThreadId = actor; job.registrationId = registrationId; job.startedAt ??= now(); job.lastClaimedAt = now(); delete job.error;
+          job.status = 'active'; job.ownerThreadId = actor; job.registrationId = registrationId;
           registry.status = 'active'; registry.activeJobId = job.id;
+          // Reserve ownership before acquiring the library lock so trash/restore
+          // cannot pass their busy check while this checkpoint is being prepared.
+          job.phase = 'preparing-restore-point';
+          saveJobs(root, state); saveRegistry(root, registry);
+          try {
+            const point = await prepareRestorePoint(root, job, resumed);
+            if (point) job.restorePoint = point;
+          } catch (error) {
+            job.status = 'pending'; job.phase = 'restore-point-failed';
+            job.error = { code: 'RESTORE_POINT_FAILED', message: 'AI editing did not start because its recovery point could not be saved.', causeCode: error.code || 'SNAPSHOT_ERROR' };
+            releaseJob(registry, job); saveJobs(root, state); saveRegistry(root, registry);
+            appendWorkerLog(root, `native job ${job.id} recovery point failed: ${error.code || 'SNAPSHOT_ERROR'}`);
+            throw new BridgeError('RESTORE_POINT_FAILED', 'AI editing did not start because its recovery point could not be saved. Inspect the artwork content and snapshot storage, then retry this pending job.');
+          }
+          job.phase = 'editing'; job.startedAt ??= now(); job.lastClaimedAt = now(); delete job.error;
           saveJobs(root, state); saveRegistry(root, registry);
           return { closed: false, job: publicJob(job), request: workerPrompt(binding, job.event, job.id), event: job.event, capturedUserRevision: job.capturedUserRevision,
             resumed, ...(job.resultText ? { savedResultText: job.resultText, resume: 'complete-saved-result' } : {}) };
@@ -265,9 +303,12 @@ export async function getWorkerStatus(root) {
     ...(registry?.lastSeenAt ? { lastSeenAt: registry.lastSeenAt } : {}), log: path.join(root, WORKER_LOG_FILE) };
 }
 
-export async function stopWorker(root) {
+export async function stopWorker(root, { onlyWhenIdle = false } = {}) {
   return await withJobs(root, async () => {
     const registry = readRegistry(root); const state = loadJobs(root);
+    if (onlyWhenIdle && Object.values(state.jobs).some(job => job.status === 'active')) {
+      throw new BridgeError('ARTIFACT_BUSY', 'An active native design job owns this artwork. Its parent must coordinate ownership before stopping the editor or moving its files.');
+    }
     if (!registry) return { paused: false, interruptRequired: false, nativeThreadId: null };
     let active = false;
     for (const job of Object.values(state.jobs)) if (job.status === 'active') { active = true; job.status = 'pending'; job.pausedAt = now(); }

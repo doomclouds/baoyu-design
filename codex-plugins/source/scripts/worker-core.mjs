@@ -43,6 +43,7 @@ export function publicJob(job) {
     queuedAt: job.queuedAt, ...(job.startedAt ? { startedAt: job.startedAt } : {}),
     ...(job.completedAt ? { completedAt: job.completedAt } : {}), ...(job.repliedAt ? { repliedAt: job.repliedAt } : {}),
     ...(job.error ? { error: job.error } : {}),
+    ...(job.restorePoint ? { restorePoint: job.restorePoint } : {}),
     ...(job.ownerThreadId ? { ownerThreadId: job.ownerThreadId } : {}),
   };
 }

@@ -1,0 +1,96 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { promisify } from 'node:util';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createLibraryStore } from '../source/library/index.mjs';
+import { createDesignService } from '../source/server/service.mjs';
+import { createFixture } from './fixtures.mjs';
+
+const execute = promisify(execFile);
+const pluginRoot = path.resolve(process.env.CODEX_DESIGN_TEST_PLUGIN_ROOT || fileURLToPath(new URL('../codex-design/', import.meta.url)));
+const cli = kind => path.join(pluginRoot, 'skills', `codex-${kind}`, 'scripts', 'codex-artifact.mjs');
+
+test('native documents use the current installed chrome even when the reused data service cannot serve static assets', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'codex-editor-current-chrome-'));
+  t.after(async () => {
+    const relative = path.relative(os.tmpdir(), root);
+    assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+    await rm(root, { recursive: true, force: true });
+  });
+  const store = createLibraryStore({ root });
+  const record = await store.create({ kind: 'slides', title: 'Current installed editor' });
+  const service = createDesignService({ store, pluginRoot,
+    editorOpen: async () => ({ url: 'http://127.0.0.1:1/old-runtime/', kind: 'slides', artifactId: record.id }) });
+  const result = await service.invoke('editor.document', { id: record.id, channel: 'current-chrome-test-channel', language: 'zh' });
+  assert.ok(result.html.includes('__CODEX_DESIGN_EDITOR_RESOURCES__'));
+  assert.ok(result.html.includes('__CODEX_DESIGN_EDITOR_FLUSH__'));
+  assert.ok(result.html.includes('Current installed editor') === false, 'Document content loads through the separate data transport.');
+});
+
+async function command(kind, ...args) {
+  const { stdout } = await execute(process.execPath, [cli(kind), ...args], { windowsHide: true, timeout: 20_000, maxBuffer: 2 * 1024 * 1024,
+    env: { ...process.env, CODEX_THREAD_ID: '', CODEX_DESIGN_THREAD_ID: '' } });
+  return JSON.parse(stdout);
+}
+
+for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
+  test(`${kind}: native document assembly, save and live comments use the real local editor through the scoped MCP proxy`, { timeout: 40_000 }, async () => {
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'codex-design-native-document-'));
+    const fixture = await createFixture(kind, temporary);
+    const store = createLibraryStore({ root: path.join(temporary, 'library') });
+    let opened;
+    let service;
+    let subscription;
+    try {
+      const artifact = await store.importArtifact({ sourcePath: fixture.root, kind });
+      service = createDesignService({ store, pluginRoot, editorOpen: async record => {
+        opened = await command(kind, 'open', record.path, '--no-agent');
+        return { ...opened, artifactId: record.id, kind, nativeConversationBound: false };
+      } });
+      const document = await service.invoke('editor.document', { id: artifact.id, channel: 'runtime-editor-channel', language: 'zh' });
+      assert.equal(document.transport, 'mcp');
+      assert.ok(document.bytes > 100_000);
+      assert.match(document.html, /codex-design:editor-request/);
+      assert.match(document.html, /https:\/\/codex-design\.invalid\/artifacts\//);
+      if (kind === 'design-system') assert.match(document.html, /"previewVendors":\[\{"file":"react\.production\.min\.js","url":"data:text\/javascript;base64,/);
+      for (const script of document.html.matchAll(/<script\b([^>]*)>[\s\S]*?<\/script>/gi)) {
+        assert.equal(/\bsrc\s*=/.test(script[1]), false, 'Actual document script tags must be inline; example strings inside bundles are not tags.');
+      }
+      const request = async (path, method = 'GET', body) => {
+        const result = await service.invoke('editor.request', { id: artifact.id, request: { path, method,
+          ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(body)).toString('base64') }) } });
+        assert.ok(result.status < 400, `${result.status}: ${Buffer.from(result.body, 'base64').toString()}`);
+        return JSON.parse(Buffer.from(result.body, 'base64').toString());
+      };
+      const before = await readFile(path.join(artifact.path, fixture.contentFile), 'utf8');
+      if (kind === 'dashboard') {
+        const changed = { ...JSON.parse(before), text: JSON.parse(before).text.replace('Monthly revenue</p>', 'Native proxy verified revenue</p>') };
+        await request('_api/write', 'POST', { op: 'set', path: 'files/index.html', data: changed });
+        assert.equal(JSON.parse(await readFile(path.join(artifact.path, fixture.contentFile), 'utf8')).text, changed.text);
+      } else {
+        const listing = await request('_files.json');
+        const changed = before.replace('Codex Design verification', 'Native proxy verified');
+        await request('__deck/publish', 'POST', { files: { [fixture.contentFile]: { base64: Buffer.from(changed).toString('base64'), contentType: kind === 'design-system' ? 'text/markdown' : 'text/html', ifMatch: listing.files[fixture.contentFile].sha256 } } });
+        assert.equal(await readFile(path.join(artifact.path, fixture.contentFile), 'utf8'), changed);
+      }
+      const comment = await request('__comments', 'POST', { ...fixture.comment, text: 'Native editor proxy comment.', send: false });
+      subscription = await service.invoke('editor.events.open', { id: artifact.id, path: '__comments/events' });
+      const events = await service.invoke('editor.events.poll', { id: artifact.id, ...subscription });
+      assert.ok(events.events.some(event => event.event === 'comments' && event.data.includes(comment.thread.id)));
+      await service.invoke('editor.events.close', { id: artifact.id, ...subscription }); subscription = null;
+      const check = await command(kind, 'check', artifact.path);
+      assert.equal(check.problems, 0, JSON.stringify(check));
+    } finally {
+      const records = await store.list({ includeDeleted: true }).catch(() => []);
+      if (subscription && records[0]) await service.invoke('editor.events.close', { id: records[0].id, ...subscription }).catch(() => {});
+      if (opened && records[0]) await command(kind, 'stop', records[0].path).catch(() => {});
+      const relative = path.relative(os.tmpdir(), path.resolve(temporary));
+      assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+      await rm(temporary, { recursive: true, force: true });
+    }
+  });
+}

@@ -80,7 +80,7 @@ A dashboard is written through the same script (`write-db`, `read-db`, `upload`,
 
 `codex design` bundles all five skills above, the complete local editors, and Codex annotation and editor-comment integration.
 
-Version 0.3 adds a local MCP-backed library with category navigation, a permanent library tab, unique artwork tabs, real cover previews, and Chinese/English editor UI. Artwork is stored in `~/.codex/CodexDesignLibrary`. Per-artwork native chat and the import/export/history UI are planned for later updates; existing editor comments and skill workflows remain available.
+Version 0.4 provides a local MCP-backed library with category navigation, a permanent library tab, unique artwork tabs, content-only import/export, recovery history, and Chinese/English editor UI. Artwork is stored in `~/.codex/CodexDesignLibrary`. The app consumes host typography/theme variables and uses an inline editor transport instead of blocked localhost frames. The current public host API does not expose Space's middle-sidebar slot, native-toolbar replacement, or per-artwork bound native chat. See [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md) for the distinction between protocol, browser, and actual-host evidence.
 
 See [`codex-plugins/examples/`](codex-plugins/examples/README.md) for editable showcases: a five-slide deck, the Bean Club canvas, the Nimbus design system, and a year of sample X analytics.
 

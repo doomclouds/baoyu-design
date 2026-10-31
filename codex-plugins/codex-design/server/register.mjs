@@ -31,7 +31,7 @@ function resultFor(value, action) {
 }
 
 export async function createDesignServer({ store = createLibraryStore({ isBusy: nativeActivity }), html,
-  htmlPath = new URL('../ui/index.html', import.meta.url), icons, editorOpen, pluginRoot, version = '0.3.0' } = {}) {
+  htmlPath = new URL('../ui/index.html', import.meta.url), icons, editorOpen, pluginRoot, version = '0.4.0' } = {}) {
   if (html === undefined) html = await readFile(htmlPath, 'utf8');
   if (icons === undefined) {
     const icon = await readFile(new URL('../assets/icon.png', import.meta.url));
@@ -41,7 +41,11 @@ export async function createDesignServer({ store = createLibraryStore({ isBusy: 
   const extensions = new OpenAIExtensions(server);
   const service = createDesignService({ store, pluginRoot, editorOpen });
   const uiResource = uri => ({ uri, mimeType: UI_MIME_TYPE, text: html,
-    _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: ['http://127.0.0.1:*', 'http://localhost:*'] } },
+    _meta: { ui: { csp: {
+      connectDomains: ['blob:', 'data:', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
+      resourceDomains: ['blob:', 'data:', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdn.oaistatic.com', 'https://cdn.openai.com'],
+      frameDomains: ['blob:', 'data:'], baseUriDomains: ['https://codex-design.invalid'],
+    } },
       'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['fullscreen'] } } });
   for (const [name, uri] of [['design-library-ui', LIBRARY_UI_URI], ['design-file-ui', FILE_UI_URI]]) {
     server.registerResource(name, uri, { mimeType: UI_MIME_TYPE }, async () => ({ contents: [uiResource(uri)] }));
@@ -86,7 +90,9 @@ export async function createDesignServer({ store = createLibraryStore({ isBusy: 
     let content;
     try { content = await service.readReferenceFile(id, relative); }
     catch (error) { if (error.code !== 'BINARY_ENCODING_REQUIRED') throw error; content = await service.readReferenceFile(id, relative, 'base64'); }
-    return { contents: [{ uri: uri.href, mimeType: content.contentType, ...(content.text === undefined ? { blob: content.data } : { text: content.text }) }] };
+    return { contents: [{ uri: uri.href, mimeType: content.contentType,
+      _meta: { 'codex-design/contentRevision': content.revision },
+      ...(content.text === undefined ? { blob: content.data } : { text: content.text }) }] };
   });
   return server;
 }

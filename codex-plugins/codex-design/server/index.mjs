@@ -22,9 +22,27 @@ import path from "node:path";
 function readJson(file3, fallback = null) {
   try {
     return JSON.parse(fs.readFileSync(file3, "utf8"));
-  } catch (error112) {
-    if (error112.code === "ENOENT") return fallback;
-    throw new BridgeError("INVALID_BRIDGE_STATE", `Cannot read ${file3}: ${error112.message}`);
+  } catch (error113) {
+    if (error113.code === "ENOENT") return fallback;
+    throw new BridgeError("INVALID_BRIDGE_STATE", `Cannot read ${file3}: ${error113.message}`);
+  }
+}
+function atomicJson(file3, value) {
+  const temporary = `${file3}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}
+`, { mode: 384 });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.renameSync(temporary, file3);
+        break;
+      } catch (error113) {
+        if (!["EPERM", "EACCES", "EBUSY"].includes(error113.code) || attempt >= 19) throw error113;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+      }
+    }
+  } finally {
+    fs.rmSync(temporary, { force: true });
   }
 }
 function alive(pid) {
@@ -32,8 +50,8 @@ function alive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (error112) {
-    return error112.code === "EPERM";
+  } catch (error113) {
+    return error113.code === "EPERM";
   }
 }
 function canonicalPath(given) {
@@ -60,8 +78,8 @@ function reapDeadReaper(directory, initializationGraceMs) {
   if (marker) {
     try {
       owner = readJson(path.join(directory, marker));
-    } catch (error112) {
-      if (error112.code !== "INVALID_BRIDGE_STATE") throw error112;
+    } catch (error113) {
+      if (error113.code !== "INVALID_BRIDGE_STATE") throw error113;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
@@ -69,8 +87,8 @@ function reapDeadReaper(directory, initializationGraceMs) {
   if (marker) fs.rmSync(path.join(directory, marker), { force: true });
   try {
     fs.rmdirSync(directory);
-  } catch (error112) {
-    if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error112.code)) throw error112;
+  } catch (error113) {
+    if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error113.code)) throw error113;
   }
 }
 function tryReaper(directory, initializationGraceMs) {
@@ -86,16 +104,16 @@ function tryReaper(directory, initializationGraceMs) {
     try {
       fs.renameSync(staging, directory);
       published = true;
-    } catch (error112) {
-      if (["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error112.code)) return null;
-      throw error112;
+    } catch (error113) {
+      if (["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error113.code)) return null;
+      throw error113;
     }
     return () => {
       fs.rmSync(path.join(directory, marker), { force: true });
       try {
         fs.rmdirSync(directory);
-      } catch (error112) {
-        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error112.code)) throw error112;
+      } catch (error113) {
+        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error113.code)) throw error113;
       }
     };
   } finally {
@@ -103,8 +121,8 @@ function tryReaper(directory, initializationGraceMs) {
       fs.rmSync(path.join(staging, marker), { force: true });
       try {
         fs.rmdirSync(staging);
-      } catch (error112) {
-        if (error112.code !== "ENOENT") throw error112;
+      } catch (error113) {
+        if (error113.code !== "ENOENT") throw error113;
       }
     }
   }
@@ -121,8 +139,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
     fs.rmSync(path.join(initializing, "owner.json"), { force: true });
     try {
       fs.rmdirSync(initializing);
-    } catch (error112) {
-      if (error112.code !== "ENOENT") throw error112;
+    } catch (error113) {
+      if (error113.code !== "ENOENT") throw error113;
     }
   };
   try {
@@ -133,8 +151,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
           acquired = true;
           break;
         }
-      } catch (error112) {
-        if (!["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error112.code)) throw error112;
+      } catch (error113) {
+        if (!["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error113.code)) throw error113;
       }
       const reaper = `${lockPath}.reaper`;
       let releaseReaper;
@@ -148,8 +166,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
         let owner;
         try {
           owner = readJson(ownerFile);
-        } catch (error112) {
-          if (error112.code !== "INVALID_BRIDGE_STATE") throw error112;
+        } catch (error113) {
+          if (error113.code !== "INVALID_BRIDGE_STATE") throw error113;
         }
         const stat = fs.statSync(lockPath, { throwIfNoEntry: false });
         const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
@@ -158,8 +176,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
           fs.rmSync(ownerFile, { force: true });
           fs.rmdirSync(lockPath);
         }
-      } catch (error112) {
-        if (!["EEXIST", "ENOENT", "ENOTEMPTY"].includes(error112.code)) throw error112;
+      } catch (error113) {
+        if (!["EEXIST", "ENOENT", "ENOTEMPTY"].includes(error113.code)) throw error113;
       } finally {
         releaseReaper?.();
       }
@@ -172,8 +190,8 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
       fs.rmSync(ownerFile, { force: true });
       try {
         fs.rmdirSync(lockPath);
-      } catch (error112) {
-        if (error112.code !== "ENOTEMPTY") throw error112;
+      } catch (error113) {
+        if (error113.code !== "ENOTEMPTY") throw error113;
       }
     }
     if (!acquired) removeInitializing();
@@ -190,6 +208,861 @@ var init_bridge_core = __esm({
       }
     };
     sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  }
+});
+
+// source/library/safety.mjs
+import fs2 from "node:fs/promises";
+import { constants } from "node:fs";
+import path2 from "node:path";
+import { randomUUID as randomUUID2 } from "node:crypto";
+function artifactId(id) {
+  if (typeof id !== "string" || !UUID2.test(id)) throw new LibraryError("INVALID_ID", "Expected a persistent artifact UUID.");
+  return id.toLowerCase();
+}
+function artifactKind(kind) {
+  if (!KINDS.includes(kind)) throw new LibraryError("INVALID_KIND", "Unknown artifact kind.");
+  return kind;
+}
+function titleText(title) {
+  if (typeof title !== "string" || !title.trim() || title.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(title)) throw new LibraryError("INVALID_TITLE", "A title must be one nonempty line of at most 200 characters.");
+  return title.trim();
+}
+function relativePath(relative) {
+  if (typeof relative !== "string" || !relative || relative.length > 1024 || relative.includes("\\") || path2.isAbsolute(relative) || /[\u0000-\u001f\u007f:%]/.test(relative)) throw new LibraryError("INVALID_PATH", "Expected a package-relative path.");
+  const parts = relative.split("/");
+  if (parts.some((part) => !part || part === "." || part === ".." || part.trimEnd() !== part || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new LibraryError("INVALID_PATH", "Unsafe path segment.");
+  return parts.join("/");
+}
+function within(root, target) {
+  const relative = path2.relative(path2.resolve(root), path2.resolve(target));
+  if (relative === ".." || relative.startsWith(".." + path2.sep) || path2.isAbsolute(relative)) throw new LibraryError("INVALID_PATH", "The path leaves its authorized root.");
+  return target;
+}
+async function statOrNull(file3) {
+  try {
+    return await fs2.lstat(file3);
+  } catch (error113) {
+    if (error113.code === "ENOENT") return null;
+    throw error113;
+  }
+}
+async function safePath(root, relative, { mustExist = true, type } = {}) {
+  relativePath(relative);
+  const rootStat = await statOrNull(root);
+  if (!rootStat?.isDirectory() || rootStat.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The authorized root must be a real directory.");
+  const realRoot = await fs2.realpath(root);
+  let cursor = root;
+  const parts = relative.split("/");
+  for (let i = 0; i < parts.length; i++) {
+    cursor = within(root, path2.join(cursor, parts[i]));
+    const info = await statOrNull(cursor);
+    if (!info) {
+      if (mustExist) throw new LibraryError("NOT_FOUND", "The requested path is missing.", { path: relative });
+      return cursorFor(root, parts);
+    }
+    if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "Symbolic links are not accepted in library paths.", { path: relative });
+    if (i < parts.length - 1 && !info.isDirectory()) throw new LibraryError("INVALID_PATH", "A parent path is not a directory.");
+    within(realRoot, await fs2.realpath(cursor));
+    if (i === parts.length - 1 && type === "file" && !info.isFile()) throw new LibraryError("INVALID_PATH", "The requested path is not a regular file.");
+    if (i === parts.length - 1 && type === "directory" && !info.isDirectory()) throw new LibraryError("INVALID_PATH", "The requested path is not a directory.");
+  }
+  return cursor;
+}
+async function readJson2(root, relative, fallback) {
+  const file3 = await safePath(root, relative, { mustExist: false });
+  try {
+    return JSON.parse(await fs2.readFile(file3, "utf8"));
+  } catch (error113) {
+    if (error113.code === "ENOENT") {
+      if (fallback !== void 0) return structuredClone(fallback);
+      throw new LibraryError("NOT_FOUND", "The requested JSON file is missing.", { path: relative });
+    }
+    if (error113 instanceof LibraryError) throw error113;
+    throw new LibraryError("INVALID_STATE", "A library JSON file is malformed.", { path: relative });
+  }
+}
+async function atomicJson2(root, relative, value) {
+  const file3 = await safePath(root, relative, { mustExist: false });
+  await fs2.mkdir(path2.dirname(file3), { recursive: true });
+  await safePath(root, relative, { mustExist: false });
+  const temporary = `${file3}.${randomUUID2()}.tmp`;
+  within(root, temporary);
+  try {
+    await fs2.writeFile(temporary, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 384 });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs2.rename(temporary, file3);
+        break;
+      } catch (error113) {
+        if (!["EACCES", "EBUSY", "EPERM"].includes(error113.code) || attempt >= 12) throw error113;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  } finally {
+    await fs2.rm(temporary, { force: true });
+  }
+}
+async function readBytes(root, relative, maximum) {
+  const file3 = await safePath(root, relative, { type: "file" });
+  const handle = await fs2.open(file3, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > maximum) throw new LibraryError("LIMIT_EXCEEDED", "The file exceeds the allowed size.");
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+async function locked(root, action, timeoutMs = 1e4) {
+  const state = await safePath(root, "_state", { type: "directory" });
+  const lock = within(root, path2.join(state, "library.lock"));
+  if ((await statOrNull(lock))?.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The library lock must be a real directory.");
+  try {
+    return await withLock(lock, action, { timeoutMs, staleMs: 1e4 });
+  } catch (cause) {
+    if (cause.code === "BRIDGE_BUSY") throw new LibraryError("LIBRARY_BUSY", "Another library operation is still in progress.");
+    throw cause;
+  }
+}
+var LibraryError, UUID2, KINDS, cursorFor;
+var init_safety = __esm({
+  "source/library/safety.mjs"() {
+    init_bridge_core();
+    LibraryError = class extends Error {
+      constructor(code, message, details) {
+        super(message);
+        this.name = "LibraryError";
+        this.code = code;
+        if (details !== void 0) this.details = details;
+      }
+    };
+    UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    KINDS = Object.freeze(["slides", "design", "design-system", "dashboard"]);
+    cursorFor = (root, parts) => within(root, path2.join(root, ...parts));
+  }
+});
+
+// source/library/content.mjs
+import fs3 from "node:fs/promises";
+import path3 from "node:path";
+function contentPath(kind, relative) {
+  relativePath(relative);
+  artifactKind(kind);
+  const parts = relative.split("/");
+  if (parts.some(forbidden)) return false;
+  if (kind !== "dashboard") return parts[0] === "project" && parts.length > 1;
+  return parts[0] === "_blobs" && parts.length === 2 || parts[0] === "db" && parts.length >= 3 && ["files", "datasets"].includes(parts[1]) || /^db\/dash\/(?:meta|params|look)\.json$/.test(relative);
+}
+function contentType(relative) {
+  const ext = path3.extname(relative).toLowerCase();
+  return { ".html": "text/html", ".md": "text/markdown", ".json": "application/json", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".txt": "text/plain", ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".pdf": "application/pdf" }[ext] || "application/octet-stream";
+}
+async function collectContent(root, kind, limits = DEFAULT_LIMITS, { includeBytes = true } = {}) {
+  const found = [];
+  let total = 0;
+  const walk = async (relative) => {
+    const absolute = await safePath(root, relative, { mustExist: false });
+    const info = await statOrNull(absolute);
+    if (!info) return;
+    if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "A content path is a symbolic link.");
+    if (info.isDirectory()) {
+      for (const entry2 of (await fs3.readdir(absolute, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+        if (forbidden(entry2.name)) continue;
+        const child = relative + "/" + entry2.name;
+        relativePath(child);
+        if (entry2.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "A content path is a symbolic link.", { path: child });
+        await walk(child);
+      }
+    } else if (info.isFile() && contentPath(kind, relative)) {
+      if (info.size > limits.maxFileBytes || total + info.size > limits.maxTotalBytes || found.length >= limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "The artifact exceeds the configured content limits.");
+      total += info.size;
+      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), modifiedAt: info.mtime.toISOString(), ...includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString("base64"), encoding: "base64" } : {} });
+    } else if (!info.isFile()) throw new LibraryError("INVALID_CONTENT", "Only regular files are accepted as content.");
+  };
+  for (const start of kind === "dashboard" ? ["db/files", "db/datasets", "db/dash/meta.json", "db/dash/params.json", "db/dash/look.json", "_blobs"] : ["project"]) await walk(start);
+  return found;
+}
+function validateFiles(kind, files) {
+  const byPath = new Map(files.map((file3) => [file3.path, file3]));
+  const json3 = (relative) => {
+    const file3 = byPath.get(relative);
+    if (!file3) throw new LibraryError("MISSING_CONTENT", "A required native content file is missing.", { path: relative });
+    try {
+      const value = JSON.parse(Buffer.from(file3.data, "base64").toString("utf8"));
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
+      return value;
+    } catch {
+      throw new LibraryError("INVALID_CONTENT", "A native index is not a JSON object.", { path: relative });
+    }
+  };
+  const index = json3(INDEX_FILES[kind]);
+  if (typeof index.title !== "string" || !index.title.trim()) throw new LibraryError("INVALID_CONTENT", "The native index needs a title.");
+  const blobExists = (id) => kind === "dashboard" ? byPath.has("_blobs/" + id) : [...byPath.keys()].some((name) => name.startsWith((kind === "design-system" ? "project/_blobs/" : "project/assets/") + id + "."));
+  for (const file3 of files) if (/\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path)) {
+    const text = Buffer.from(file3.data, "base64").toString("utf8");
+    for (const match of text.matchAll(/\/_blob\/([a-f0-9]{32})\b/g)) if (!blobExists(match[1])) throw new LibraryError("MISSING_CONTENT", "An artwork material referenced by the content is missing.", { path: file3.path, blobId: match[1] });
+  }
+  if (kind === "slides") {
+    if (!Array.isArray(index.order)) throw new LibraryError("INVALID_CONTENT", "A deck needs an order array.");
+    for (const id of index.order) {
+      if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || !byPath.has("project/slides/" + id + ".html")) throw new LibraryError("MISSING_CONTENT", "A slide named by the index is missing or invalid.");
+    }
+  } else if (kind === "design") {
+    if (!index.boards || typeof index.boards !== "object" || Array.isArray(index.boards) || !Array.isArray(index.order)) throw new LibraryError("INVALID_CONTENT", "A canvas needs boards and order.");
+    for (const name of Object.keys(index.boards)) {
+      relativePath(name);
+      if (!name.endsWith(".dc.html") || !byPath.has("project/" + name)) throw new LibraryError("MISSING_CONTENT", "An indexed artboard is missing.");
+    }
+  } else if (kind === "design-system") {
+    if (index.v < 3 || index.layout !== "files" || !(index.createdOnFiles || index.convertedFrom)) throw new LibraryError("INVALID_CONTENT", "The design-system index is not in the editable files format.");
+    const tokens = json3("project/tokens.json");
+    for (const font of tokens.type?.fonts || []) if (typeof font.file === "string") {
+      const name = "project/" + relativePath(font.file);
+      if (!byPath.has(name)) throw new LibraryError("MISSING_CONTENT", "A design-system font file is missing.", { path: name });
+    }
+  } else {
+    const page = json3("db/files/index.html.json");
+    if (typeof page.text !== "string") throw new LibraryError("INVALID_CONTENT", "A dashboard needs files/index.html text.");
+    for (const file3 of files.filter((file4) => /^db\/datasets\/.+\.json$/.test(file4.path))) {
+      const dataset = json3(file3.path);
+      const id = /^\/_blob\/([a-f0-9]{32})$/.exec(dataset.source?.url || "")?.[1];
+      if (id && !byPath.has("_blobs/" + id)) throw new LibraryError("MISSING_CONTENT", "A dashboard dataset attachment is missing.");
+    }
+  }
+  return index;
+}
+async function writeContent(root, files) {
+  for (const file3 of files) {
+    const absolute = await safePath(root, file3.path, { mustExist: false });
+    await fs3.mkdir(path3.dirname(absolute), { recursive: true });
+    await safePath(root, file3.path, { mustExist: false });
+    await fs3.writeFile(within(root, absolute), Buffer.from(file3.data, "base64"), { flag: "wx" });
+  }
+}
+function blankContent(kind, title, at2) {
+  const marker = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  if (kind === "design-system") return [
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
+    entry("project/README.md", "# " + title + "\n"),
+    entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
+  ];
+  return [entry("db/dash/meta.json", { title }), entry("db/dash/params.json", {}), entry("db/files/index.html.json", { text: '<meta name="dash-one-writer"><style>#dash-root{color:#20211f;background:#fafaf8;font-family:Arial,sans-serif}#dash-root .library-blank-title{color:#20211f;font-size:28px;font-weight:500}</style><h1 class="library-blank-title">' + escape2(title) + "</h1>" })];
+}
+var INDEX_FILES, DEFAULT_LIMITS, forbidden, entry, escape2;
+var init_content = __esm({
+  "source/library/content.mjs"() {
+    init_safety();
+    INDEX_FILES = Object.freeze({ slides: "project/deck.json", design: "project/canvas.json", "design-system": "project/design-system.json", dashboard: "db/dash/meta.json" });
+    DEFAULT_LIMITS = Object.freeze({ maxFiles: 2048, maxFileBytes: 32 * 1024 * 1024, maxTotalBytes: 128 * 1024 * 1024, maxBundleBytes: 180 * 1024 * 1024 });
+    forbidden = (part) => ["comments.json", "node_modules", "_state", "_trash"].includes(part) || part.startsWith(".") && part !== ".image-slots.state.json";
+    entry = (file3, value) => ({ path: file3, encoding: "base64", data: Buffer.from(typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n").toString("base64") });
+    escape2 = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  }
+});
+
+// source/library/index.mjs
+import fs4 from "node:fs/promises";
+import os from "node:os";
+import path4 from "node:path";
+import { createHash as createHash2, randomUUID as randomUUID3 } from "node:crypto";
+function createLibraryStore(options) {
+  return new LibraryStore(options);
+}
+var BUNDLE_FORMAT, catalogFile, viewFile, bindingsFile, emptyCatalog, libraryTab, emptyView, at, metadata, LibraryStore;
+var init_library = __esm({
+  "source/library/index.mjs"() {
+    init_safety();
+    init_content();
+    BUNDLE_FORMAT = "codex-design-artifact";
+    catalogFile = "_state/catalog.json";
+    viewFile = "_state/view.json";
+    bindingsFile = "_state/bindings.json";
+    emptyCatalog = () => ({ version: 1, artifacts: {} });
+    libraryTab = () => ({ id: "library", type: "library" });
+    emptyView = () => ({ version: 1, tabs: [libraryTab()], activeTabId: "library" });
+    at = () => (/* @__PURE__ */ new Date()).toISOString();
+    metadata = (value) => {
+      if (value.formatVersion !== void 0 && value.formatVersion !== 1) throw new LibraryError("UNSUPPORTED_FORMAT", "This artifact manifest needs a supported format version.");
+      return {
+        id: artifactId(value.id),
+        kind: artifactKind(value.kind),
+        title: titleText(value.title),
+        formatVersion: 1,
+        createdAt: typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) ? value.createdAt : at(),
+        updatedAt: typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt)) ? value.updatedAt : at(),
+        favorite: value.favorite === true,
+        ...value.sourceArtifactId && UUID2.test(value.sourceArtifactId) ? { sourceArtifactId: value.sourceArtifactId } : {},
+        ...typeof value.deletedAt === "string" ? { deletedAt: value.deletedAt } : {}
+      };
+    };
+    LibraryStore = class {
+      constructor({ root = path4.join(os.homedir(), ".codex", "CodexDesignLibrary"), isBusy = async () => false, limits = {} } = {}) {
+        if (typeof root !== "string" || !root.trim()) throw new LibraryError("INVALID_PATH", "A library root is required.");
+        if (typeof isBusy !== "function") throw new LibraryError("INVALID_OPTION", "isBusy must be a function.");
+        this.root = path4.resolve(root);
+        this.isBusy = isBusy;
+        this.limits = { ...DEFAULT_LIMITS, ...limits };
+        if (Object.values(this.limits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError("INVALID_OPTION", "Content limits must be positive integers.");
+      }
+      async initialize() {
+        if (!this.ready) this.ready = this._initialize().catch((error113) => {
+          this.ready = null;
+          throw error113;
+        });
+        await this.ready;
+        return this;
+      }
+      async _initialize() {
+        const existing = await statOrNull(this.root);
+        if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) throw new LibraryError("SYMLINK_REFUSED", "The library root must be a real directory.");
+        await fs4.mkdir(this.root, { recursive: true });
+        this.realRoot = await fs4.realpath(this.root);
+        for (const relative of [...KINDS, "_state", "_trash"]) {
+          const directory = await safePath(this.root, relative, { mustExist: false });
+          await fs4.mkdir(directory, { recursive: true });
+          await safePath(this.root, relative, { type: "directory" });
+        }
+        await locked(this.root, async () => {
+          let identity = await readJson2(this.root, "_state/library.json", null);
+          if (!identity) {
+            identity = { version: 1, id: randomUUID3(), createdAt: at() };
+            await atomicJson2(this.root, "_state/library.json", identity);
+          }
+          if (identity.version !== 1 || !UUID2.test(identity.id)) throw new LibraryError("INVALID_STATE", "The library identity is invalid.");
+          this.libraryId = identity.id;
+          const catalog = await this._catalog();
+          for (const kind of KINDS) {
+            for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
+              if (!UUID2.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
+              const relative = `${kind}/${entry2.name}/artifact.json`;
+              if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
+              const manifest = metadata(await readJson2(this.root, relative));
+              if (manifest.id !== entry2.name.toLowerCase() || manifest.kind !== kind) throw new LibraryError("INVALID_MANIFEST", "Artifact directory and identity disagree.");
+              const previous = catalog.artifacts[manifest.id];
+              if (previous && (previous.location === "trash" || previous.kind !== kind) && await statOrNull(await safePath(this.root, this._relative(previous), { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in more than one physical location.");
+              catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
+            }
+          }
+          for (const entry2 of await fs4.readdir(await safePath(this.root, "_trash", { type: "directory" }), { withFileTypes: true })) {
+            if (!UUID2.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
+            const relative = `_trash/${entry2.name}/artifact.json`;
+            if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
+            const manifest = metadata(await readJson2(this.root, relative));
+            if (manifest.id !== entry2.name.toLowerCase()) throw new LibraryError("INVALID_MANIFEST", "A recycled artifact has a different directory identity.");
+            const previous = catalog.artifacts[manifest.id];
+            if (previous && previous.location === "active" && await statOrNull(await safePath(this.root, `${previous.kind}/${manifest.id}`, { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in both active storage and trash.");
+            catalog.artifacts[manifest.id] = { ...manifest, location: "trash" };
+          }
+          await this._saveCatalog(catalog);
+          if (!await statOrNull(await safePath(this.root, viewFile, { mustExist: false }))) await atomicJson2(this.root, viewFile, emptyView());
+          if (!await statOrNull(await safePath(this.root, bindingsFile, { mustExist: false }))) await atomicJson2(this.root, bindingsFile, { version: 1, artifacts: {} });
+        });
+      }
+      async _checkRoot() {
+        await this.initialize();
+        if ((await fs4.lstat(this.root)).isSymbolicLink() || await fs4.realpath(this.root) !== this.realRoot) throw new LibraryError("ROOT_CHANGED", "The library root changed after initialization.");
+      }
+      async _catalog() {
+        const value = await readJson2(this.root, catalogFile, emptyCatalog());
+        if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "The library catalog is invalid.");
+        for (const [id, record3] of Object.entries(value.artifacts)) {
+          if (artifactId(id) !== record3.id || !["active", "trash"].includes(record3.location)) throw new LibraryError("INVALID_STATE", "A catalog identity is invalid.");
+          metadata(record3);
+        }
+        return value;
+      }
+      _saveCatalog(catalog) {
+        return atomicJson2(this.root, catalogFile, catalog);
+      }
+      _relative(record3) {
+        return record3.location === "trash" ? `_trash/${record3.id}` : `${artifactKind(record3.kind)}/${artifactId(record3.id)}`;
+      }
+      async _artifactPath(record3, mustExist = true) {
+        return safePath(this.root, this._relative(record3), { mustExist, type: "directory" });
+      }
+      async _raw(id, { includeDeleted = false } = {}) {
+        id = artifactId(id);
+        const catalog = await this._catalog();
+        const record3 = catalog.artifacts[id];
+        if (!record3 || !includeDeleted && record3.location === "trash") throw new LibraryError("NOT_FOUND", "No such artifact.");
+        return { record: record3, catalog };
+      }
+      async _inspect(record3) {
+        const result = { ...metadata(record3), path: path4.join(this.root, ...this._relative(record3).split("/")), contentStatus: "ok", deleted: record3.location === "trash" };
+        try {
+          const root = await this._artifactPath(record3);
+          const manifest = metadata(await readJson2(root, "artifact.json"));
+          if (manifest.id !== record3.id || manifest.kind !== record3.kind) throw new LibraryError("INVALID_MANIFEST", "The artifact identity changed.");
+          const listed = await collectContent(root, record3.kind, this.limits, { includeBytes: false });
+          const needed = /* @__PURE__ */ new Set([INDEX_FILES[record3.kind], "project/tokens.json", "db/files/index.html.json"]);
+          const files = [];
+          for (const file3 of listed) files.push({ ...file3, data: needed.has(file3.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path) ? (await readBytes(root, file3.path, this.limits.maxFileBytes)).toString("base64") : "" });
+          const native = validateFiles(record3.kind, files);
+          const changedAt = listed.reduce((latest, file3) => file3.modifiedAt > latest ? file3.modifiedAt : latest, manifest.updatedAt);
+          Object.assign(result, manifest, { title: native.title, updatedAt: changedAt });
+        } catch (error113) {
+          result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error113.code) ? "missing" : "invalid";
+          result.contentError = { code: error113.code || "INVALID_CONTENT", message: error113.message };
+        }
+        return result;
+      }
+      async _busy(record3) {
+        const result = await this.isBusy(await this._inspect(record3));
+        if (result === true || result?.busy) throw new LibraryError("ARTIFACT_BUSY", result?.reason || "This artifact still has an active editor task. No agent was stopped.");
+      }
+      async list({ kind, query = "", favoritesOnly = false, includeDeleted = false } = {}) {
+        await this._checkRoot();
+        if (kind) artifactKind(kind);
+        if (typeof query !== "string" || query.length > 500) throw new LibraryError("INVALID_QUERY", "Search text is too long.");
+        const needle = query.trim().toLocaleLowerCase();
+        const catalog = await this._catalog();
+        const records = [];
+        for (const entry2 of Object.values(catalog.artifacts)) {
+          if (kind && entry2.kind !== kind || !includeDeleted && entry2.location === "trash" || favoritesOnly && !entry2.favorite) continue;
+          const record3 = await this._inspect(entry2);
+          if (!needle || `${record3.title} ${record3.kind}`.toLocaleLowerCase().includes(needle)) records.push(record3);
+        }
+        return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title));
+      }
+      async get(id, options = {}) {
+        await this._checkRoot();
+        return this._inspect((await this._raw(id, options)).record);
+      }
+      async _stage() {
+        const relative = `_state/staging/${randomUUID3()}`;
+        const absolute = await safePath(this.root, relative, { mustExist: false });
+        await fs4.mkdir(absolute, { recursive: true });
+        await safePath(this.root, relative, { type: "directory" });
+        return { relative, absolute };
+      }
+      async _removeStage(stage) {
+        const absolute = await safePath(this.root, stage.relative, { mustExist: false });
+        within(path4.join(this.root, "_state/staging"), absolute);
+        await fs4.rm(absolute, { recursive: true, force: true });
+      }
+      _retitle(kind, files, title) {
+        return files.map((file3) => {
+          if (file3.path !== INDEX_FILES[kind]) return file3;
+          const value = JSON.parse(Buffer.from(file3.data, "base64").toString("utf8"));
+          value.title = title;
+          return { ...file3, data: Buffer.from(JSON.stringify(value, null, 2) + "\n").toString("base64") };
+        });
+      }
+      async _create(kind, title, files, extra = {}) {
+        artifactKind(kind);
+        title = titleText(title);
+        files = this._retitle(kind, files, title);
+        validateFiles(kind, files);
+        const manifest = metadata({ id: randomUUID3(), kind, title, createdAt: at(), updatedAt: at(), favorite: false, ...extra });
+        const stage = await this._stage();
+        try {
+          await writeContent(stage.absolute, files);
+          await atomicJson2(stage.absolute, "artifact.json", manifest);
+          const destination = await safePath(this.root, `${kind}/${manifest.id}`, { mustExist: false });
+          if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The new identity already exists.");
+          await fs4.rename(stage.absolute, destination);
+          const catalog = await this._catalog();
+          catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
+          await this._saveCatalog(catalog);
+          return this._inspect(catalog.artifacts[manifest.id]);
+        } finally {
+          await this._removeStage(stage);
+        }
+      }
+      async create({ kind, title = `Untitled ${kind}` } = {}) {
+        await this._checkRoot();
+        artifactKind(kind);
+        title = titleText(title);
+        return locked(this.root, () => this._create(kind, title, blankContent(kind, title, at())));
+      }
+      async _updateMetadata(id, update, { touchContentTitle = false } = {}) {
+        const { record: record3, catalog } = await this._raw(id);
+        if (touchContentTitle) await this._busy(record3);
+        const root = await this._artifactPath(record3);
+        const manifest = metadata(await readJson2(root, "artifact.json"));
+        const next = metadata({ ...manifest, ...update, updatedAt: at() });
+        if (touchContentTitle) {
+          const index = await readJson2(root, INDEX_FILES[record3.kind]);
+          index.title = next.title;
+          await atomicJson2(root, INDEX_FILES[record3.kind], index);
+        }
+        await atomicJson2(root, "artifact.json", next);
+        catalog.artifacts[id] = { ...next, location: "active" };
+        await this._saveCatalog(catalog);
+        return this._inspect(catalog.artifacts[id]);
+      }
+      async rename(id, title) {
+        id = artifactId(id);
+        title = titleText(title);
+        await this._checkRoot();
+        return locked(this.root, () => this._updateMetadata(id, { title }, { touchContentTitle: true }));
+      }
+      async setFavorite(id, favorite = true) {
+        id = artifactId(id);
+        if (typeof favorite !== "boolean") throw new LibraryError("INVALID_OPTION", "favorite must be boolean.");
+        await this._checkRoot();
+        return locked(this.root, () => this._updateMetadata(id, { favorite }));
+      }
+      async _export(record3) {
+        await this._busy(record3);
+        const root = await this._artifactPath(record3);
+        const files = await collectContent(root, record3.kind, this.limits);
+        const native = validateFiles(record3.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native.title, files: files.map(({ path: path10, encoding, data }) => ({ path: path10, encoding, data })) };
+        if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
+        return bundle;
+      }
+      async exportArtifact(id) {
+        await this._checkRoot();
+        return locked(this.root, async () => this._export((await this._raw(id)).record));
+      }
+      async duplicate(id, { title } = {}) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record: record3 } = await this._raw(id);
+          const bundle = await this._export(record3);
+          return this._create(record3.kind, title || bundle.title + " copy", bundle.files, { sourceArtifactId: record3.id });
+        });
+      }
+      _bundle(input2, kind) {
+        let bundle = input2;
+        if (typeof bundle === "string" || Buffer.isBuffer(bundle)) {
+          if (Buffer.byteLength(bundle) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle is too large.");
+          try {
+            bundle = JSON.parse(String(bundle));
+          } catch {
+            throw new LibraryError("INVALID_BUNDLE", "Expected a native library JSON bundle.");
+          }
+        }
+        if (!bundle || bundle.format !== BUNDLE_FORMAT || bundle.version !== 1 || !Array.isArray(bundle.files)) throw new LibraryError("INVALID_BUNDLE", "Unsupported native artifact bundle.");
+        artifactKind(bundle.kind);
+        if (kind && kind !== bundle.kind) throw new LibraryError("INVALID_KIND", "Bundle and selected kind disagree.");
+        if (bundle.files.length > this.limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "Too many files in the native bundle.");
+        const files = [], keys = /* @__PURE__ */ new Set();
+        let total = 0, encoded = 0;
+        for (const file3 of bundle.files) {
+          const relative = relativePath(file3?.path);
+          const key = relative.normalize("NFC").toLowerCase();
+          if (keys.has(key)) throw new LibraryError("INVALID_BUNDLE", "Duplicate or case-colliding bundle path.");
+          keys.add(key);
+          if (!contentPath(bundle.kind, relative)) continue;
+          if (file3.encoding !== "base64" || typeof file3.data !== "string" || file3.data.length > Math.ceil(this.limits.maxFileBytes / 3) * 4 || file3.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file3.data)) throw new LibraryError("INVALID_BUNDLE", "Invalid or oversized base64 file.");
+          const padding = file3.data.indexOf("=");
+          if (padding >= 0 && (padding < file3.data.length - 2 || !/^={1,2}$/.test(file3.data.slice(padding)))) throw new LibraryError("INVALID_BUNDLE", "Invalid base64 padding.");
+          const bytes = Buffer.from(file3.data, "base64");
+          encoded += file3.data.length;
+          total += bytes.length;
+          if (bytes.toString("base64") !== file3.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
+          files.push({ path: relative, encoding: "base64", data: file3.data });
+        }
+        const native = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native.title, files };
+      }
+      async _source(sourcePath, kind) {
+        if (typeof sourcePath !== "string" || !path4.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
+        const info = await fs4.lstat(sourcePath).catch((error113) => {
+          if (error113.code === "ENOENT") throw new LibraryError("NOT_FOUND", "The import source is missing.");
+          throw error113;
+        });
+        if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The import source cannot be a symbolic link.");
+        if (info.isFile()) return this._bundle(await readBytes(path4.dirname(sourcePath), path4.basename(sourcePath), this.limits.maxBundleBytes), kind);
+        if (!info.isDirectory()) throw new LibraryError("INVALID_CONTENT", "The import source is not a native folder or bundle.");
+        const matches = [];
+        for (const candidate of KINDS) if (await statOrNull(await safePath(sourcePath, INDEX_FILES[candidate], { mustExist: false }))) matches.push(candidate);
+        if (!kind) {
+          if (matches.length !== 1) throw new LibraryError(matches.length ? "AMBIGUOUS_KIND" : "MISSING_CONTENT", "Select one native artifact kind with an existing index.");
+          kind = matches[0];
+        }
+        artifactKind(kind);
+        if (!matches.includes(kind)) throw new LibraryError("MISSING_CONTENT", "The chosen source has no native index for this kind.");
+        const busy = await this.isBusy({ id: null, kind, path: sourcePath });
+        if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
+        const files = await collectContent(sourcePath, kind, this.limits);
+        const native = validateFiles(kind, files);
+        return { kind, title: native.title, files };
+      }
+      async importArtifact({ bundle, sourcePath, kind, title } = {}) {
+        await this._checkRoot();
+        if (bundle === void 0 === (sourcePath === void 0)) throw new LibraryError("INVALID_OPTION", "Provide exactly one native bundle or explicitly chosen source path.");
+        if (kind) artifactKind(kind);
+        if (title !== void 0) titleText(title);
+        return locked(this.root, async () => {
+          const source = bundle === void 0 ? await this._source(sourcePath, kind) : this._bundle(bundle, kind);
+          return this._create(source.kind, title || source.title, source.files);
+        });
+      }
+      async listFiles(id) {
+        await this._checkRoot();
+        const { record: record3 } = await this._raw(id);
+        const root = await this._artifactPath(record3);
+        return collectContent(root, record3.kind, this.limits, { includeBytes: false });
+      }
+      async readFile(id, relative, { encoding = "utf8" } = {}) {
+        await this._checkRoot();
+        const { record: record3 } = await this._raw(id);
+        relativePath(relative);
+        if (!contentPath(record3.kind, relative)) throw new LibraryError("CONTENT_ONLY", "This route exposes only artwork and material files, not comments, chats, tasks, or runtime bindings.");
+        if (!["utf8", "base64"].includes(encoding)) throw new LibraryError("INVALID_OPTION", "Unsupported file encoding.");
+        const root = await this._artifactPath(record3), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
+        if (encoding === "utf8" && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError("BINARY_ENCODING_REQUIRED", "Read binary material using base64.");
+        return {
+          path: relative,
+          contentType: type,
+          bytes: bytes.length,
+          revision: { sha256: createHash2("sha256").update(bytes).digest("hex"), observedAt: at() },
+          ...encoding === "base64" ? { encoding, data: bytes.toString("base64") } : { text: bytes.toString("utf8") }
+        };
+      }
+      async trash(id) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record: record3, catalog } = await this._raw(id);
+          await this._busy(record3);
+          const source = await this._artifactPath(record3), destination = await safePath(this.root, `_trash/${record3.id}`, { mustExist: false });
+          if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The recycle location already exists.");
+          await fs4.rename(source, destination);
+          const next = metadata({ ...record3, deletedAt: at(), updatedAt: at() });
+          await atomicJson2(destination, "artifact.json", next);
+          catalog.artifacts[record3.id] = { ...next, location: "trash" };
+          await this._saveCatalog(catalog);
+          const view = await this._view(catalog);
+          view.tabs = view.tabs.filter((tab) => tab.id !== record3.id);
+          if (view.activeTabId === record3.id) view.activeTabId = "library";
+          await atomicJson2(this.root, viewFile, view);
+          return this._inspect(catalog.artifacts[record3.id]);
+        });
+      }
+      async restore(id) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record: record3, catalog } = await this._raw(id, { includeDeleted: true });
+          if (record3.location !== "trash") return this._inspect(record3);
+          await this._busy(record3);
+          const source = await this._artifactPath(record3), destination = await safePath(this.root, `${record3.kind}/${record3.id}`, { mustExist: false });
+          if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "An active directory already occupies this identity.");
+          await fs4.rename(source, destination);
+          const { deletedAt, ...old } = record3;
+          const next = metadata({ ...old, updatedAt: at() });
+          await atomicJson2(destination, "artifact.json", next);
+          catalog.artifacts[record3.id] = { ...next, location: "active" };
+          await this._saveCatalog(catalog);
+          return this._inspect(catalog.artifacts[record3.id]);
+        });
+      }
+      async snapshot(id, { label = "Snapshot" } = {}) {
+        label = titleText(label);
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record: record3 } = await this._raw(id), bundle = await this._export(record3);
+          const snapshot = { id: randomUUID3(), artifactId: record3.id, label, createdAt: at(), bundle };
+          await atomicJson2(this.root, `_state/snapshots/${record3.id}/${snapshot.id}.json`, snapshot);
+          return this._snapshotSummary(snapshot);
+        });
+      }
+      _snapshotSummary(snapshot) {
+        return { id: snapshot.id, artifactId: snapshot.artifactId, label: snapshot.label, createdAt: snapshot.createdAt, files: snapshot.bundle.files.length, bytes: snapshot.bundle.files.reduce((sum, file3) => sum + Buffer.byteLength(file3.data, "base64"), 0) };
+      }
+      async listSnapshots(id) {
+        id = artifactId(id);
+        await this._checkRoot();
+        await this._raw(id, { includeDeleted: true });
+        const relative = `_state/snapshots/${id}`, directory = await safePath(this.root, relative, { mustExist: false });
+        if (!await statOrNull(directory)) return [];
+        const result = [];
+        for (const name of await fs4.readdir(directory)) if (/^[0-9a-f-]+\.json$/i.test(name) && UUID2.test(name.slice(0, -5))) {
+          const snapshot = await readJson2(this.root, relative + "/" + name);
+          if (snapshot.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
+          this._bundle(snapshot.bundle);
+          result.push(this._snapshotSummary(snapshot));
+        }
+        return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      }
+      async restoreSnapshot(id, snapshotId) {
+        id = artifactId(id);
+        snapshotId = artifactId(snapshotId);
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const { record: record3, catalog } = await this._raw(id);
+          await this._busy(record3);
+          const saved = await readJson2(this.root, `_state/snapshots/${id}/${snapshotId}.json`);
+          if (saved.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
+          const bundle = this._bundle(saved.bundle, record3.kind);
+          const root = await this._artifactPath(record3), current = await collectContent(root, record3.kind, this.limits, { includeBytes: false }), stage = await this._stage();
+          const originalManifest = await readJson2(root, "artifact.json");
+          let manifestWritten = false;
+          const before = path4.join(stage.absolute, "before"), after = path4.join(stage.absolute, "after");
+          await fs4.mkdir(before);
+          await fs4.mkdir(after);
+          await writeContent(after, bundle.files);
+          const moved = [], added = [];
+          try {
+            for (const file3 of current) {
+              const from = await safePath(root, file3.path, { type: "file" }), to = await safePath(before, file3.path, { mustExist: false });
+              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.rename(from, to);
+              moved.push(file3.path);
+            }
+            for (const file3 of bundle.files) {
+              const from = await safePath(after, file3.path, { type: "file" }), to = await safePath(root, file3.path, { mustExist: false });
+              if (await statOrNull(to)) throw new LibraryError("CONTENT_CHANGED", "A file changed while restoring a snapshot.");
+              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.rename(from, to);
+              added.push(file3.path);
+            }
+            const next = metadata({ ...record3, title: bundle.title, updatedAt: at() });
+            await atomicJson2(root, "artifact.json", next);
+            manifestWritten = true;
+            catalog.artifacts[id] = { ...next, location: "active" };
+            await this._saveCatalog(catalog);
+            return this._inspect(catalog.artifacts[id]);
+          } catch (error113) {
+            for (const relative of added) await fs4.unlink(await safePath(root, relative, { type: "file" }));
+            for (const relative of moved) {
+              const from = await safePath(before, relative, { type: "file" }), to = await safePath(root, relative, { mustExist: false });
+              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.rename(from, to);
+            }
+            if (manifestWritten) await atomicJson2(root, "artifact.json", originalManifest);
+            throw error113;
+          } finally {
+            await this._removeStage(stage);
+          }
+        });
+      }
+      async scanLegacy() {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const state = await readJson2(this.root, "_state/legacy-imports.json", { version: 1, sources: {} });
+          if (state.version !== 1 || !state.sources) throw new LibraryError("INVALID_STATE", "The legacy registration state is invalid.");
+          const results = [];
+          for (const kind of KINDS) for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
+            if (entry2.name.startsWith(".")) continue;
+            const relative = `${kind}/${entry2.name}`;
+            if (entry2.isSymbolicLink()) {
+              results.push({ kind, path: path4.join(this.root, relative), status: "invalid", code: "SYMLINK_REFUSED" });
+              continue;
+            }
+            if (!entry2.isDirectory()) continue;
+            const source = await safePath(this.root, relative, { type: "directory" });
+            if (await statOrNull(await safePath(source, "artifact.json", { mustExist: false }))) continue;
+            if (state.sources[relative]) {
+              const registered = (await this._catalog()).artifacts[state.sources[relative]];
+              const status = registered ? (await this._inspect(registered)).contentStatus : "missing";
+              results.push({ kind, path: source, status: status === "ok" ? "registered" : status, artifactId: state.sources[relative] });
+              continue;
+            }
+            try {
+              const content = await this._source(source, kind);
+              const imported = await this._create(kind, content.title, content.files);
+              state.sources[relative] = imported.id;
+              await atomicJson2(this.root, "_state/legacy-imports.json", state);
+              results.push({ kind, path: source, status: "imported", artifactId: imported.id });
+            } catch (error113) {
+              results.push({ kind, path: source, status: ["MISSING_CONTENT", "NOT_FOUND"].includes(error113.code) ? "missing" : "invalid", code: error113.code || "INVALID_CONTENT", message: error113.message });
+            }
+          }
+          return results;
+        });
+      }
+      async _bindings() {
+        const value = await readJson2(this.root, bindingsFile, { version: 1, artifacts: {} });
+        if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "Chat bindings are invalid.");
+        return value;
+      }
+      async getBinding(id) {
+        id = artifactId(id);
+        await this._checkRoot();
+        await this._raw(id);
+        return structuredClone((await this._bindings()).artifacts[id] || null);
+      }
+      async bindChat(id, { threadId, projectId } = {}) {
+        id = artifactId(id);
+        for (const value of [threadId, ...projectId === void 0 ? [] : [projectId]]) if (typeof value !== "string" || !value.trim() || value.length > 300 || /[\u0000-\u001f\u007f]/.test(value)) throw new LibraryError("INVALID_BINDING", "Use an actual nonempty host identifier.");
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          await this._raw(id);
+          const state = await this._bindings(), previous = state.artifacts[id];
+          if (previous && previous.threadId !== threadId) throw new LibraryError("BINDING_CONFLICT", "This artifact already has a different editing conversation; unlink it explicitly first.");
+          const binding = { artifactId: id, threadId, ...projectId ? { projectId } : {}, boundAt: previous?.boundAt || at(), updatedAt: at() };
+          state.artifacts[id] = binding;
+          await atomicJson2(this.root, bindingsFile, state);
+          return binding;
+        });
+      }
+      async unbindChat(id) {
+        id = artifactId(id);
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          await this._raw(id);
+          const state = await this._bindings();
+          delete state.artifacts[id];
+          await atomicJson2(this.root, bindingsFile, state);
+          return null;
+        });
+      }
+      async _view(catalog) {
+        const value = await readJson2(this.root, viewFile, emptyView());
+        if (value.version !== 1 || !Array.isArray(value.tabs)) throw new LibraryError("INVALID_STATE", "The saved library view is invalid.");
+        const tabs = [libraryTab()], seen = /* @__PURE__ */ new Set(["library"]);
+        for (const tab of value.tabs) if (tab?.type === "artifact" && typeof tab.artifactId === "string" && UUID2.test(tab.artifactId)) {
+          const id = tab.artifactId.toLowerCase();
+          if (!seen.has(id) && catalog.artifacts[id]?.location === "active") {
+            tabs.push({ id, type: "artifact", artifactId: id });
+            seen.add(id);
+          }
+        }
+        return { version: 1, tabs, activeTabId: seen.has(value.activeTabId) ? value.activeTabId : "library" };
+      }
+      async getViewState() {
+        await this._checkRoot();
+        return this._view(await this._catalog());
+      }
+      async _viewUpdate(fn) {
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const catalog = await this._catalog(), view = await this._view(catalog);
+          await fn(view, catalog);
+          await atomicJson2(this.root, viewFile, view);
+          return view;
+        });
+      }
+      async openTab(id) {
+        id = artifactId(id);
+        return this._viewUpdate((view, catalog) => {
+          if (catalog.artifacts[id]?.location !== "active") throw new LibraryError("NOT_FOUND", "No active artifact has this id.");
+          if (!view.tabs.some((tab) => tab.id === id)) view.tabs.push({ id, type: "artifact", artifactId: id });
+          view.activeTabId = id;
+        });
+      }
+      async activateTab(id) {
+        if (id !== "library") id = artifactId(id);
+        return this._viewUpdate((view) => {
+          if (!view.tabs.some((tab) => tab.id === id)) throw new LibraryError("NOT_FOUND", "This tab is not open.");
+          view.activeTabId = id;
+        });
+      }
+      async closeTab(id) {
+        if (id !== "library") id = artifactId(id);
+        return this._viewUpdate((view) => {
+          if (id === "library") return;
+          view.tabs = view.tabs.filter((tab) => tab.id !== id);
+          if (view.activeTabId === id) view.activeTabId = view.tabs.at(-1).id;
+        });
+      }
+      async reorderTabs(ids) {
+        if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new LibraryError("INVALID_VIEW", "Expected an ordered list of tab ids.");
+        return this._viewUpdate((view) => {
+          const requested = ids.filter((id) => id !== "library");
+          const current = view.tabs.filter((tab) => tab.type === "artifact");
+          if (new Set(requested).size !== requested.length || requested.length !== current.length || requested.some((id) => !current.some((tab) => tab.id === id))) throw new LibraryError("INVALID_VIEW", "Tab order must contain each open artifact once.");
+          view.tabs = [libraryTab(), ...requested.map((id) => current.find((tab) => tab.id === id))];
+        });
+      }
+    };
   }
 });
 
@@ -213,16 +1086,19 @@ function publicJob(job) {
     ...job.completedAt ? { completedAt: job.completedAt } : {},
     ...job.repliedAt ? { repliedAt: job.repliedAt } : {},
     ...job.error ? { error: job.error } : {},
+    ...job.restorePoint ? { restorePoint: job.restorePoint } : {},
     ...job.ownerThreadId ? { ownerThreadId: job.ownerThreadId } : {}
   };
 }
-var WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOG_FILE;
+var WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOG_FILE, WORKER_LOCK_FILE, saveJobs;
 var init_worker_core = __esm({
   "source/scripts/worker-core.mjs"() {
     init_bridge_core();
     WORKER_FILE = ".codex-design-worker.json";
     WORKER_JOBS_FILE = ".codex-design-worker-jobs.json";
     WORKER_LOG_FILE = ".codex-design-worker.log";
+    WORKER_LOCK_FILE = ".codex-design-worker.lock";
+    saveJobs = (root, state) => atomicJson(path5.join(root, WORKER_JOBS_FILE), state);
   }
 });
 
@@ -257,35 +1133,77 @@ async function getWorkerStatus(root) {
     log: path6.join(root, WORKER_LOG_FILE)
   };
 }
-var registryFile;
+async function stopWorker(root, { onlyWhenIdle = false } = {}) {
+  return await withJobs(root, async () => {
+    const registry3 = readRegistry(root);
+    const state = loadJobs(root);
+    if (onlyWhenIdle && Object.values(state.jobs).some((job) => job.status === "active")) {
+      throw new BridgeError("ARTIFACT_BUSY", "An active native design job owns this artwork. Its parent must coordinate ownership before stopping the editor or moving its files.");
+    }
+    if (!registry3) return { paused: false, interruptRequired: false, nativeThreadId: null };
+    let active = false;
+    for (const job of Object.values(state.jobs)) if (job.status === "active") {
+      active = true;
+      job.status = "pending";
+      job.pausedAt = now();
+    }
+    registry3.status = "paused";
+    registry3.pausedAt = now();
+    delete registry3.listener;
+    delete registry3.activeJobId;
+    saveJobs(root, state);
+    saveRegistry(root, registry3);
+    return {
+      paused: true,
+      nativeThreadId: registry3.nativeThreadId,
+      interruptRequired: active,
+      note: "This pauses the local listener only. The parent must use native agent tools to interrupt a child that is still editing."
+    };
+  });
+}
+var registryFile, withJobs, saveRegistry, now;
 var init_worker_client = __esm({
   "source/scripts/worker-client.mjs"() {
     init_bridge_core();
     init_worker_core();
+    init_library();
     registryFile = (root) => path6.join(root, WORKER_FILE);
+    withJobs = (root, action) => withLock(path6.join(root, WORKER_LOCK_FILE), action, { timeoutMs: 1e4, staleMs: 0 });
+    saveRegistry = (root, registry3) => atomicJson(registryFile(root), registry3);
+    now = () => (/* @__PURE__ */ new Date()).toISOString();
+  }
+});
+
+// source/scripts/design-system-search.mjs
+var init_design_system_search = __esm({
+  "source/scripts/design-system-search.mjs"() {
   }
 });
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
-  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail();
+  const fail2 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail2();
   try {
     const url3 = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url3.protocol) || url3.username || url3.password) throw fail();
+    if (!["http:", "https:"].includes(url3.protocol) || url3.username || url3.password) throw fail2();
     const response = await fetch(url3, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
-    if (!response.ok) throw fail();
+    if (!response.ok) throw fail2();
     const session = await response.json();
-    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail();
+    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail2();
     return session;
   } catch {
-    throw fail();
+    throw fail2();
   }
 }
 var init_artifact_command = __esm({
   "source/scripts/artifact-command.mjs"() {
     init_bridge_core();
     init_worker_client();
+    init_design_system_search();
+    init_library();
+    init_safety();
+    init_worker_core();
   }
 });
 
@@ -1163,10 +2081,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path9) {
-  if (!path9)
+function getElementAtPath(obj, path10) {
+  if (!path10)
     return obj;
-  return path9.reduce((acc, key) => acc?.[key], obj);
+  return path10.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -1506,11 +2424,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path9, issues) {
+function prefixIssues(path10, issues) {
   return issues.map((iss) => {
     var _a5;
     (_a5 = iss).path ?? (_a5.path = []);
-    iss.path.unshift(path9);
+    iss.path.unshift(path10);
     return iss;
   });
 }
@@ -1958,10 +2876,10 @@ function node(obj, key, make) {
   }
   return obj[key];
 }
-function flattenError(error112, mapper = (issue3) => issue3.message) {
+function flattenError(error113, mapper = (issue3) => issue3.message) {
   const fieldErrors = {};
   const formErrors = [];
-  for (const sub of error112.issues) {
+  for (const sub of error113.issues) {
     if (sub.path.length > 0) {
       node(fieldErrors, sub.path[0], () => []).push(mapper(sub));
     } else {
@@ -1970,18 +2888,18 @@ function flattenError(error112, mapper = (issue3) => issue3.message) {
   }
   return { formErrors, fieldErrors };
 }
-function formatError(error112, mapper = (issue3) => issue3.message) {
+function formatError(error113, mapper = (issue3) => issue3.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error113, path9 = []) => {
-    for (const issue3 of error113.issues) {
+  const processError = (error114, path10 = []) => {
+    for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path9, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path10, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else {
-        const fullpath = [...path9, ...issue3.path];
+        const fullpath = [...path10, ...issue3.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue3));
         } else {
@@ -2015,22 +2933,22 @@ function formatError(error112, mapper = (issue3) => issue3.message) {
       }
     }
   };
-  processError(error112);
+  processError(error113);
   return fieldErrors;
 }
-function treeifyError(error112, mapper = (issue3) => issue3.message) {
+function treeifyError(error113, mapper = (issue3) => issue3.message) {
   const result = { errors: [] };
-  const processError = (error113, path9 = []) => {
+  const processError = (error114, path10 = []) => {
     var _a5;
-    for (const issue3 of error113.issues) {
+    for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path9, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path10, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else {
-        const fullpath = [...path9, ...issue3.path];
+        const fullpath = [...path10, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -2064,13 +2982,13 @@ function treeifyError(error112, mapper = (issue3) => issue3.message) {
       }
     }
   };
-  processError(error112);
+  processError(error113);
   return result;
 }
 function toDotPath(_path) {
   const segs = [];
-  const path9 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path9) {
+  const path10 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path10) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -2085,9 +3003,9 @@ function toDotPath(_path) {
   }
   return segs.join("");
 }
-function prettifyError(error112) {
+function prettifyError(error113) {
   const lines = [];
-  const issues = [...error112.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
+  const issues = [...error113.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
   for (const issue3 of issues) {
     lines.push(`✖ ${issue3.message}`);
     if (issue3.path?.length)
@@ -2143,19 +3061,19 @@ var _safeParse = (_Err) => (schema, value, _ctx) => {
 };
 var safeParse = /* @__PURE__ */ _safeParse($ZodRealError);
 function failure(Err, issues, ctx) {
-  let error112;
+  let error113;
   return {
     success: false,
     get error() {
-      if (!error112) {
-        error112 = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
+      if (!error113) {
+        error113 = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
         issues = void 0;
         ctx = void 0;
       }
-      return error112;
+      return error113;
     },
     set error(e) {
-      error112 = e;
+      error113 = e;
       issues = void 0;
       ctx = void 0;
     }
@@ -16509,8 +17427,8 @@ var addPattern = (agg, pattern) => {
   agg.patterns ?? (agg.patterns = /* @__PURE__ */ new Set());
   agg.patterns.add(pattern);
 };
-var intersectMime = (agg, mime) => {
-  agg.mime = agg.mime ? agg.mime.filter((m) => mime.includes(m)) : [...mime];
+var intersectMime = (agg, mime2) => {
+  agg.mime = agg.mime ? agg.mime.filter((m) => mime2.includes(m)) : [...mime2];
 };
 var setFormat = (agg, format2) => {
   agg.format = format2;
@@ -16766,19 +17684,19 @@ var fileProcessor = (schema, _ctx, json3, _params) => {
   _json.type = "string";
   _json.format = "binary";
   _json.contentEncoding = "binary";
-  const { minimum, maximum, mime } = aggregateChecks(schema);
+  const { minimum, maximum, mime: mime2 } = aggregateChecks(schema);
   if (minimum !== void 0)
     _json.minLength = minimum;
   if (maximum !== void 0)
     _json.maxLength = maximum;
-  if (!mime)
+  if (!mime2)
     return;
-  if (mime.length === 0)
+  if (mime2.length === 0)
     _json.not = {};
-  else if (mime.length === 1)
-    _json.contentMediaType = mime[0];
+  else if (mime2.length === 1)
+    _json.contentMediaType = mime2[0];
   else
-    _json.anyOf = mime.map((m) => ({ contentMediaType: m }));
+    _json.anyOf = mime2.map((m) => ({ contentMediaType: m }));
 };
 var successProcessor = (_schema, _ctx, json3, _params) => {
   json3.type = "boolean";
@@ -19208,13 +20126,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path9 = ref.slice(1).split("/").filter(Boolean);
-  if (path9.length === 0) {
+  const path10 = ref.slice(1).split("/").filter(Boolean);
+  if (path10.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path9[0] === defsKey) {
-    const key = path9[1] === void 0 ? void 0 : decodeJSONPointerSegment(path9[1]);
+  if (path10[0] === defsKey) {
+    const key = path10[1] === void 0 ? void 0 : decodeJSONPointerSegment(path10[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -23642,9 +24560,9 @@ var rev2026Codec = {
     });
     const parsed = buildSchemas2026().RequestMetaEnvelopeSchema.safeParse(meta5);
     if (!parsed.success) for (const issue3 of parsed.error.issues) {
-      const path9 = issue3.path.map(String);
-      const key = path9.length > 0 ? path9.join(".") : "_meta";
-      if (path9.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
+      const path10 = issue3.path.map(String);
+      const key = path10.length > 0 ? path10.join(".") : "_meta";
+      if (path10.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
       issues.push({
         key,
         problem: issue3.message
@@ -23971,17 +24889,17 @@ function scanXMcpHeaderDeclarations(inputSchema) {
   const declarations = [];
   const seenLower = /* @__PURE__ */ new Map();
   let numberFault;
-  const visit2 = (node2, path9, reachable) => {
+  const visit2 = (node2, path10, reachable) => {
     if (node2 === null || typeof node2 !== "object") return void 0;
     const schema = node2;
     if (X_MCP_HEADER_KEY in schema) {
-      if (!reachable || path9.length === 0) return `${pathName(path9)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
+      if (!reachable || path10.length === 0) return `${pathName(path10)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
       const raw = schema[X_MCP_HEADER_KEY];
-      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path9)}: x-mcp-header MUST be a non-empty string`;
-      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path9)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
+      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path10)}: x-mcp-header MUST be a non-empty string`;
+      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path10)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
       const type = typeof schema.type === "string" ? schema.type : void 0;
       if (type === void 0 || !PERMITTED_X_MCP_HEADER_TYPES.has(type)) {
-        const fault$1 = `${pathName(path9)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
+        const fault$1 = `${pathName(path10)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
         if (type !== "number") return fault$1;
         numberFault ??= fault$1;
       }
@@ -23990,14 +24908,14 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (prior !== void 0) return `x-mcp-header '${raw}' is not case-insensitively unique (also declared as '${prior}')`;
       seenLower.set(lower, raw);
       declarations.push({
-        path: path9,
+        path: path10,
         headerName: raw,
         type
       });
     }
     const properties = schema.properties;
     if (properties !== null && typeof properties === "object") for (const [key, child] of Object.entries(properties)) {
-      const fault$1 = visit2(child, [...path9, key], reachable);
+      const fault$1 = visit2(child, [...path10, key], reachable);
       if (fault$1 !== void 0) return fault$1;
     }
     for (const k of NON_REACHABLE_SUBSCHEMA_KEYWORDS) {
@@ -24005,7 +24923,7 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (sub === void 0) continue;
       const branches = Array.isArray(sub) ? sub : sub !== null && typeof sub === "object" && OBJECT_VALUED_SUBSCHEMA_KEYWORDS.has(k) ? Object.values(sub) : [sub];
       for (const branch of branches) {
-        const fault$1 = visit2(branch, [...path9, `<${k}>`], false);
+        const fault$1 = visit2(branch, [...path10, `<${k}>`], false);
         if (fault$1 !== void 0) return fault$1;
       }
     }
@@ -24050,8 +24968,8 @@ var OBJECT_VALUED_SUBSCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
   "$defs",
   "definitions"
 ]);
-function pathName(path9) {
-  return path9.length === 0 ? "<root>" : path9.join(".");
+function pathName(path10) {
+  return path10.length === 0 ? "<root>" : path10.join(".");
 }
 var HEADER_MISMATCH_ERROR_CODE = -32020;
 var INBOUND_VALIDATION_LADDER = [
@@ -24140,15 +25058,15 @@ var LADDER_ERROR_HTTP_STATUS = {
   [ProtocolErrorCode.MissingRequiredClientCapability]: 400,
   [HEADER_MISMATCH_ERROR_CODE]: 400
 };
-function rejection(rung, cell, httpStatus, error112, settled) {
+function rejection(rung, cell, httpStatus, error113, settled) {
   return {
     kind: "reject",
     rung,
     cell,
     httpStatus,
-    code: error112.code,
-    message: error112.message,
-    ...error112.data !== void 0 && { data: error112.data },
+    code: error113.code,
+    message: error113.message,
+    ...error113.data !== void 0 && { data: error113.data },
     settled
   };
 }
@@ -24312,8 +25230,8 @@ function isJsonObject(value) {
 function convertStandardElicitationSchema(schema) {
   try {
     return standardSchemaToJsonSchema(schema, "input");
-  } catch (error112) {
-    const detail = error112 instanceof Error ? error112.message : String(error112);
+  } catch (error113) {
+    const detail = error113 instanceof Error ? error113.message : String(error113);
     throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Elicitation requestedSchema must describe an object with flat primitive properties: ${detail}`);
   }
 }
@@ -24343,7 +25261,7 @@ var PROPERTY_KEYS_BY_TYPE = {
   array: shapeKeys([UntitledMultiSelectEnumSchemaSchema, TitledMultiSelectEnumSchemaSchema])
 };
 var SUPPORTED_STRING_FORMATS = new Set(StringSchemaSchema.shape.format.unwrap().options);
-function walkProperty(node2, path9, vendor, unsupported) {
+function walkProperty(node2, path10, vendor, unsupported) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -24351,8 +25269,8 @@ function walkProperty(node2, path9, vendor, unsupported) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path9}.${key}`);
-  } else unsupported.push(`${path9}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path10}.${key}`);
+  } else unsupported.push(`${path10}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
@@ -24369,11 +25287,11 @@ function describeUnsupportedProperties(pruned, fallback) {
   const offenders = Object.entries(pruned.properties).filter(([, node2]) => !parseSchema(PrimitiveSchemaDefinitionSchema, node2).success).map(([name]) => `properties.${name}`);
   return offenders.length > 0 ? offenders.join(", ") : fallback;
 }
-function findDroppedConstraintPaths(original, parsed, path9 = "") {
-  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path9}[${index}]`));
+function findDroppedConstraintPaths(original, parsed, path10 = "") {
+  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path10}[${index}]`));
   if (!isJsonObject(original) || !isJsonObject(parsed)) return [];
   return Object.entries(original).flatMap(([key, value]) => {
-    const childPath = path9 ? `${path9}.${key}` : key;
+    const childPath = path10 ? `${path10}.${key}` : key;
     if (!Object.prototype.hasOwnProperty.call(parsed, key)) return isAnnotationOnlyJsonSchemaKeyword(key) ? [] : [childPath];
     return findDroppedConstraintPaths(value, parsed[key], childPath);
   });
@@ -24415,8 +25333,8 @@ var inputRequired = Object.assign(buildInputRequired, {
         method: "elicitation/create",
         params: normalizeElicitInputParams(params)
       };
-    } catch (error112) {
-      throw error112 instanceof ProtocolError ? new TypeError(error112.message, { cause: error112 }) : error112;
+    } catch (error113) {
+      throw error113 instanceof ProtocolError ? new TypeError(error113.message, { cause: error113 }) : error113;
     }
   },
   elicitUrl(params) {
@@ -24939,9 +25857,9 @@ var Protocol = class {
       }
     };
     const _onerror = this.transport?.onerror;
-    this._transport.onerror = (error112) => {
-      _onerror?.(error112);
-      this._onerror(error112);
+    this._transport.onerror = (error113) => {
+      _onerror?.(error113);
+      this._onerror(error113);
     };
     const _onmessage = this._transport?.onmessage;
     this._transport.onmessage = (message, extra) => {
@@ -24968,17 +25886,17 @@ var Protocol = class {
     this._timeoutInfo.clear();
     const requestHandlerAbortControllers = this._requestHandlerAbortControllers;
     this._requestHandlerAbortControllers = /* @__PURE__ */ new Map();
-    const error112 = new SdkError(SdkErrorCode.ConnectionClosed, "Connection closed");
+    const error113 = new SdkError(SdkErrorCode.ConnectionClosed, "Connection closed");
     this._transport = void 0;
     try {
       this.onclose?.();
     } finally {
-      for (const handler of responseHandlers.values()) handler(error112);
-      for (const controller of requestHandlerAbortControllers.values()) controller.abort(error112);
+      for (const handler of responseHandlers.values()) handler(error113);
+      for (const controller of requestHandlerAbortControllers.values()) controller.abort(error113);
     }
   }
-  _onerror(error112) {
-    this.onerror?.(error112);
+  _onerror(error113) {
+    this.onerror?.(error113);
   }
   /**
   * Inbound-notification dispatch. Subclass overrides MUST delegate
@@ -25001,7 +25919,7 @@ var Protocol = class {
     const handler = this._notificationHandlers.get(notification.method);
     const fallback = this.fallbackNotificationHandler;
     if (handler === void 0 && fallback === void 0) return;
-    Promise.resolve().then(() => handler === void 0 ? fallback(notification) : handler(notification, codec3)).catch((error112) => this._onerror(/* @__PURE__ */ new Error(`Uncaught error in notification handler: ${error112}`)));
+    Promise.resolve().then(() => handler === void 0 ? fallback(notification) : handler(notification, codec3)).catch((error113) => this._onerror(/* @__PURE__ */ new Error(`Uncaught error in notification handler: ${error113}`)));
   }
   _onrequest(rawRequest, extra) {
     const { message: request, lifted } = liftWireOnlyMaterial(rawRequest, "request");
@@ -25021,7 +25939,7 @@ var Protocol = class {
           ...data !== void 0 && { data }
         }
       };
-      capturedTransport?.send(errorResponse).catch((error112) => this._onerror(/* @__PURE__ */ new Error(`Failed to send an error response: ${error112}`)));
+      capturedTransport?.send(errorResponse).catch((error113) => this._onerror(/* @__PURE__ */ new Error(`Failed to send an error response: ${error113}`)));
     };
     if (extra?.classification !== void 0) {
       const classified = classifiedWireEra(extra.classification);
@@ -25089,8 +26007,8 @@ var Protocol = class {
       let encoded;
       try {
         encoded = codec3.encodeResult(request.method, result, this._outboundServerInfo());
-      } catch (error112) {
-        this._onerror(/* @__PURE__ */ new Error(`Failed to encode result for ${request.method}: ${error112}`));
+      } catch (error113) {
+        this._onerror(/* @__PURE__ */ new Error(`Failed to encode result for ${request.method}: ${error113}`));
         sendErrorResponse(ProtocolErrorCode.InternalError, "Internal error");
         return;
       }
@@ -25100,20 +26018,20 @@ var Protocol = class {
         id: request.id
       };
       await capturedTransport?.send(response);
-    }, async (error112) => {
+    }, async (error113) => {
       if (abortController.signal.aborted) return;
-      const thrownCode = Number.isSafeInteger(error112["code"]) ? error112["code"] : ProtocolErrorCode.InternalError;
+      const thrownCode = Number.isSafeInteger(error113["code"]) ? error113["code"] : ProtocolErrorCode.InternalError;
       const errorResponse = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
           code: codec3.encodeErrorCode(thrownCode),
-          message: error112.message ?? "Internal error",
-          ...error112["data"] !== void 0 && { data: error112["data"] }
+          message: error113.message ?? "Internal error",
+          ...error113["data"] !== void 0 && { data: error113["data"] }
         }
       };
       await capturedTransport?.send(errorResponse);
-    }).catch((error112) => this._onerror(/* @__PURE__ */ new Error(`Failed to send response: ${error112}`))).finally(() => {
+    }).catch((error113) => this._onerror(/* @__PURE__ */ new Error(`Failed to send response: ${error113}`))).finally(() => {
       if (this._requestHandlerAbortControllers.get(request.id) === abortController) this._requestHandlerAbortControllers.delete(request.id);
     });
   }
@@ -25129,11 +26047,11 @@ var Protocol = class {
     const timeoutInfo = this._timeoutInfo.get(messageId);
     if (timeoutInfo && responseHandler && timeoutInfo.resetTimeoutOnProgress) try {
       this._resetTimeout(messageId);
-    } catch (error112) {
+    } catch (error113) {
       this._responseHandlers.delete(messageId);
       this._progressHandlers.delete(messageId);
       this._cleanupTimeout(messageId);
-      responseHandler(error112);
+      responseHandler(error113);
       return;
     }
     handler(params);
@@ -25250,8 +26168,8 @@ var Protocol = class {
     let onAbort;
     let cleanupMessageId;
     return new Promise((resolve, reject) => {
-      const earlyReject = (error112) => {
-        reject(error112);
+      const earlyReject = (error113) => {
+        reject(error113);
       };
       if (!this._transport) {
         earlyReject(/* @__PURE__ */ new Error("Not connected"));
@@ -25259,8 +26177,8 @@ var Protocol = class {
       }
       if (this._options?.enforceStrictCapabilities === true) try {
         this.assertCapabilityForMethod(request.method);
-      } catch (error112) {
-        earlyReject(error112);
+      } catch (error113) {
+        earlyReject(error113);
         return;
       }
       if (options?.signal?.aborted) {
@@ -25302,7 +26220,7 @@ var Protocol = class {
             relatedRequestId,
             resumptionToken,
             onresumptiontoken
-          }).catch((error112) => this._onerror(/* @__PURE__ */ new Error(`Failed to send cancellation: ${error112}`)));
+          }).catch((error113) => this._onerror(/* @__PURE__ */ new Error(`Failed to send cancellation: ${error113}`)));
         } else requestAbort.abort();
         reject(reason instanceof SdkError ? reason : new SdkError(SdkErrorCode.RequestTimeout, String(reason)));
       };
@@ -25313,8 +26231,8 @@ var Protocol = class {
         let decoded;
         try {
           decoded = codec3.decodeResult(request.method, response.result);
-        } catch (error112) {
-          return reject(error112 instanceof Error ? error112 : new Error(String(error112)));
+        } catch (error113) {
+          return reject(error113 instanceof Error ? error113 : new Error(String(error113)));
         }
         if (decoded.kind === "invalid") return reject(decoded.error);
         if (decoded.kind === "input_required") {
@@ -25349,9 +26267,9 @@ var Protocol = class {
         onresumptiontoken,
         headers,
         requestSignal: requestAbort?.signal
-      }).catch((error112) => {
+      }).catch((error113) => {
         this._progressHandlers.delete(messageId);
-        reject(error112);
+        reject(error113);
       });
     }).finally(() => {
       if (onAbort) options?.signal?.removeEventListener("abort", onAbort);
@@ -25389,7 +26307,7 @@ var Protocol = class {
       Promise.resolve().then(() => {
         this._pendingDebouncedNotifications.delete(notification.method);
         if (!this._transport) return;
-        this._transport?.send(jsonrpcNotification, options).catch((error112) => this._onerror(error112));
+        this._transport?.send(jsonrpcNotification, options).catch((error113) => this._onerror(error113));
       });
       return;
     }
@@ -25597,9 +26515,9 @@ var ReadBuffer = class {
       this._buffer = this._buffer.subarray(index + 1);
       try {
         return deserializeMessage(line);
-      } catch (error112) {
-        if (error112 instanceof SyntaxError) continue;
-        throw error112;
+      } catch (error113) {
+        if (error113 instanceof SyntaxError) continue;
+        throw error113;
       }
     }
     return null;
@@ -26318,9 +27236,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
     }
   };
   var Throw = class extends Node {
-    constructor(error112) {
+    constructor(error113) {
       super();
-      this.error = error112;
+      this.error = error113;
     }
     render({ _n }) {
       return `throw ${this.error};` + _n;
@@ -26538,9 +27456,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
     }
   };
   var Catch = class extends BlockNode {
-    constructor(error112) {
+    constructor(error113) {
       super();
-      this.error = error112;
+      this.error = error113;
     }
     render(opts) {
       return `catch(${this.error})` + super.render(opts);
@@ -26694,9 +27612,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       this._blockNode(node2);
       this.code(tryBody);
       if (catchCode) {
-        const error112 = this.name("e");
-        this._currNode = node2.catch = new Catch(error112);
-        catchCode(error112);
+        const error113 = this.name("e");
+        this._currNode = node2.catch = new Catch(error113);
+        catchCode(error113);
       }
       if (finallyCode) {
         this._currNode = node2.finally = new Finally();
@@ -26704,8 +27622,8 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       }
       return this._endBlockNode(Catch, Finally);
     }
-    throw(error112) {
-      return this._leafNode(new Throw(error112));
+    throw(error113) {
+      return this._leafNode(new Throw(error113));
     }
     block(body, nodeCount) {
       this._blockStarts.push(this._nodes.length);
@@ -26989,18 +27907,18 @@ var require_errors = /* @__PURE__ */ __commonJSMin(((exports) => {
   const names_1 = require_names();
   exports.keywordError = { message: ({ keyword }) => (0, codegen_1.str)`must pass "${keyword}" keyword validation` };
   exports.keyword$DataError = { message: ({ keyword, schemaType }) => schemaType ? (0, codegen_1.str)`"${keyword}" keyword must be ${schemaType} ($data)` : (0, codegen_1.str)`"${keyword}" keyword is invalid ($data)` };
-  function reportError(cxt, error112 = exports.keywordError, errorPaths, overrideAllErrors) {
+  function reportError(cxt, error113 = exports.keywordError, errorPaths, overrideAllErrors) {
     const { it } = cxt;
     const { gen, compositeRule, allErrors } = it;
-    const errObj = errorObjectCode(cxt, error112, errorPaths);
+    const errObj = errorObjectCode(cxt, error113, errorPaths);
     if (overrideAllErrors !== null && overrideAllErrors !== void 0 ? overrideAllErrors : compositeRule || allErrors) addError(gen, errObj);
     else returnErrors(it, (0, codegen_1._)`[${errObj}]`);
   }
   exports.reportError = reportError;
-  function reportExtraError(cxt, error112 = exports.keywordError, errorPaths) {
+  function reportExtraError(cxt, error113 = exports.keywordError, errorPaths) {
     const { it } = cxt;
     const { gen, compositeRule, allErrors } = it;
-    addError(gen, errorObjectCode(cxt, error112, errorPaths));
+    addError(gen, errorObjectCode(cxt, error113, errorPaths));
     if (!(compositeRule || allErrors)) returnErrors(it, names_1.default.vErrors);
   }
   exports.reportExtraError = reportExtraError;
@@ -27045,15 +27963,15 @@ var require_errors = /* @__PURE__ */ __commonJSMin(((exports) => {
     schema: new codegen_1.Name("schema"),
     parentSchema: new codegen_1.Name("parentSchema")
   };
-  function errorObjectCode(cxt, error112, errorPaths) {
+  function errorObjectCode(cxt, error113, errorPaths) {
     const { createErrors } = cxt.it;
     if (createErrors === false) return (0, codegen_1._)`{}`;
-    return errorObject(cxt, error112, errorPaths);
+    return errorObject(cxt, error113, errorPaths);
   }
-  function errorObject(cxt, error112, errorPaths = {}) {
+  function errorObject(cxt, error113, errorPaths = {}) {
     const { gen, it } = cxt;
     const keyValues = [errorInstancePath(it, errorPaths), errorSchemaPath(cxt, errorPaths)];
-    extraErrorProps(cxt, error112, keyValues);
+    extraErrorProps(cxt, error113, keyValues);
     return gen.object(...keyValues);
   }
   function errorInstancePath({ errorPath }, { instancePath }) {
@@ -28716,8 +29634,8 @@ var require_utils = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     for (let i = 0; i < str.length; i++) if (str[i] === token) ind++;
     return ind;
   }
-  function removeDotSegments(path9) {
-    let input2 = path9;
+  function removeDotSegments(path10) {
+    let input2 = path10;
     const output2 = [];
     let nextSlash = -1;
     let len = 0;
@@ -29055,8 +29973,8 @@ var require_schemes = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     }
     if (wsComponent.resourceName) {
       const queryIndex = wsComponent.resourceName.indexOf("?");
-      const path9 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-      wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
+      const path10 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+      wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
       wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
       wsComponent.resourceName = void 0;
     }
@@ -33088,7 +34006,7 @@ var require_limit = /* @__PURE__ */ __commonJSMin(((exports) => {
       fail: ops.LTE
     }
   };
-  const error112 = {
+  const error113 = {
     message: ({ keyword, schemaCode }) => (0, codegen_1.str)`should be ${KWDs[keyword].okStr} ${schemaCode}`,
     params: ({ keyword, schemaCode }) => (0, codegen_1._)`{comparison: ${KWDs[keyword].okStr}, limit: ${schemaCode}}`
   };
@@ -33097,7 +34015,7 @@ var require_limit = /* @__PURE__ */ __commonJSMin(((exports) => {
     type: "string",
     schemaType: "string",
     $data: true,
-    error: error112,
+    error: error113,
     code(cxt) {
       const { gen, data, schemaCode, keyword, it } = cxt;
       const { opts, self: self2 } = it;
@@ -33159,11 +34077,11 @@ var require_dist = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     if (!f) throw new Error(`Unknown format "${name}"`);
     return f;
   };
-  function addFormats2(ajv, list, fs5, exportName) {
+  function addFormats2(ajv, list, fs6, exportName) {
     var _a5;
     var _b;
     (_a5 = (_b = ajv.opts.code).formats) !== null && _a5 !== void 0 || (_b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`);
-    for (const f of list) ajv.addFormat(f, fs5[f]);
+    for (const f of list) ajv.addFormat(f, fs6[f]);
   }
   module.exports = exports = formatsPlugin;
   Object.defineProperty(exports, "__esModule", { value: true });
@@ -33475,8 +34393,8 @@ data: ${JSON.stringify(message)}
     if (this._sse === void 0 || this._sse.closed) return;
     try {
       this._sse.controller.enqueue(this._sse.encoder.encode(frame));
-    } catch (error112) {
-      this.onerror?.(/* @__PURE__ */ new Error(`Failed to write to the response stream: ${error112}`));
+    } catch (error113) {
+      this.onerror?.(/* @__PURE__ */ new Error(`Failed to write to the response stream: ${error113}`));
     }
   }
 };
@@ -33566,15 +34484,15 @@ var LegacyInputRequiredShim = class {
           const fulfilled = await Promise.all(coerced.map(async ([key, embedded]) => {
             try {
               return [key, await this._dispatchLeg(embedded, legOptions)];
-            } catch (error112) {
-              roundAbort.abort(error112);
-              throw error112;
+            } catch (error113) {
+              roundAbort.abort(error113);
+              throw error113;
             }
           }));
           responses = Object.fromEntries(fulfilled);
-        } catch (error112) {
-          if (outerSignal.aborted) throw error112;
-          return legacyShimFailure(method, `Fulfilling input required by '${method}' failed: ${error112 instanceof Error ? error112.message : String(error112)}`);
+        } catch (error113) {
+          if (outerSignal.aborted) throw error113;
+          return legacyShimFailure(method, `Fulfilling input required by '${method}' failed: ${error113 instanceof Error ? error113.message : String(error113)}`);
         } finally {
           roundAbort.dispose();
         }
@@ -33854,12 +34772,12 @@ var Server = class extends Protocol {
     let result;
     try {
       result = await handler(request, ctxForHandler);
-    } catch (error112) {
-      if (error112 instanceof ProtocolError && error112.code === ProtocolErrorCode.UrlElicitationRequired) {
-        if (!servedModern) throw error112;
+    } catch (error113) {
+      if (error113 instanceof ProtocolError && error113.code === ProtocolErrorCode.UrlElicitationRequired) {
+        if (!servedModern) throw error113;
         throw new ProtocolError(ProtocolErrorCode.InternalError, `URL elicitation cannot be signalled by throwing UrlElicitationRequiredError on protocol revision ${this._negotiatedProtocolVersion}: return inputRequired({ inputRequests: { …: inputRequired.elicitUrl(...) } }) from the handler instead. The urlElicitationRequired error (-32042) of earlier revisions is not available on this revision.`);
       }
-      throw error112;
+      throw error113;
     }
     if (!isInputRequiredResult(result)) return result;
     if (!servedModern) {
@@ -33890,8 +34808,8 @@ var Server = class extends Protocol {
     if (this._requestStateVerify === void 0) return;
     try {
       return await this._requestStateVerify(state, ctx);
-    } catch (error112) {
-      this.onerror?.(/* @__PURE__ */ new Error(`requestState verification rejected ${method}: ${error112 instanceof Error ? error112.message : String(error112)}`));
+    } catch (error113) {
+      this.onerror?.(/* @__PURE__ */ new Error(`requestState verification rejected ${method}: ${error113 instanceof Error ? error113.message : String(error113)}`));
       throw new ProtocolError(ProtocolErrorCode.InvalidParams, "Invalid or expired requestState", { reason: "invalid_request_state" });
     }
   }
@@ -34175,9 +35093,9 @@ var Server = class extends Protocol {
         if (validateAcceptedContent && result.action === "accept" && result.content && formParams.requestedSchema) try {
           const validationResult = this._jsonSchemaValidator.getValidator(formParams.requestedSchema)(result.content);
           if (!validationResult.valid) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
-        } catch (error112) {
-          if (error112 instanceof ProtocolError) throw error112;
-          throw new ProtocolError(ProtocolErrorCode.InternalError, `Error validating elicitation response: ${error112 instanceof Error ? error112.message : String(error112)}`);
+        } catch (error113) {
+          if (error113 instanceof ProtocolError) throw error113;
+          throw new ProtocolError(ProtocolErrorCode.InternalError, `Error validating elicitation response: ${error113 instanceof Error ? error113.message : String(error113)}`);
         }
         return result;
       }
@@ -34406,9 +35324,9 @@ var McpServer = class {
         await this.validateToolOutput(tool, result, request.params.name);
         if (isInputRequiredResult(result)) return result;
         return this.server.projectCallToolResult(result, tool.outputSchemaJson);
-      } catch (error112) {
-        if (error112 instanceof ProtocolError && error112.code === ProtocolErrorCode.UrlElicitationRequired) throw error112;
-        return this.createToolError(error112 instanceof Error ? error112.message : String(error112));
+      } catch (error113) {
+        if (error113 instanceof ProtocolError && error113.code === ProtocolErrorCode.UrlElicitationRequired) throw error113;
+        return this.createToolError(error113 instanceof Error ? error113.message : String(error113));
       }
     });
     this._toolHandlersInitialized = true;
@@ -35139,18 +36057,18 @@ var StdioServerTransport = class {
     try {
       this._readBuffer.append(chunk);
       this.processReadBuffer();
-    } catch (error112) {
-      this.onerror?.(error112);
+    } catch (error113) {
+      this.onerror?.(error113);
       this.close().catch(() => {
       });
     }
   };
-  _onerror = (error112) => {
-    this.onerror?.(error112);
+  _onerror = (error113) => {
+    this.onerror?.(error113);
   };
-  _onstdouterror = (error112) => {
+  _onstdouterror = (error113) => {
     if (this._closed) return;
-    this.onerror?.(error112);
+    this.onerror?.(error113);
     this.close().catch(() => {
     });
   };
@@ -35177,8 +36095,8 @@ var StdioServerTransport = class {
       const message = this._readBuffer.readMessage();
       if (message === null) break;
       this.onmessage?.(message);
-    } catch (error112) {
-      this.onerror?.(error112);
+    } catch (error113) {
+      this.onerror?.(error113);
     }
   }
   async close() {
@@ -35198,12 +36116,12 @@ var StdioServerTransport = class {
     return new Promise((resolve, reject) => {
       const json3 = serializeMessage(message);
       let settled = false;
-      const onError = (error112) => {
+      const onError = (error113) => {
         if (settled) return;
         settled = true;
         this._stdout.off("error", onError);
         this._stdout.off("drain", onDrain);
-        reject(error112);
+        reject(error113);
       };
       const onDrain = () => {
         if (settled) return;
@@ -35345,9 +36263,9 @@ function serveStdio(factory, options = {}) {
   let discarding;
   let closing = false;
   const isTornDown = () => closing || state.phase === "closed";
-  const reportError = (error112) => {
+  const reportError = (error113) => {
     try {
-      options.onerror?.(error112);
+      options.onerror?.(error113);
     } catch {
     }
   };
@@ -35359,7 +36277,7 @@ function serveStdio(factory, options = {}) {
       message,
       ...data !== void 0 && { data }
     }
-  }).catch((error112) => reportError(toError(error112)));
+  }).catch((error113) => reportError(toError(error113)));
   const listenRouter = new StdioListenRouter(options.maxSubscriptions ?? DEFAULT_MAX_SUBSCRIPTIONS);
   const modernOutboundIntercept = (message) => {
     if (!isJSONRPCNotification(message)) return void 0;
@@ -35368,7 +36286,7 @@ function serveStdio(factory, options = {}) {
     for (const stamped of routed) wire.send({
       jsonrpc: "2.0",
       ...stamped
-    }).catch((error112) => reportError(toError(error112)));
+    }).catch((error113) => reportError(toError(error113)));
     return "handled";
   };
   const tryServeListen = async (message) => {
@@ -35389,7 +36307,7 @@ function serveStdio(factory, options = {}) {
         }
       };
       else if (claimedVersion === void 0 || !SUPPORTED_MODERN_PROTOCOL_VERSIONS.includes(claimedVersion)) {
-        const error112 = new UnsupportedProtocolVersionError({
+        const error113 = new UnsupportedProtocolVersionError({
           supported: [...SUPPORTED_MODERN_PROTOCOL_VERSIONS],
           requested: claimedVersion ?? "unknown"
         });
@@ -35397,9 +36315,9 @@ function serveStdio(factory, options = {}) {
           jsonrpc: "2.0",
           id: message.id,
           error: {
-            code: error112.code,
-            message: error112.message,
-            data: error112.data
+            code: error113.code,
+            message: error113.message,
+            data: error113.data
           }
         };
       } else reply = listenRouter.serve(message);
@@ -35407,7 +36325,7 @@ function serveStdio(factory, options = {}) {
         jsonrpc: "2.0",
         method: reply.method,
         params: reply.params
-      }).catch((error112) => reportError(toError(error112)));
+      }).catch((error113) => reportError(toError(error113)));
       return true;
     }
     if (isJSONRPCNotification(message) && message.method === "notifications/cancelled") {
@@ -35445,14 +36363,14 @@ function serveStdio(factory, options = {}) {
       channel
     };
   };
-  const disposeLateInstance = (instance) => instance.product.close().catch((error112) => reportError(toError(error112)));
+  const disposeLateInstance = (instance) => instance.product.close().catch((error113) => reportError(toError(error113)));
   const discardProbeInstance = async (instance) => {
     discarding = instance.channel;
     try {
       if (!await instance.channel.whenRequestsAnswered(DISCARD_ANSWER_TIMEOUT_MS)) reportError(/* @__PURE__ */ new Error(`Discarded the probe instance with requests still unanswered after ${DISCARD_ANSWER_TIMEOUT_MS}ms; continuing with the fallback`));
       await instance.product.close();
-    } catch (error112) {
-      reportError(toError(error112));
+    } catch (error113) {
+      reportError(toError(error113));
     } finally {
       discarding = void 0;
     }
@@ -35483,12 +36401,12 @@ function serveStdio(factory, options = {}) {
       }
       case "unsupported-revision":
         if (isJSONRPCRequest(message)) {
-          const error112 = new UnsupportedProtocolVersionError({
+          const error113 = new UnsupportedProtocolVersionError({
             supported: [...SUPPORTED_MODERN_PROTOCOL_VERSIONS],
             requested: opening.requested
           });
-          reportError(error112);
-          await writeErrorResponse(message.id, error112.code, error112.message, error112.data);
+          reportError(error113);
+          await writeErrorResponse(message.id, error113.code, error113.message, error113.data);
         } else reportError(/* @__PURE__ */ new Error(`Discarded a notification claiming unsupported protocol revision ${opening.requested}`));
         return;
       case "modern":
@@ -35570,9 +36488,9 @@ function serveStdio(factory, options = {}) {
         const message = queue.shift();
         try {
           await processMessage(message);
-        } catch (error112) {
+        } catch (error113) {
           if (isJSONRPCRequest(message)) await writeErrorResponse(message.id, ProtocolErrorCode.InternalError, "Internal server error");
-          reportError(toError(error112));
+          reportError(toError(error113));
         }
       }
     } finally {
@@ -35584,28 +36502,28 @@ function serveStdio(factory, options = {}) {
     closing = true;
     const current = state;
     state = { phase: "closed" };
-    for (const result of listenRouter.teardownAll()) await wire.send(result).catch((error112) => reportError(toError(error112)));
-    if (current.phase === "probe" || current.phase === "pinned") await current.instance.product.close().catch((error112) => reportError(toError(error112)));
-    await wire.close().catch((error112) => reportError(toError(error112)));
+    for (const result of listenRouter.teardownAll()) await wire.send(result).catch((error113) => reportError(toError(error113)));
+    if (current.phase === "probe" || current.phase === "pinned") await current.instance.product.close().catch((error113) => reportError(toError(error113)));
+    await wire.close().catch((error113) => reportError(toError(error113)));
   };
   wire.onmessage = (message) => {
     queue.push(message);
     pump();
   };
-  wire.onerror = (error112) => {
-    reportError(error112);
-    if (state.phase === "probe" || state.phase === "pinned") state.instance.channel.onerror?.(error112);
+  wire.onerror = (error113) => {
+    reportError(error113);
+    if (state.phase === "probe" || state.phase === "pinned") state.instance.channel.onerror?.(error113);
   };
   wire.onclose = () => {
     if (closing || state.phase === "closed") return;
     closing = true;
     const current = state;
     state = { phase: "closed" };
-    if (current.phase === "probe" || current.phase === "pinned") current.instance.product.close().catch((error112) => reportError(toError(error112)));
+    if (current.phase === "probe" || current.phase === "pinned") current.instance.product.close().catch((error113) => reportError(toError(error113)));
   };
-  const started = wire.start().catch((error112) => {
-    reportError(toError(error112));
-    throw error112;
+  const started = wire.start().catch((error113) => {
+    reportError(toError(error113));
+    throw error113;
   });
   started.catch(() => {
   });
@@ -35620,7 +36538,7 @@ function toError(value) {
 }
 
 // source/server/register.mjs
-import { readFile } from "node:fs/promises";
+import { readFile as readFile2 } from "node:fs/promises";
 
 // node_modules/@modelcontextprotocol/server/dist/index.mjs
 var DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024;
@@ -36391,10 +37309,10 @@ function mergeDefs2(...defs) {
 function cloneDef2(schema) {
   return mergeDefs2(schema._zod.def);
 }
-function getElementAtPath2(obj, path9) {
-  if (!path9)
+function getElementAtPath2(obj, path10) {
+  if (!path10)
     return obj;
-  return path9.reduce((acc, key) => acc?.[key], obj);
+  return path10.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject2(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -36803,11 +37721,11 @@ function explicitlyAborted2(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues2(path9, issues) {
+function prefixIssues2(path10, issues) {
   return issues.map((iss) => {
     var _a5;
     (_a5 = iss).path ?? (_a5.path = []);
-    iss.path.unshift(path9);
+    iss.path.unshift(path10);
     return iss;
   });
 }
@@ -36939,10 +37857,10 @@ var initializer3 = (inst, def) => {
 };
 var $ZodError2 = $constructor2("$ZodError", initializer3);
 var $ZodRealError2 = $constructor2("$ZodError", initializer3, { Parent: Error });
-function flattenError2(error112, mapper = (issue3) => issue3.message) {
+function flattenError2(error113, mapper = (issue3) => issue3.message) {
   const fieldErrors = {};
   const formErrors = [];
-  for (const sub of error112.issues) {
+  for (const sub of error113.issues) {
     if (sub.path.length > 0) {
       fieldErrors[sub.path[0]] = fieldErrors[sub.path[0]] || [];
       fieldErrors[sub.path[0]].push(mapper(sub));
@@ -36952,18 +37870,18 @@ function flattenError2(error112, mapper = (issue3) => issue3.message) {
   }
   return { formErrors, fieldErrors };
 }
-function formatError2(error112, mapper = (issue3) => issue3.message) {
+function formatError2(error113, mapper = (issue3) => issue3.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error113, path9 = []) => {
-    for (const issue3 of error113.issues) {
+  const processError = (error114, path10 = []) => {
+    for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path9, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path10, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else {
-        const fullpath = [...path9, ...issue3.path];
+        const fullpath = [...path10, ...issue3.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue3));
         } else {
@@ -36985,22 +37903,22 @@ function formatError2(error112, mapper = (issue3) => issue3.message) {
       }
     }
   };
-  processError(error112);
+  processError(error113);
   return fieldErrors;
 }
-function treeifyError2(error112, mapper = (issue3) => issue3.message) {
+function treeifyError2(error113, mapper = (issue3) => issue3.message) {
   const result = { errors: [] };
-  const processError = (error113, path9 = []) => {
+  const processError = (error114, path10 = []) => {
     var _a5, _b;
-    for (const issue3 of error113.issues) {
+    for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path9, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path10, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path9, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path10, ...issue3.path]);
       } else {
-        const fullpath = [...path9, ...issue3.path];
+        const fullpath = [...path10, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -37027,13 +37945,13 @@ function treeifyError2(error112, mapper = (issue3) => issue3.message) {
       }
     }
   };
-  processError(error112);
+  processError(error113);
   return result;
 }
 function toDotPath2(_path) {
   const segs = [];
-  const path9 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path9) {
+  const path10 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path10) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -37048,9 +37966,9 @@ function toDotPath2(_path) {
   }
   return segs.join("");
 }
-function prettifyError2(error112) {
+function prettifyError2(error113) {
   const lines = [];
-  const issues = [...error112.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
+  const issues = [...error113.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
   for (const issue3 of issues) {
     lines.push(`✖ ${issue3.message}`);
     if (issue3.path?.length)
@@ -47580,18 +48498,18 @@ var fileProcessor2 = (schema, _ctx, json3, _params) => {
     format: "binary",
     contentEncoding: "binary"
   };
-  const { minimum, maximum, mime } = schema._zod.bag;
+  const { minimum, maximum, mime: mime2 } = schema._zod.bag;
   if (minimum !== void 0)
     file3.minLength = minimum;
   if (maximum !== void 0)
     file3.maxLength = maximum;
-  if (mime) {
-    if (mime.length === 1) {
-      file3.contentMediaType = mime[0];
+  if (mime2) {
+    if (mime2.length === 1) {
+      file3.contentMediaType = mime2[0];
       Object.assign(_json, file3);
     } else {
       Object.assign(_json, file3);
-      _json.anyOf = mime.map((m) => ({ contentMediaType: m }));
+      _json.anyOf = mime2.map((m) => ({ contentMediaType: m }));
     }
   } else {
     Object.assign(_json, file3);
@@ -49725,13 +50643,13 @@ function resolveRef2(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path9 = ref.slice(1).split("/").filter(Boolean);
-  if (path9.length === 0) {
+  const path10 = ref.slice(1).split("/").filter(Boolean);
+  if (path10.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path9[0] === defsKey) {
-    const key = path9[1];
+  if (path10[0] === defsKey) {
+    const key = path10[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -51449,14 +52367,14 @@ function createOpenAIFormContentSchema(form) {
   const validator = new Validator(structuredClone(form), "2020-12", false);
   return FormContentSchema.superRefine((content, context) => {
     const result = validator.validate(Object.setPrototypeOf({ ...content }, null));
-    for (const error112 of result.errors) {
-      if (error112.keywordLocation === "#/required") {
+    for (const error113 of result.errors) {
+      if (error113.keywordLocation === "#/required") {
         continue;
       }
       context.addIssue({
         code: "custom",
-        path: error112.instanceLocation.split("/").slice(1).map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~")),
-        message: error112.error
+        path: error113.instanceLocation.split("/").slice(1).map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~")),
+        message: error113.error
       });
     }
     for (const name of form.required ?? []) {
@@ -51663,9 +52581,9 @@ function createSettings(server) {
           experimental: { [OPENAI_SETTINGS_CAPABILITY_KEY]: capability }
         });
         Object.defineProperty(server, registered, { value: true });
-      } catch (error112) {
+      } catch (error113) {
         registeredReadTool.remove();
-        throw error112;
+        throw error113;
       }
     }
   };
@@ -51690,851 +52608,23 @@ var OpenAIExtensions = class {
   }
 };
 
-// source/library/index.mjs
-import fs4 from "node:fs/promises";
-import os from "node:os";
-import path4 from "node:path";
-import { randomUUID as randomUUID3 } from "node:crypto";
-
-// source/library/safety.mjs
-init_bridge_core();
-import fs2 from "node:fs/promises";
-import { constants } from "node:fs";
-import path2 from "node:path";
-import { randomUUID as randomUUID2 } from "node:crypto";
-var LibraryError = class extends Error {
-  constructor(code, message, details) {
-    super(message);
-    this.name = "LibraryError";
-    this.code = code;
-    if (details !== void 0) this.details = details;
-  }
-};
-var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-var KINDS = Object.freeze(["slides", "design", "design-system", "dashboard"]);
-function artifactId(id) {
-  if (typeof id !== "string" || !UUID2.test(id)) throw new LibraryError("INVALID_ID", "Expected a persistent artifact UUID.");
-  return id.toLowerCase();
-}
-function artifactKind(kind) {
-  if (!KINDS.includes(kind)) throw new LibraryError("INVALID_KIND", "Unknown artifact kind.");
-  return kind;
-}
-function titleText(title) {
-  if (typeof title !== "string" || !title.trim() || title.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(title)) throw new LibraryError("INVALID_TITLE", "A title must be one nonempty line of at most 200 characters.");
-  return title.trim();
-}
-function relativePath(relative) {
-  if (typeof relative !== "string" || !relative || relative.length > 1024 || relative.includes("\\") || path2.isAbsolute(relative) || /[\u0000-\u001f\u007f:%]/.test(relative)) throw new LibraryError("INVALID_PATH", "Expected a package-relative path.");
-  const parts = relative.split("/");
-  if (parts.some((part) => !part || part === "." || part === ".." || part.trimEnd() !== part || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new LibraryError("INVALID_PATH", "Unsafe path segment.");
-  return parts.join("/");
-}
-function within(root, target) {
-  const relative = path2.relative(path2.resolve(root), path2.resolve(target));
-  if (relative === ".." || relative.startsWith(".." + path2.sep) || path2.isAbsolute(relative)) throw new LibraryError("INVALID_PATH", "The path leaves its authorized root.");
-  return target;
-}
-async function statOrNull(file3) {
-  try {
-    return await fs2.lstat(file3);
-  } catch (error112) {
-    if (error112.code === "ENOENT") return null;
-    throw error112;
-  }
-}
-async function safePath(root, relative, { mustExist = true, type } = {}) {
-  relativePath(relative);
-  const rootStat = await statOrNull(root);
-  if (!rootStat?.isDirectory() || rootStat.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The authorized root must be a real directory.");
-  const realRoot = await fs2.realpath(root);
-  let cursor = root;
-  const parts = relative.split("/");
-  for (let i = 0; i < parts.length; i++) {
-    cursor = within(root, path2.join(cursor, parts[i]));
-    const info = await statOrNull(cursor);
-    if (!info) {
-      if (mustExist) throw new LibraryError("NOT_FOUND", "The requested path is missing.", { path: relative });
-      return cursorFor(root, parts);
-    }
-    if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "Symbolic links are not accepted in library paths.", { path: relative });
-    if (i < parts.length - 1 && !info.isDirectory()) throw new LibraryError("INVALID_PATH", "A parent path is not a directory.");
-    within(realRoot, await fs2.realpath(cursor));
-    if (i === parts.length - 1 && type === "file" && !info.isFile()) throw new LibraryError("INVALID_PATH", "The requested path is not a regular file.");
-    if (i === parts.length - 1 && type === "directory" && !info.isDirectory()) throw new LibraryError("INVALID_PATH", "The requested path is not a directory.");
-  }
-  return cursor;
-}
-var cursorFor = (root, parts) => within(root, path2.join(root, ...parts));
-async function readJson2(root, relative, fallback) {
-  const file3 = await safePath(root, relative, { mustExist: false });
-  try {
-    return JSON.parse(await fs2.readFile(file3, "utf8"));
-  } catch (error112) {
-    if (error112.code === "ENOENT") {
-      if (fallback !== void 0) return structuredClone(fallback);
-      throw new LibraryError("NOT_FOUND", "The requested JSON file is missing.", { path: relative });
-    }
-    if (error112 instanceof LibraryError) throw error112;
-    throw new LibraryError("INVALID_STATE", "A library JSON file is malformed.", { path: relative });
-  }
-}
-async function atomicJson(root, relative, value) {
-  const file3 = await safePath(root, relative, { mustExist: false });
-  await fs2.mkdir(path2.dirname(file3), { recursive: true });
-  await safePath(root, relative, { mustExist: false });
-  const temporary = `${file3}.${randomUUID2()}.tmp`;
-  within(root, temporary);
-  try {
-    await fs2.writeFile(temporary, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 384 });
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await fs2.rename(temporary, file3);
-        break;
-      } catch (error112) {
-        if (!["EACCES", "EBUSY", "EPERM"].includes(error112.code) || attempt >= 12) throw error112;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-    }
-  } finally {
-    await fs2.rm(temporary, { force: true });
-  }
-}
-async function readBytes(root, relative, maximum) {
-  const file3 = await safePath(root, relative, { type: "file" });
-  const handle = await fs2.open(file3, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
-  try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.size > maximum) throw new LibraryError("LIMIT_EXCEEDED", "The file exceeds the allowed size.");
-    return await handle.readFile();
-  } finally {
-    await handle.close();
-  }
-}
-async function locked(root, action, timeoutMs = 1e4) {
-  const state = await safePath(root, "_state", { type: "directory" });
-  const lock = within(root, path2.join(state, "library.lock"));
-  if ((await statOrNull(lock))?.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The library lock must be a real directory.");
-  try {
-    return await withLock(lock, action, { timeoutMs, staleMs: 1e4 });
-  } catch (cause) {
-    if (cause.code === "BRIDGE_BUSY") throw new LibraryError("LIBRARY_BUSY", "Another library operation is still in progress.");
-    throw cause;
-  }
-}
-
-// source/library/content.mjs
-import fs3 from "node:fs/promises";
-import path3 from "node:path";
-var INDEX_FILES = Object.freeze({ slides: "project/deck.json", design: "project/canvas.json", "design-system": "project/design-system.json", dashboard: "db/dash/meta.json" });
-var DEFAULT_LIMITS = Object.freeze({ maxFiles: 2048, maxFileBytes: 32 * 1024 * 1024, maxTotalBytes: 128 * 1024 * 1024, maxBundleBytes: 180 * 1024 * 1024 });
-var forbidden = (part) => ["comments.json", "node_modules", "_state", "_trash"].includes(part) || part.startsWith(".") && part !== ".image-slots.state.json";
-function contentPath(kind, relative) {
-  relativePath(relative);
-  artifactKind(kind);
-  const parts = relative.split("/");
-  if (parts.some(forbidden)) return false;
-  if (kind !== "dashboard") return parts[0] === "project" && parts.length > 1;
-  return parts[0] === "_blobs" && parts.length === 2 || parts[0] === "db" && parts.length >= 3 && ["files", "datasets"].includes(parts[1]) || /^db\/dash\/(?:meta|params|look)\.json$/.test(relative);
-}
-function contentType(relative) {
-  const ext = path3.extname(relative).toLowerCase();
-  return { ".html": "text/html", ".md": "text/markdown", ".json": "application/json", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".txt": "text/plain", ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".pdf": "application/pdf" }[ext] || "application/octet-stream";
-}
-async function collectContent(root, kind, limits = DEFAULT_LIMITS, { includeBytes = true } = {}) {
-  const found = [];
-  let total = 0;
-  const walk = async (relative) => {
-    const absolute = await safePath(root, relative, { mustExist: false });
-    const info = await statOrNull(absolute);
-    if (!info) return;
-    if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "A content path is a symbolic link.");
-    if (info.isDirectory()) {
-      for (const entry2 of (await fs3.readdir(absolute, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (forbidden(entry2.name)) continue;
-        const child = relative + "/" + entry2.name;
-        relativePath(child);
-        if (entry2.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "A content path is a symbolic link.", { path: child });
-        await walk(child);
-      }
-    } else if (info.isFile() && contentPath(kind, relative)) {
-      if (info.size > limits.maxFileBytes || total + info.size > limits.maxTotalBytes || found.length >= limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "The artifact exceeds the configured content limits.");
-      total += info.size;
-      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), ...includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString("base64"), encoding: "base64" } : {} });
-    } else if (!info.isFile()) throw new LibraryError("INVALID_CONTENT", "Only regular files are accepted as content.");
-  };
-  for (const start of kind === "dashboard" ? ["db/files", "db/datasets", "db/dash/meta.json", "db/dash/params.json", "db/dash/look.json", "_blobs"] : ["project"]) await walk(start);
-  return found;
-}
-function validateFiles(kind, files) {
-  const byPath = new Map(files.map((file3) => [file3.path, file3]));
-  const json3 = (relative) => {
-    const file3 = byPath.get(relative);
-    if (!file3) throw new LibraryError("MISSING_CONTENT", "A required native content file is missing.", { path: relative });
-    try {
-      const value = JSON.parse(Buffer.from(file3.data, "base64").toString("utf8"));
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
-      return value;
-    } catch {
-      throw new LibraryError("INVALID_CONTENT", "A native index is not a JSON object.", { path: relative });
-    }
-  };
-  const index = json3(INDEX_FILES[kind]);
-  if (typeof index.title !== "string" || !index.title.trim()) throw new LibraryError("INVALID_CONTENT", "The native index needs a title.");
-  const blobExists = (id) => kind === "dashboard" ? byPath.has("_blobs/" + id) : [...byPath.keys()].some((name) => name.startsWith((kind === "design-system" ? "project/_blobs/" : "project/assets/") + id + "."));
-  for (const file3 of files) if (/\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path)) {
-    const text = Buffer.from(file3.data, "base64").toString("utf8");
-    for (const match of text.matchAll(/\/_blob\/([a-f0-9]{32})\b/g)) if (!blobExists(match[1])) throw new LibraryError("MISSING_CONTENT", "An artwork material referenced by the content is missing.", { path: file3.path, blobId: match[1] });
-  }
-  if (kind === "slides") {
-    if (!Array.isArray(index.order)) throw new LibraryError("INVALID_CONTENT", "A deck needs an order array.");
-    for (const id of index.order) {
-      if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || !byPath.has("project/slides/" + id + ".html")) throw new LibraryError("MISSING_CONTENT", "A slide named by the index is missing or invalid.");
-    }
-  } else if (kind === "design") {
-    if (!index.boards || typeof index.boards !== "object" || Array.isArray(index.boards) || !Array.isArray(index.order)) throw new LibraryError("INVALID_CONTENT", "A canvas needs boards and order.");
-    for (const name of Object.keys(index.boards)) {
-      relativePath(name);
-      if (!name.endsWith(".dc.html") || !byPath.has("project/" + name)) throw new LibraryError("MISSING_CONTENT", "An indexed artboard is missing.");
-    }
-  } else if (kind === "design-system") {
-    if (index.v < 3 || index.layout !== "files" || !(index.createdOnFiles || index.convertedFrom)) throw new LibraryError("INVALID_CONTENT", "The design-system index is not in the editable files format.");
-    const tokens = json3("project/tokens.json");
-    for (const font of tokens.type?.fonts || []) if (typeof font.file === "string") {
-      const name = "project/" + relativePath(font.file);
-      if (!byPath.has(name)) throw new LibraryError("MISSING_CONTENT", "A design-system font file is missing.", { path: name });
-    }
-  } else {
-    const page = json3("db/files/index.html.json");
-    if (typeof page.text !== "string") throw new LibraryError("INVALID_CONTENT", "A dashboard needs files/index.html text.");
-    for (const file3 of files.filter((file4) => /^db\/datasets\/.+\.json$/.test(file4.path))) {
-      const dataset = json3(file3.path);
-      const id = /^\/_blob\/([a-f0-9]{32})$/.exec(dataset.source?.url || "")?.[1];
-      if (id && !byPath.has("_blobs/" + id)) throw new LibraryError("MISSING_CONTENT", "A dashboard dataset attachment is missing.");
-    }
-  }
-  return index;
-}
-async function writeContent(root, files) {
-  for (const file3 of files) {
-    const absolute = await safePath(root, file3.path, { mustExist: false });
-    await fs3.mkdir(path3.dirname(absolute), { recursive: true });
-    await safePath(root, file3.path, { mustExist: false });
-    await fs3.writeFile(within(root, absolute), Buffer.from(file3.data, "base64"), { flag: "wx" });
-  }
-}
-var entry = (file3, value) => ({ path: file3, encoding: "base64", data: Buffer.from(typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n").toString("base64") });
-var escape2 = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-function blankContent(kind, title, at2) {
-  const marker = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
-  if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
-    entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
-    entry("project/README.md", "# " + title + "\n"),
-    entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
-  ];
-  return [entry("db/dash/meta.json", { title }), entry("db/dash/params.json", {}), entry("db/files/index.html.json", { text: '<meta name="dash-one-writer"><style>#dash-root{color:#20211f;background:#fafaf8;font-family:Arial,sans-serif}#dash-root .library-blank-title{color:#20211f;font-size:28px;font-weight:500}</style><h1 class="library-blank-title">' + escape2(title) + "</h1>" })];
-}
-
-// source/library/index.mjs
-var BUNDLE_FORMAT = "codex-design-artifact";
-var catalogFile = "_state/catalog.json";
-var viewFile = "_state/view.json";
-var bindingsFile = "_state/bindings.json";
-var emptyCatalog = () => ({ version: 1, artifacts: {} });
-var libraryTab = () => ({ id: "library", type: "library" });
-var emptyView = () => ({ version: 1, tabs: [libraryTab()], activeTabId: "library" });
-var at = () => (/* @__PURE__ */ new Date()).toISOString();
-var metadata = (value) => {
-  if (value.formatVersion !== void 0 && value.formatVersion !== 1) throw new LibraryError("UNSUPPORTED_FORMAT", "This artifact manifest needs a supported format version.");
-  return {
-    id: artifactId(value.id),
-    kind: artifactKind(value.kind),
-    title: titleText(value.title),
-    formatVersion: 1,
-    createdAt: typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) ? value.createdAt : at(),
-    updatedAt: typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt)) ? value.updatedAt : at(),
-    favorite: value.favorite === true,
-    ...value.sourceArtifactId && UUID2.test(value.sourceArtifactId) ? { sourceArtifactId: value.sourceArtifactId } : {},
-    ...typeof value.deletedAt === "string" ? { deletedAt: value.deletedAt } : {}
-  };
-};
-var LibraryStore = class {
-  constructor({ root = path4.join(os.homedir(), ".codex", "CodexDesignLibrary"), isBusy = async () => false, limits = {} } = {}) {
-    if (typeof root !== "string" || !root.trim()) throw new LibraryError("INVALID_PATH", "A library root is required.");
-    if (typeof isBusy !== "function") throw new LibraryError("INVALID_OPTION", "isBusy must be a function.");
-    this.root = path4.resolve(root);
-    this.isBusy = isBusy;
-    this.limits = { ...DEFAULT_LIMITS, ...limits };
-    if (Object.values(this.limits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError("INVALID_OPTION", "Content limits must be positive integers.");
-  }
-  async initialize() {
-    if (!this.ready) this.ready = this._initialize().catch((error112) => {
-      this.ready = null;
-      throw error112;
-    });
-    await this.ready;
-    return this;
-  }
-  async _initialize() {
-    const existing = await statOrNull(this.root);
-    if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) throw new LibraryError("SYMLINK_REFUSED", "The library root must be a real directory.");
-    await fs4.mkdir(this.root, { recursive: true });
-    this.realRoot = await fs4.realpath(this.root);
-    for (const relative of [...KINDS, "_state", "_trash"]) {
-      const directory = await safePath(this.root, relative, { mustExist: false });
-      await fs4.mkdir(directory, { recursive: true });
-      await safePath(this.root, relative, { type: "directory" });
-    }
-    await locked(this.root, async () => {
-      let identity = await readJson2(this.root, "_state/library.json", null);
-      if (!identity) {
-        identity = { version: 1, id: randomUUID3(), createdAt: at() };
-        await atomicJson(this.root, "_state/library.json", identity);
-      }
-      if (identity.version !== 1 || !UUID2.test(identity.id)) throw new LibraryError("INVALID_STATE", "The library identity is invalid.");
-      this.libraryId = identity.id;
-      const catalog = await this._catalog();
-      for (const kind of KINDS) {
-        for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
-          if (!UUID2.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
-          const relative = `${kind}/${entry2.name}/artifact.json`;
-          if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
-          const manifest = metadata(await readJson2(this.root, relative));
-          if (manifest.id !== entry2.name.toLowerCase() || manifest.kind !== kind) throw new LibraryError("INVALID_MANIFEST", "Artifact directory and identity disagree.");
-          const previous = catalog.artifacts[manifest.id];
-          if (previous && (previous.location === "trash" || previous.kind !== kind) && await statOrNull(await safePath(this.root, this._relative(previous), { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in more than one physical location.");
-          catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
-        }
-      }
-      for (const entry2 of await fs4.readdir(await safePath(this.root, "_trash", { type: "directory" }), { withFileTypes: true })) {
-        if (!UUID2.test(entry2.name) || entry2.isSymbolicLink() || !entry2.isDirectory()) continue;
-        const relative = `_trash/${entry2.name}/artifact.json`;
-        if (!await statOrNull(await safePath(this.root, relative, { mustExist: false }))) continue;
-        const manifest = metadata(await readJson2(this.root, relative));
-        if (manifest.id !== entry2.name.toLowerCase()) throw new LibraryError("INVALID_MANIFEST", "A recycled artifact has a different directory identity.");
-        const previous = catalog.artifacts[manifest.id];
-        if (previous && previous.location === "active" && await statOrNull(await safePath(this.root, `${previous.kind}/${manifest.id}`, { mustExist: false }))) throw new LibraryError("ID_CONFLICT", "An artifact id exists in both active storage and trash.");
-        catalog.artifacts[manifest.id] = { ...manifest, location: "trash" };
-      }
-      await this._saveCatalog(catalog);
-      if (!await statOrNull(await safePath(this.root, viewFile, { mustExist: false }))) await atomicJson(this.root, viewFile, emptyView());
-      if (!await statOrNull(await safePath(this.root, bindingsFile, { mustExist: false }))) await atomicJson(this.root, bindingsFile, { version: 1, artifacts: {} });
-    });
-  }
-  async _checkRoot() {
-    await this.initialize();
-    if ((await fs4.lstat(this.root)).isSymbolicLink() || await fs4.realpath(this.root) !== this.realRoot) throw new LibraryError("ROOT_CHANGED", "The library root changed after initialization.");
-  }
-  async _catalog() {
-    const value = await readJson2(this.root, catalogFile, emptyCatalog());
-    if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "The library catalog is invalid.");
-    for (const [id, record3] of Object.entries(value.artifacts)) {
-      if (artifactId(id) !== record3.id || !["active", "trash"].includes(record3.location)) throw new LibraryError("INVALID_STATE", "A catalog identity is invalid.");
-      metadata(record3);
-    }
-    return value;
-  }
-  _saveCatalog(catalog) {
-    return atomicJson(this.root, catalogFile, catalog);
-  }
-  _relative(record3) {
-    return record3.location === "trash" ? `_trash/${record3.id}` : `${artifactKind(record3.kind)}/${artifactId(record3.id)}`;
-  }
-  async _artifactPath(record3, mustExist = true) {
-    return safePath(this.root, this._relative(record3), { mustExist, type: "directory" });
-  }
-  async _raw(id, { includeDeleted = false } = {}) {
-    id = artifactId(id);
-    const catalog = await this._catalog();
-    const record3 = catalog.artifacts[id];
-    if (!record3 || !includeDeleted && record3.location === "trash") throw new LibraryError("NOT_FOUND", "No such artifact.");
-    return { record: record3, catalog };
-  }
-  async _inspect(record3) {
-    const result = { ...metadata(record3), path: path4.join(this.root, ...this._relative(record3).split("/")), contentStatus: "ok", deleted: record3.location === "trash" };
-    try {
-      const root = await this._artifactPath(record3);
-      const manifest = metadata(await readJson2(root, "artifact.json"));
-      if (manifest.id !== record3.id || manifest.kind !== record3.kind) throw new LibraryError("INVALID_MANIFEST", "The artifact identity changed.");
-      const listed = await collectContent(root, record3.kind, this.limits, { includeBytes: false });
-      const needed = /* @__PURE__ */ new Set([INDEX_FILES[record3.kind], "project/tokens.json", "db/files/index.html.json"]);
-      const files = [];
-      for (const file3 of listed) files.push({ ...file3, data: needed.has(file3.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path) ? (await readBytes(root, file3.path, this.limits.maxFileBytes)).toString("base64") : "" });
-      const native = validateFiles(record3.kind, files);
-      Object.assign(result, manifest, { title: native.title });
-    } catch (error112) {
-      result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error112.code) ? "missing" : "invalid";
-      result.contentError = { code: error112.code || "INVALID_CONTENT", message: error112.message };
-    }
-    return result;
-  }
-  async _busy(record3) {
-    const result = await this.isBusy(await this._inspect(record3));
-    if (result === true || result?.busy) throw new LibraryError("ARTIFACT_BUSY", result?.reason || "This artifact still has an active editor task. No agent was stopped.");
-  }
-  async list({ kind, query = "", favoritesOnly = false, includeDeleted = false } = {}) {
-    await this._checkRoot();
-    if (kind) artifactKind(kind);
-    if (typeof query !== "string" || query.length > 500) throw new LibraryError("INVALID_QUERY", "Search text is too long.");
-    const needle = query.trim().toLocaleLowerCase();
-    const catalog = await this._catalog();
-    const records = [];
-    for (const entry2 of Object.values(catalog.artifacts)) {
-      if (kind && entry2.kind !== kind || !includeDeleted && entry2.location === "trash" || favoritesOnly && !entry2.favorite) continue;
-      const record3 = await this._inspect(entry2);
-      if (!needle || `${record3.title} ${record3.kind}`.toLocaleLowerCase().includes(needle)) records.push(record3);
-    }
-    return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title));
-  }
-  async get(id, options = {}) {
-    await this._checkRoot();
-    return this._inspect((await this._raw(id, options)).record);
-  }
-  async _stage() {
-    const relative = `_state/staging/${randomUUID3()}`;
-    const absolute = await safePath(this.root, relative, { mustExist: false });
-    await fs4.mkdir(absolute, { recursive: true });
-    await safePath(this.root, relative, { type: "directory" });
-    return { relative, absolute };
-  }
-  async _removeStage(stage) {
-    const absolute = await safePath(this.root, stage.relative, { mustExist: false });
-    within(path4.join(this.root, "_state/staging"), absolute);
-    await fs4.rm(absolute, { recursive: true, force: true });
-  }
-  _retitle(kind, files, title) {
-    return files.map((file3) => {
-      if (file3.path !== INDEX_FILES[kind]) return file3;
-      const value = JSON.parse(Buffer.from(file3.data, "base64").toString("utf8"));
-      value.title = title;
-      return { ...file3, data: Buffer.from(JSON.stringify(value, null, 2) + "\n").toString("base64") };
-    });
-  }
-  async _create(kind, title, files, extra = {}) {
-    artifactKind(kind);
-    title = titleText(title);
-    files = this._retitle(kind, files, title);
-    validateFiles(kind, files);
-    const manifest = metadata({ id: randomUUID3(), kind, title, createdAt: at(), updatedAt: at(), favorite: false, ...extra });
-    const stage = await this._stage();
-    try {
-      await writeContent(stage.absolute, files);
-      await atomicJson(stage.absolute, "artifact.json", manifest);
-      const destination = await safePath(this.root, `${kind}/${manifest.id}`, { mustExist: false });
-      if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The new identity already exists.");
-      await fs4.rename(stage.absolute, destination);
-      const catalog = await this._catalog();
-      catalog.artifacts[manifest.id] = { ...manifest, location: "active" };
-      await this._saveCatalog(catalog);
-      return this._inspect(catalog.artifacts[manifest.id]);
-    } finally {
-      await this._removeStage(stage);
-    }
-  }
-  async create({ kind, title = `Untitled ${kind}` } = {}) {
-    await this._checkRoot();
-    artifactKind(kind);
-    title = titleText(title);
-    return locked(this.root, () => this._create(kind, title, blankContent(kind, title, at())));
-  }
-  async _updateMetadata(id, update, { touchContentTitle = false } = {}) {
-    const { record: record3, catalog } = await this._raw(id);
-    if (touchContentTitle) await this._busy(record3);
-    const root = await this._artifactPath(record3);
-    const manifest = metadata(await readJson2(root, "artifact.json"));
-    const next = metadata({ ...manifest, ...update, updatedAt: at() });
-    if (touchContentTitle) {
-      const index = await readJson2(root, INDEX_FILES[record3.kind]);
-      index.title = next.title;
-      await atomicJson(root, INDEX_FILES[record3.kind], index);
-    }
-    await atomicJson(root, "artifact.json", next);
-    catalog.artifacts[id] = { ...next, location: "active" };
-    await this._saveCatalog(catalog);
-    return this._inspect(catalog.artifacts[id]);
-  }
-  async rename(id, title) {
-    id = artifactId(id);
-    title = titleText(title);
-    await this._checkRoot();
-    return locked(this.root, () => this._updateMetadata(id, { title }, { touchContentTitle: true }));
-  }
-  async setFavorite(id, favorite = true) {
-    id = artifactId(id);
-    if (typeof favorite !== "boolean") throw new LibraryError("INVALID_OPTION", "favorite must be boolean.");
-    await this._checkRoot();
-    return locked(this.root, () => this._updateMetadata(id, { favorite }));
-  }
-  async _export(record3) {
-    await this._busy(record3);
-    const root = await this._artifactPath(record3);
-    const files = await collectContent(root, record3.kind, this.limits);
-    const native = validateFiles(record3.kind, files);
-    const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native.title, files: files.map(({ path: path9, encoding, data }) => ({ path: path9, encoding, data })) };
-    if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
-    return bundle;
-  }
-  async exportArtifact(id) {
-    await this._checkRoot();
-    return locked(this.root, async () => this._export((await this._raw(id)).record));
-  }
-  async duplicate(id, { title } = {}) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record: record3 } = await this._raw(id);
-      const bundle = await this._export(record3);
-      return this._create(record3.kind, title || bundle.title + " copy", bundle.files, { sourceArtifactId: record3.id });
-    });
-  }
-  _bundle(input2, kind) {
-    let bundle = input2;
-    if (typeof bundle === "string" || Buffer.isBuffer(bundle)) {
-      if (Buffer.byteLength(bundle) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle is too large.");
-      try {
-        bundle = JSON.parse(String(bundle));
-      } catch {
-        throw new LibraryError("INVALID_BUNDLE", "Expected a native library JSON bundle.");
-      }
-    }
-    if (!bundle || bundle.format !== BUNDLE_FORMAT || bundle.version !== 1 || !Array.isArray(bundle.files)) throw new LibraryError("INVALID_BUNDLE", "Unsupported native artifact bundle.");
-    artifactKind(bundle.kind);
-    if (kind && kind !== bundle.kind) throw new LibraryError("INVALID_KIND", "Bundle and selected kind disagree.");
-    if (bundle.files.length > this.limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "Too many files in the native bundle.");
-    const files = [], keys = /* @__PURE__ */ new Set();
-    let total = 0, encoded = 0;
-    for (const file3 of bundle.files) {
-      const relative = relativePath(file3?.path);
-      const key = relative.normalize("NFC").toLowerCase();
-      if (keys.has(key)) throw new LibraryError("INVALID_BUNDLE", "Duplicate or case-colliding bundle path.");
-      keys.add(key);
-      if (!contentPath(bundle.kind, relative)) continue;
-      if (file3.encoding !== "base64" || typeof file3.data !== "string" || file3.data.length > Math.ceil(this.limits.maxFileBytes / 3) * 4 || file3.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file3.data)) throw new LibraryError("INVALID_BUNDLE", "Invalid or oversized base64 file.");
-      const padding = file3.data.indexOf("=");
-      if (padding >= 0 && (padding < file3.data.length - 2 || !/^={1,2}$/.test(file3.data.slice(padding)))) throw new LibraryError("INVALID_BUNDLE", "Invalid base64 padding.");
-      const bytes = Buffer.from(file3.data, "base64");
-      encoded += file3.data.length;
-      total += bytes.length;
-      if (bytes.toString("base64") !== file3.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
-      files.push({ path: relative, encoding: "base64", data: file3.data });
-    }
-    const native = validateFiles(bundle.kind, files);
-    return { kind: bundle.kind, title: native.title, files };
-  }
-  async _source(sourcePath, kind) {
-    if (typeof sourcePath !== "string" || !path4.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
-    const info = await fs4.lstat(sourcePath).catch((error112) => {
-      if (error112.code === "ENOENT") throw new LibraryError("NOT_FOUND", "The import source is missing.");
-      throw error112;
-    });
-    if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The import source cannot be a symbolic link.");
-    if (info.isFile()) return this._bundle(await readBytes(path4.dirname(sourcePath), path4.basename(sourcePath), this.limits.maxBundleBytes), kind);
-    if (!info.isDirectory()) throw new LibraryError("INVALID_CONTENT", "The import source is not a native folder or bundle.");
-    const matches = [];
-    for (const candidate of KINDS) if (await statOrNull(await safePath(sourcePath, INDEX_FILES[candidate], { mustExist: false }))) matches.push(candidate);
-    if (!kind) {
-      if (matches.length !== 1) throw new LibraryError(matches.length ? "AMBIGUOUS_KIND" : "MISSING_CONTENT", "Select one native artifact kind with an existing index.");
-      kind = matches[0];
-    }
-    artifactKind(kind);
-    if (!matches.includes(kind)) throw new LibraryError("MISSING_CONTENT", "The chosen source has no native index for this kind.");
-    const busy = await this.isBusy({ id: null, kind, path: sourcePath });
-    if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
-    const files = await collectContent(sourcePath, kind, this.limits);
-    const native = validateFiles(kind, files);
-    return { kind, title: native.title, files };
-  }
-  async importArtifact({ bundle, sourcePath, kind, title } = {}) {
-    await this._checkRoot();
-    if (bundle === void 0 === (sourcePath === void 0)) throw new LibraryError("INVALID_OPTION", "Provide exactly one native bundle or explicitly chosen source path.");
-    if (kind) artifactKind(kind);
-    if (title !== void 0) titleText(title);
-    return locked(this.root, async () => {
-      const source = bundle === void 0 ? await this._source(sourcePath, kind) : this._bundle(bundle, kind);
-      return this._create(source.kind, title || source.title, source.files);
-    });
-  }
-  async listFiles(id) {
-    await this._checkRoot();
-    const { record: record3 } = await this._raw(id);
-    const root = await this._artifactPath(record3);
-    return collectContent(root, record3.kind, this.limits, { includeBytes: false });
-  }
-  async readFile(id, relative, { encoding = "utf8" } = {}) {
-    await this._checkRoot();
-    const { record: record3 } = await this._raw(id);
-    relativePath(relative);
-    if (!contentPath(record3.kind, relative)) throw new LibraryError("CONTENT_ONLY", "This route exposes only artwork and material files, not comments, chats, tasks, or runtime bindings.");
-    if (!["utf8", "base64"].includes(encoding)) throw new LibraryError("INVALID_OPTION", "Unsupported file encoding.");
-    const root = await this._artifactPath(record3), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
-    if (encoding === "utf8" && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError("BINARY_ENCODING_REQUIRED", "Read binary material using base64.");
-    return { path: relative, contentType: type, bytes: bytes.length, ...encoding === "base64" ? { encoding, data: bytes.toString("base64") } : { text: bytes.toString("utf8") } };
-  }
-  async trash(id) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record: record3, catalog } = await this._raw(id);
-      await this._busy(record3);
-      const source = await this._artifactPath(record3), destination = await safePath(this.root, `_trash/${record3.id}`, { mustExist: false });
-      if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "The recycle location already exists.");
-      await fs4.rename(source, destination);
-      const next = metadata({ ...record3, deletedAt: at(), updatedAt: at() });
-      await atomicJson(destination, "artifact.json", next);
-      catalog.artifacts[record3.id] = { ...next, location: "trash" };
-      await this._saveCatalog(catalog);
-      const view = await this._view(catalog);
-      view.tabs = view.tabs.filter((tab) => tab.id !== record3.id);
-      if (view.activeTabId === record3.id) view.activeTabId = "library";
-      await atomicJson(this.root, viewFile, view);
-      return this._inspect(catalog.artifacts[record3.id]);
-    });
-  }
-  async restore(id) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record: record3, catalog } = await this._raw(id, { includeDeleted: true });
-      if (record3.location !== "trash") return this._inspect(record3);
-      await this._busy(record3);
-      const source = await this._artifactPath(record3), destination = await safePath(this.root, `${record3.kind}/${record3.id}`, { mustExist: false });
-      if (await statOrNull(destination)) throw new LibraryError("ID_CONFLICT", "An active directory already occupies this identity.");
-      await fs4.rename(source, destination);
-      const { deletedAt, ...old } = record3;
-      const next = metadata({ ...old, updatedAt: at() });
-      await atomicJson(destination, "artifact.json", next);
-      catalog.artifacts[record3.id] = { ...next, location: "active" };
-      await this._saveCatalog(catalog);
-      return this._inspect(catalog.artifacts[record3.id]);
-    });
-  }
-  async snapshot(id, { label = "Snapshot" } = {}) {
-    label = titleText(label);
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record: record3 } = await this._raw(id), bundle = await this._export(record3);
-      const snapshot = { id: randomUUID3(), artifactId: record3.id, label, createdAt: at(), bundle };
-      await atomicJson(this.root, `_state/snapshots/${record3.id}/${snapshot.id}.json`, snapshot);
-      return this._snapshotSummary(snapshot);
-    });
-  }
-  _snapshotSummary(snapshot) {
-    return { id: snapshot.id, artifactId: snapshot.artifactId, label: snapshot.label, createdAt: snapshot.createdAt, files: snapshot.bundle.files.length, bytes: snapshot.bundle.files.reduce((sum, file3) => sum + Buffer.byteLength(file3.data, "base64"), 0) };
-  }
-  async listSnapshots(id) {
-    id = artifactId(id);
-    await this._checkRoot();
-    await this._raw(id, { includeDeleted: true });
-    const relative = `_state/snapshots/${id}`, directory = await safePath(this.root, relative, { mustExist: false });
-    if (!await statOrNull(directory)) return [];
-    const result = [];
-    for (const name of await fs4.readdir(directory)) if (/^[0-9a-f-]+\.json$/i.test(name) && UUID2.test(name.slice(0, -5))) {
-      const snapshot = await readJson2(this.root, relative + "/" + name);
-      if (snapshot.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
-      this._bundle(snapshot.bundle);
-      result.push(this._snapshotSummary(snapshot));
-    }
-    return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-  async restoreSnapshot(id, snapshotId) {
-    id = artifactId(id);
-    snapshotId = artifactId(snapshotId);
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const { record: record3, catalog } = await this._raw(id);
-      await this._busy(record3);
-      const saved = await readJson2(this.root, `_state/snapshots/${id}/${snapshotId}.json`);
-      if (saved.artifactId !== id) throw new LibraryError("INVALID_STATE", "Snapshot identity disagrees.");
-      const bundle = this._bundle(saved.bundle, record3.kind);
-      const root = await this._artifactPath(record3), current = await collectContent(root, record3.kind, this.limits, { includeBytes: false }), stage = await this._stage();
-      const originalManifest = await readJson2(root, "artifact.json");
-      let manifestWritten = false;
-      const before = path4.join(stage.absolute, "before"), after = path4.join(stage.absolute, "after");
-      await fs4.mkdir(before);
-      await fs4.mkdir(after);
-      await writeContent(after, bundle.files);
-      const moved = [], added = [];
-      try {
-        for (const file3 of current) {
-          const from = await safePath(root, file3.path, { type: "file" }), to = await safePath(before, file3.path, { mustExist: false });
-          await fs4.mkdir(path4.dirname(to), { recursive: true });
-          await fs4.rename(from, to);
-          moved.push(file3.path);
-        }
-        for (const file3 of bundle.files) {
-          const from = await safePath(after, file3.path, { type: "file" }), to = await safePath(root, file3.path, { mustExist: false });
-          if (await statOrNull(to)) throw new LibraryError("CONTENT_CHANGED", "A file changed while restoring a snapshot.");
-          await fs4.mkdir(path4.dirname(to), { recursive: true });
-          await fs4.rename(from, to);
-          added.push(file3.path);
-        }
-        const next = metadata({ ...record3, title: bundle.title, updatedAt: at() });
-        await atomicJson(root, "artifact.json", next);
-        manifestWritten = true;
-        catalog.artifacts[id] = { ...next, location: "active" };
-        await this._saveCatalog(catalog);
-        return this._inspect(catalog.artifacts[id]);
-      } catch (error112) {
-        for (const relative of added) await fs4.unlink(await safePath(root, relative, { type: "file" }));
-        for (const relative of moved) {
-          const from = await safePath(before, relative, { type: "file" }), to = await safePath(root, relative, { mustExist: false });
-          await fs4.mkdir(path4.dirname(to), { recursive: true });
-          await fs4.rename(from, to);
-        }
-        if (manifestWritten) await atomicJson(root, "artifact.json", originalManifest);
-        throw error112;
-      } finally {
-        await this._removeStage(stage);
-      }
-    });
-  }
-  async scanLegacy() {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const state = await readJson2(this.root, "_state/legacy-imports.json", { version: 1, sources: {} });
-      if (state.version !== 1 || !state.sources) throw new LibraryError("INVALID_STATE", "The legacy registration state is invalid.");
-      const results = [];
-      for (const kind of KINDS) for (const entry2 of await fs4.readdir(await safePath(this.root, kind, { type: "directory" }), { withFileTypes: true })) {
-        if (entry2.name.startsWith(".")) continue;
-        const relative = `${kind}/${entry2.name}`;
-        if (entry2.isSymbolicLink()) {
-          results.push({ kind, path: path4.join(this.root, relative), status: "invalid", code: "SYMLINK_REFUSED" });
-          continue;
-        }
-        if (!entry2.isDirectory()) continue;
-        const source = await safePath(this.root, relative, { type: "directory" });
-        if (await statOrNull(await safePath(source, "artifact.json", { mustExist: false }))) continue;
-        if (state.sources[relative]) {
-          const registered = (await this._catalog()).artifacts[state.sources[relative]];
-          const status = registered ? (await this._inspect(registered)).contentStatus : "missing";
-          results.push({ kind, path: source, status: status === "ok" ? "registered" : status, artifactId: state.sources[relative] });
-          continue;
-        }
-        try {
-          const content = await this._source(source, kind);
-          const imported = await this._create(kind, content.title, content.files);
-          state.sources[relative] = imported.id;
-          await atomicJson(this.root, "_state/legacy-imports.json", state);
-          results.push({ kind, path: source, status: "imported", artifactId: imported.id });
-        } catch (error112) {
-          results.push({ kind, path: source, status: ["MISSING_CONTENT", "NOT_FOUND"].includes(error112.code) ? "missing" : "invalid", code: error112.code || "INVALID_CONTENT", message: error112.message });
-        }
-      }
-      return results;
-    });
-  }
-  async _bindings() {
-    const value = await readJson2(this.root, bindingsFile, { version: 1, artifacts: {} });
-    if (value.version !== 1 || !value.artifacts || typeof value.artifacts !== "object" || Array.isArray(value.artifacts)) throw new LibraryError("INVALID_STATE", "Chat bindings are invalid.");
-    return value;
-  }
-  async getBinding(id) {
-    id = artifactId(id);
-    await this._checkRoot();
-    await this._raw(id);
-    return structuredClone((await this._bindings()).artifacts[id] || null);
-  }
-  async bindChat(id, { threadId, projectId } = {}) {
-    id = artifactId(id);
-    for (const value of [threadId, ...projectId === void 0 ? [] : [projectId]]) if (typeof value !== "string" || !value.trim() || value.length > 300 || /[\u0000-\u001f\u007f]/.test(value)) throw new LibraryError("INVALID_BINDING", "Use an actual nonempty host identifier.");
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      await this._raw(id);
-      const state = await this._bindings(), previous = state.artifacts[id];
-      if (previous && previous.threadId !== threadId) throw new LibraryError("BINDING_CONFLICT", "This artifact already has a different editing conversation; unlink it explicitly first.");
-      const binding = { artifactId: id, threadId, ...projectId ? { projectId } : {}, boundAt: previous?.boundAt || at(), updatedAt: at() };
-      state.artifacts[id] = binding;
-      await atomicJson(this.root, bindingsFile, state);
-      return binding;
-    });
-  }
-  async unbindChat(id) {
-    id = artifactId(id);
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      await this._raw(id);
-      const state = await this._bindings();
-      delete state.artifacts[id];
-      await atomicJson(this.root, bindingsFile, state);
-      return null;
-    });
-  }
-  async _view(catalog) {
-    const value = await readJson2(this.root, viewFile, emptyView());
-    if (value.version !== 1 || !Array.isArray(value.tabs)) throw new LibraryError("INVALID_STATE", "The saved library view is invalid.");
-    const tabs = [libraryTab()], seen = /* @__PURE__ */ new Set(["library"]);
-    for (const tab of value.tabs) if (tab?.type === "artifact" && typeof tab.artifactId === "string" && UUID2.test(tab.artifactId)) {
-      const id = tab.artifactId.toLowerCase();
-      if (!seen.has(id) && catalog.artifacts[id]?.location === "active") {
-        tabs.push({ id, type: "artifact", artifactId: id });
-        seen.add(id);
-      }
-    }
-    return { version: 1, tabs, activeTabId: seen.has(value.activeTabId) ? value.activeTabId : "library" };
-  }
-  async getViewState() {
-    await this._checkRoot();
-    return this._view(await this._catalog());
-  }
-  async _viewUpdate(fn) {
-    await this._checkRoot();
-    return locked(this.root, async () => {
-      const catalog = await this._catalog(), view = await this._view(catalog);
-      await fn(view, catalog);
-      await atomicJson(this.root, viewFile, view);
-      return view;
-    });
-  }
-  async openTab(id) {
-    id = artifactId(id);
-    return this._viewUpdate((view, catalog) => {
-      if (catalog.artifacts[id]?.location !== "active") throw new LibraryError("NOT_FOUND", "No active artifact has this id.");
-      if (!view.tabs.some((tab) => tab.id === id)) view.tabs.push({ id, type: "artifact", artifactId: id });
-      view.activeTabId = id;
-    });
-  }
-  async activateTab(id) {
-    if (id !== "library") id = artifactId(id);
-    return this._viewUpdate((view) => {
-      if (!view.tabs.some((tab) => tab.id === id)) throw new LibraryError("NOT_FOUND", "This tab is not open.");
-      view.activeTabId = id;
-    });
-  }
-  async closeTab(id) {
-    if (id !== "library") id = artifactId(id);
-    return this._viewUpdate((view) => {
-      if (id === "library") return;
-      view.tabs = view.tabs.filter((tab) => tab.id !== id);
-      if (view.activeTabId === id) view.activeTabId = view.tabs.at(-1).id;
-    });
-  }
-  async reorderTabs(ids) {
-    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new LibraryError("INVALID_VIEW", "Expected an ordered list of tab ids.");
-    return this._viewUpdate((view) => {
-      const requested = ids.filter((id) => id !== "library");
-      const current = view.tabs.filter((tab) => tab.type === "artifact");
-      if (new Set(requested).size !== requested.length || requested.length !== current.length || requested.some((id) => !current.some((tab) => tab.id === id))) throw new LibraryError("INVALID_VIEW", "Tab order must contain each open artifact once.");
-      view.tabs = [libraryTab(), ...requested.map((id) => current.find((tab) => tab.id === id))];
-    });
-  }
-};
-function createLibraryStore(options) {
-  return new LibraryStore(options);
-}
-
 // source/server/register.mjs
+init_library();
 init_worker_client();
 
 // source/server/service.mjs
 init_bridge_core();
 init_artifact_command();
-import { spawn } from "node:child_process";
-import path8 from "node:path";
+import { spawn as spawn2 } from "node:child_process";
+import { createHash as createHash5 } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path9 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // source/library/thumbnail.mjs
+init_safety();
 import path7 from "node:path";
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var LIMITS = { maxSourceBytes: 512 * 1024, maxAssetBytes: 2 * 1024 * 1024, maxTotalBytes: 4 * 1024 * 1024, maxDocumentBytes: 6 * 1024 * 1024 };
 var escape3 = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 var decode5 = (value) => String(value).replace(/&(?:#(x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (match, number7) => {
@@ -52680,10 +52770,10 @@ async function sanitize(html, base, context, defaults = {}) {
       continue;
     }
     const rendered = [];
-    for (let [attribute, value] of attrs) {
-      if (attribute.startsWith("sc-camel-")) attribute = attribute.slice(9);
-      if (attribute.startsWith("on") || attribute.startsWith("data-") || ["nonce", "srcset", "formaction", "action", "autofocus", "contenteditable"].includes(attribute)) continue;
-      if (["src", "href", "xlink:href", "poster", "background"].includes(attribute)) {
+    for (let [attribute2, value] of attrs) {
+      if (attribute2.startsWith("sc-camel-")) attribute2 = attribute2.slice(9);
+      if (attribute2.startsWith("on") || attribute2.startsWith("data-") || ["nonce", "srcset", "formaction", "action", "autofocus", "contenteditable"].includes(attribute2)) continue;
+      if (["src", "href", "xlink:href", "poster", "background"].includes(attribute2)) {
         if (name === "use" && /^#[A-Za-z_][\w:.-]*$/.test(value)) rendered.push('href="' + escape3(value) + '"');
         else if (["img", "image"].includes(name)) {
           const uri2 = await context.asset(value, base, "image");
@@ -52691,12 +52781,12 @@ async function sanitize(html, base, context, defaults = {}) {
         }
         continue;
       }
-      if (!ATTRS.has(attribute) || value.length > 65536) continue;
-      if (name === "x-shape" && attribute === "style") continue;
-      if (attribute === "style") value = await sanitizedCss(value, base, context);
+      if (!ATTRS.has(attribute2) || value.length > 65536) continue;
+      if (name === "x-shape" && attribute2 === "style") continue;
+      if (attribute2 === "style") value = await sanitizedCss(value, base, context);
       else if (/url\s*\(/i.test(value)) value = await sanitizedCss(value, base, context);
-      if (attribute === "type" && name === "input" && !["text", "email", "number", "date", "range", "checkbox", "radio", "button"].includes(value)) value = "text";
-      rendered.push((ATTR_NAMES[attribute] || attribute) + '="' + escape3(value) + '"');
+      if (attribute2 === "type" && name === "input" && !["text", "email", "number", "date", "range", "checkbox", "radio", "button"].includes(value)) value = "text";
+      rendered.push((ATTR_NAMES[attribute2] || attribute2) + '="' + escape3(value) + '"');
     }
     if (name === "x-shape") {
       const kind = attrs.get("kind");
@@ -52740,7 +52830,7 @@ function tokenCss(tokens) {
   let css = ":root{" + declarations.join(";") + "}";
   for (const group of tokens.type?.groups || []) for (const style of group.styles || []) if (/^[A-Za-z_][\w-]*$/.test(style.name || "")) {
     const properties = [];
-    for (const [key, attribute] of Object.entries({ fontSize: "font-size", lineHeight: "line-height", fontWeight: "font-weight", letterSpacing: "letter-spacing", textTransform: "text-transform" })) if (safeValue(style[key])) properties.push(attribute + ":" + style[key]);
+    for (const [key, attribute2] of Object.entries({ fontSize: "font-size", lineHeight: "line-height", fontWeight: "font-weight", letterSpacing: "letter-spacing", textTransform: "text-transform" })) if (safeValue(style[key])) properties.push(attribute2 + ":" + style[key]);
     if (/^[A-Za-z_][\w-]*$/.test(group.family || "")) properties.push("font-family:var(--font-" + group.family + ")");
     css += "." + style.name + "{" + properties.join(";") + "}";
   }
@@ -52752,7 +52842,7 @@ async function createArtifactThumbnail(store, id, options = {}) {
   const record3 = await store.get(id);
   if (record3.contentStatus !== "ok") throw new LibraryError(record3.contentError?.code || "ARTIFACT_CONTENT_UNAVAILABLE", "Artwork content is unavailable for a real preview.");
   const listed = await store.listFiles(id), files = new Map(listed.map((file3) => [file3.path, file3]));
-  const hash3 = createHash2("sha256");
+  const hash3 = createHash3("sha256");
   hash3.update(JSON.stringify({ artifactId: record3.id, kind: record3.kind, title: record3.title, files: listed.map((file3) => ({ path: file3.path, bytes: file3.bytes })).sort((a, b) => a.path < b.path ? -1 : 1) }));
   const read = /* @__PURE__ */ new Map(), assets = /* @__PURE__ */ new Map(), visiting = /* @__PURE__ */ new Set(), notes = [];
   let total = 0;
@@ -52807,8 +52897,8 @@ async function createArtifactThumbnail(store, id, options = {}) {
         context.note("A recursive image reference was omitted.");
         return null;
       }
-      const info = files.get(file3), mime = info.contentType || "application/octet-stream";
-      if (!(mime.startsWith("image/") || purpose === "style" && mime.startsWith("font/")) || info.bytes > limits.maxAssetBytes || total + info.bytes > limits.maxTotalBytes) {
+      const info = files.get(file3), mime2 = info.contentType || "application/octet-stream";
+      if (!(mime2.startsWith("image/") || purpose === "style" && mime2.startsWith("font/")) || info.bytes > limits.maxAssetBytes || total + info.bytes > limits.maxTotalBytes) {
         context.note("An unsupported or large material was omitted.");
         return null;
       }
@@ -52818,8 +52908,8 @@ async function createArtifactThumbnail(store, id, options = {}) {
         total += resource.bytes;
         hash3.update(file3 + "\0" + resource.data);
         let data = resource.data;
-        if (mime === "image/svg+xml") data = Buffer.from(await sanitize(Buffer.from(data, "base64").toString("utf8"), file3, context)).toString("base64");
-        const uri2 = "data:" + mime + ";base64," + data;
+        if (mime2 === "image/svg+xml") data = Buffer.from(await sanitize(Buffer.from(data, "base64").toString("utf8"), file3, context)).toString("base64");
+        const uri2 = "data:" + mime2 + ";base64," + data;
         assets.set(file3, uri2);
         return uri2;
       } finally {
@@ -52888,6 +52978,936 @@ async function createArtifactThumbnail(store, id, options = {}) {
   return { artifactId: record3.id, id: record3.id, kind: record3.kind, title: record3.title, revision, cacheKey: record3.id + ":" + revision, srcdoc, previewWidth: width, previewHeight: height, fidelity, sourceFile, notes };
 }
 
+// source/server/editor-transport.mjs
+import { randomUUID as randomUUID4 } from "node:crypto";
+
+// source/scripts/base64.mjs
+function isValidBase643(value) {
+  if (typeof value !== "string" || value.length % 4 || /[^A-Za-z0-9+/=]/.test(value)) return false;
+  const padding = value.indexOf("=");
+  return padding < 0 || value.length - padding <= 2 && /^={1,2}$/.test(value.slice(padding));
+}
+
+// source/server/editor-transport.mjs
+var fail = (code, message) => Object.assign(new Error(message), { code });
+var METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
+var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]);
+var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control"];
+var MAX_BODY = 32 * 1024 * 1024;
+var MAX_RESPONSE = 64 * 1024 * 1024;
+function editorRequestUrl(base, relative) {
+  const root = new URL(base);
+  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
+  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
+  const path10 = relative.split(/[?#]/, 1)[0];
+  let decoded;
+  try {
+    decoded = decodeURIComponent(path10);
+  } catch {
+    throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
+  }
+  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  const target = new URL(relative, root);
+  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  return target;
+}
+async function limitedBody(response, limit) {
+  if (!response.body) return Buffer.alloc(0);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.byteLength;
+    if (size > limit) throw fail("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, size);
+}
+function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {}) {
+  const streams = /* @__PURE__ */ new Map();
+  const get = async (id, relative) => {
+    const editor = await editorFor(id);
+    return { editor, url: editorRequestUrl(editor.url, relative) };
+  };
+  const close = (stream) => {
+    stream.closed = true;
+    clearTimeout(stream.expiry);
+    stream.abort.abort();
+    streams.delete(stream.id);
+  };
+  const touch = (stream) => {
+    clearTimeout(stream.expiry);
+    stream.expiry = setTimeout(() => close(stream), idleMs);
+    stream.expiry.unref?.();
+  };
+  const pump = async (stream) => {
+    let buffer = "";
+    const decoder = new TextDecoder();
+    const record3 = (block) => {
+      const lines = block.split("\n");
+      let event = "message", data = [], id;
+      for (const line of lines) {
+        if (!line || line.startsWith(":")) continue;
+        const separator = line.indexOf(":");
+        const field = separator < 0 ? line : line.slice(0, separator);
+        const value = separator < 0 ? "" : line.slice(separator + 1).replace(/^ /, "");
+        if (field === "event") event = value;
+        else if (field === "data") data.push(value);
+        else if (field === "id") id = value;
+      }
+      if (!data.length) return;
+      stream.events.push({ cursor: ++stream.cursor, event, data: data.join("\n"), ...id === void 0 ? {} : { id } });
+      if (stream.events.length > 128) stream.events.shift();
+      for (const wake of stream.waiters) wake();
+      stream.waiters.clear();
+    };
+    try {
+      for await (const chunk of stream.response.body) {
+        buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
+        if (buffer.length > 4 * 1024 * 1024) throw fail("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
+        let end;
+        while ((end = buffer.indexOf("\n\n")) >= 0) {
+          record3(buffer.slice(0, end));
+          buffer = buffer.slice(end + 2);
+        }
+      }
+    } catch (error113) {
+      if (!stream.closed) stream.error = { code: error113.code || "EDITOR_EVENTS_FAILED", message: error113.message };
+    } finally {
+      stream.ended = true;
+      for (const wake of stream.waiters) wake();
+      stream.waiters.clear();
+    }
+  };
+  return {
+    async request(id, request = {}) {
+      const { url: url3 } = await get(id, request.path);
+      const method = String(request.method || "GET").toUpperCase();
+      if (!METHODS.has(method)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
+      const headers = new Headers();
+      if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
+      for (const [name, value] of Object.entries(request.headers || {})) {
+        if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+        headers.set(name, value);
+      }
+      headers.set("origin", url3.origin);
+      let body;
+      if (request.body !== void 0) {
+        if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase643(request.body)) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+        body = Buffer.from(request.body, "base64");
+        if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+      }
+      const response = await fetcher(url3, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
+        await response.body?.cancel();
+        throw fail("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
+      }
+      const bytes = await limitedBody(response, MAX_RESPONSE);
+      return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
+    },
+    async openEvents(id, path10) {
+      const { url: url3 } = await get(id, path10);
+      if (!/(?:^|\/)events$/.test(url3.pathname)) throw fail("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
+      const abort = new AbortController();
+      let response;
+      const startup = setTimeout(() => abort.abort(), 1e4);
+      try {
+        response = await fetcher(url3, { headers: { accept: "text/event-stream", origin: url3.origin }, redirect: "error", signal: abort.signal });
+      } finally {
+        clearTimeout(startup);
+      }
+      if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+        abort.abort();
+        throw fail("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
+      }
+      const stream = { id: randomUUID4(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
+      streams.set(stream.id, stream);
+      touch(stream);
+      void pump(stream);
+      return { subscriptionId: stream.id, cursor: 0 };
+    },
+    async pollEvents(id, subscriptionId, cursor = 0) {
+      const stream = streams.get(subscriptionId);
+      if (!stream || stream.artifactId !== id || stream.closed) throw fail("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
+      touch(stream);
+      if (!stream.ended && stream.cursor <= cursor) await new Promise((resolve) => {
+        const wake = () => {
+          clearTimeout(timer);
+          stream.waiters.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, 1e3);
+        stream.waiters.add(wake);
+      });
+      return { events: stream.events.filter((event) => event.cursor > cursor), cursor: stream.cursor, ended: stream.ended, ...stream.error ? { error: stream.error } : {} };
+    },
+    async closeEvents(id, subscriptionId) {
+      const stream = streams.get(subscriptionId);
+      if (stream && stream.artifactId === id) close(stream);
+      return { closed: true };
+    },
+    dispose() {
+      for (const stream of streams.values()) close(stream);
+    }
+  };
+}
+
+// source/server/editor-document.mjs
+import { createHash as createHash4 } from "node:crypto";
+
+// source/scripts/editor-runtime-adapter.mjs
+function repairEditorRuntime(source) {
+  const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
+  const initialize = /\([\w$]+,"initializeSheetMeasurement",\(\)=>([\w$]+)/.exec(source)?.[1];
+  if (hookName && initialize) {
+    const escaped = hookName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hook = new RegExp(`function ${escaped}\\([^)]*\\)\\{(?=let [\\w$]+=[\\w$]+\\.useContext\\([\\w$]+\\.sheetParentContext\\))`);
+    source = source.replace(hook, (match) => `${match}${initialize}();`);
+  }
+  return source.replace(
+    /([\w$]+)\.jsx\(([\w$]+)\.baseFieldsetRoot,\{(?=ref:[\w$]+,"data-cds":"Form",)/g,
+    (match, jsx, registry3) => `${jsx}.jsx(${registry3}.baseFieldsetRoot,{render:${jsx}.jsx("form",{}),`
+  );
+}
+
+// source/scripts/comment-floating-adapter.mjs
+var identifier = "[\\w$]+";
+function readCommentComponent(source, pattern) {
+  const match = pattern.exec(source);
+  if (!match) return null;
+  let depth = 1, quote = null, escaped = false;
+  const begin = match.index + match[0].length;
+  for (let index = begin; index < source.length; index++) {
+    const character = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = null;
+    } else if (character === '"' || character === "'" || character === "`") quote = character;
+    else if (character === "{") depth++;
+    else if (character === "}" && --depth === 0) return { match, start: match.index, end: index + 1, text: source.slice(match.index, index + 1) };
+  }
+  throw new Error("The packaged comment component could not be read.");
+}
+function adaptFloatingCommentAccess(source) {
+  const root = readCommentComponent(source, /function ([\w$]+)\(\{controller:([\w$]+),modeShortcut:([\w$]+)="C",launcher:([\w$]+)=\{bottom:16\},header:[\w$]+=!1,seats:[\w$]+,pinSide:[\w$]+\}\)\{/);
+  if (!root || root.text.includes("__codexFloatingCommentList")) return source;
+  const split = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,modeShortcut:[\w$]+,panelOpen:[\w$]+,onPanel:[\w$]+\}\)/.exec(source)?.[1];
+  const list = readCommentComponent(source, /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,dark:([\w$]+),top:([\w$]+),onClose:[\w$]+\}\)\{/);
+  const state = /(?:const|let) ([\w$]+)=(?:\(0,)?[\w$]+\.useSyncExternalStore(?:\))?\(/.exec(root.text)?.[1];
+  const dark = /\{dark:([\w$]+),remScale:/.exec(root.text)?.[1];
+  const panel = /\[([\w$]+),([\w$]+)\]=(?:\(0,)?[\w$]+\.useState(?:\))?\(!1\)/.exec(root.text);
+  if (!split || !list || !state || !dark || !panel) throw new Error("The packaged comment controls changed; native floating adaptation was refused.");
+  const controller = root.match[2], shortcut = root.match[3], launcher = root.match[4];
+  let replacements = 0;
+  const floating = root.text.replace(
+    /children:(?:\(0,)?([\w$]+)\.jsx(?:\))?\(([\w$]+),\{variant:"ghost",iconOnly:!0,icon:"Comment",[\s\S]*?onClick:\(\)=>[\w$]+\.setMode\(![\w$]+\.mode\)\}\)/,
+    (match, jsx) => {
+      replacements++;
+      const original = match.slice("children:".length);
+      return `children:globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?(0,${jsx}.jsxs)(${jsx}.Fragment,{children:[(0,${jsx}.jsx)(${split},{controller:${controller},state:${state},modeShortcut:${shortcut}??void 0,panelOpen:${panel[1]},onPanel:${panel[2]}}),${panel[1]}&&(0,${jsx}.jsx)(${list.match[1]},{controller:${controller},state:${state},dark:${dark},top:0,onClose:()=>${panel[2]}(!1),__codexFloatingCommentList:!0,__codexFloatBottom:${launcher}.bottom??16})]}):${original}`;
+    }
+  );
+  if (replacements !== 1) throw new Error("The canonical floating comment launcher was not found.");
+  const listDark = list.match[2], top = list.match[3];
+  let panelStyles = 0;
+  const escapedDark = listDark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedTop = top.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const style = new RegExp(`style:\\{top:${escapedTop},right:(${identifier}),[\\s\\S]*?\\.\\.\\.${identifier}\\(${escapedDark}\\)\\}`);
+  let listText = list.text.replace(/,onClose:([\w$]+)\}\)\{/, ",onClose:$1,__codexFloatingCommentList:__cfx=!1,__codexFloatBottom:__cfb=16}){");
+  listText = listText.replace(style, (match, margin) => {
+    panelStyles++;
+    return match.slice(0, -1) + `,...(__cfx?{position:"absolute",top:"auto",right:0,bottom:"calc(100% + 8px)",maxHeight:\`calc(100dvh - 100% - \${__cfb+${margin}+8}px)\`}:{})}`;
+  });
+  if (panelStyles !== 1) throw new Error("The canonical comment list position was not found.");
+  const changes = [{ ...root, replacement: floating }, { ...list, replacement: listText }].sort((a, b) => b.start - a.start);
+  for (const change of changes) source = source.slice(0, change.start) + change.replacement + source.slice(change.end);
+  return source;
+}
+
+// source/server/editor-document.mjs
+var error112 = (code, message) => Object.assign(new Error(message), { code });
+var scriptText = (value) => value.replace(/<\/script/gi, "<\\/script");
+var attribute = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+var mime = (value) => ({ woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml", webp: "image/webp", wasm: "application/wasm" })[value.split(".").pop().toLowerCase()] || "application/octet-stream";
+async function replaceAsync2(source, expression, transform3) {
+  const matches = [...source.matchAll(expression)];
+  const replacements = await Promise.all(matches.map((match) => transform3(match)));
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i];
+    source = source.slice(0, match.index) + replacements[i] + source.slice(match.index + match[0].length);
+  }
+  return source;
+}
+function adaptInlineEditorScript(source, scriptUrl) {
+  source = repairEditorRuntime(source);
+  source = adaptFloatingCommentAccess(source);
+  source = source.replace(/\bwindow\.parent===window\b/g, "(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)");
+  source = source.replace(
+    /function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
+    (match, name, win) => `function ${name}(${win}){return (globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&${win}===globalThis.window)||${win}.parent===${win}?null:{post:`
+  );
+  source = source.replace(
+    /localComments:([\w$]+)=>([\w$]+)\(\{base:\1,toolbar:!0\}\)/g,
+    (match, base, create) => `localComments:${base}=>${create}({base:${base},toolbar:!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__})`
+  );
+  source = source.replace(/(?<![\w$.])(?:[\w$]+\.)?crypto\.randomUUID\(\)/g, (call) => {
+    const crypto2 = call.slice(0, -".randomUUID()".length);
+    return `((c)=>{if(c.randomUUID)return c.randomUUID();let b=new Uint8Array(16);c.getRandomValues(b);b[6]=b[6]&15|64;b[8]=b[8]&63|128;return Array.from(b,(v,i)=>([4,6,8,10].includes(i)?String.fromCharCode(45):String())+(v+256).toString(16).slice(1)).join(String())})(${crypto2})`;
+  });
+  source = source.replace(/\bimport\.meta\.url\b/g, JSON.stringify(scriptUrl));
+  source = source.replace(
+    /new URL\((["'])\.\/\1,([\w$]+)\.location\.href\)\.href/g,
+    (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`
+  );
+  source = source.replace(
+    /new URL\((["'])\.\/\1,location\.href\)\.href/g,
+    (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`
+  );
+  source = source.replace(
+    /([\w$]+)=([\w$]+)\(([\w$]+)\),([\w$]+)=\1\?null:([\w$]+)\.localComments\?\.\(([\w$]+)\)/g,
+    (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`
+  );
+  source = source.replace(
+    /return ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\),\5&&\(\5\.onMessage\(async ([\w$]+)=>\{if\(\6\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(\2,\4\);/g,
+    (match, listen, win, base, client, parent, request, saved, flush) => `return globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match.slice(7)}`
+  );
+  source = source.replace(
+    /new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,
+    (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.language??${match})`
+  );
+  return source;
+}
+async function buildEditorDocument({ baseUrl, fetchLocal, config: config3 = {}, maxBytes = 24 * 1024 * 1024 } = {}) {
+  const base = new URL(baseUrl);
+  if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password) {
+    throw error112("EDITOR_INVALID_URL", "An authenticated loopback editor session is required.");
+  }
+  if (typeof fetchLocal !== "function") throw new TypeError("A scoped editor fetch function is required.");
+  const virtual = new URL(config3.virtualBase || config3.baseUrl || "https://codex-design.invalid/");
+  if (virtual.protocol !== "https:" || virtual.hostname !== "codex-design.invalid" || virtual.username || virtual.password) {
+    throw error112("EDITOR_INVALID_URL", "The native editor virtual base is invalid.");
+  }
+  let total = 0;
+  const requests = /* @__PURE__ */ new Map();
+  const scripts = /* @__PURE__ */ new Map();
+  const resolveLocal = (value, relative = base) => {
+    const url3 = new URL(value, relative);
+    if (url3.origin !== base.origin || !url3.pathname.startsWith(base.pathname) || url3.username || url3.password || url3.hash) {
+      throw error112("EDITOR_ASSET_REFUSED", "An editor asset points outside its verified session.");
+    }
+    return url3;
+  };
+  const bytes = (value, relative) => {
+    const url3 = resolveLocal(value, relative);
+    if (!requests.has(url3.href)) requests.set(url3.href, (async () => {
+      const response = await fetchLocal(url3.href);
+      if (!response.ok) throw error112("EDITOR_ASSET_FAILED", `An editor asset failed to load (HTTP ${response.status}).`);
+      const length = Number(response.headers?.get?.("content-length"));
+      if (length > maxBytes) throw error112("EDITOR_DOCUMENT_TOO_LARGE", "An editor asset exceeds the native document limit.");
+      const buffer = Buffer.from(await response.arrayBuffer());
+      total += buffer.length;
+      if (total > maxBytes) throw error112("EDITOR_DOCUMENT_TOO_LARGE", "The native editor document exceeds its content limit.");
+      return buffer;
+    })());
+    return requests.get(url3.href);
+  };
+  const dataUrl = async (value, relative) => {
+    const url3 = resolveLocal(value, relative);
+    const data = await bytes(url3.href);
+    return `data:${mime(url3.pathname)};base64,${data.toString("base64")}`;
+  };
+  const script = (value, relative, chain = []) => {
+    const url3 = resolveLocal(value, relative);
+    if (chain.includes(url3.href)) throw error112("EDITOR_MODULE_CYCLE", "The editor module graph needs a prebuilt native bundle.");
+    if (!scripts.has(url3.href)) scripts.set(url3.href, (async () => {
+      let code = (await bytes(url3.href)).toString("utf8");
+      const virtualScript = new URL(url3.pathname.slice(base.pathname.length), virtual).href;
+      code = adaptInlineEditorScript(code, virtualScript);
+      code = await replaceAsync2(code, /\bimport\(\s*(["'])(\.[^"']+)\1\s*\)/g, async (match) => {
+        const dependency = await script(match[2], url3, [...chain, url3.href]);
+        return `import(${JSON.stringify("data:text/javascript;base64," + Buffer.from(dependency).toString("base64"))})`;
+      });
+      return code;
+    })());
+    return scripts.get(url3.href);
+  };
+  const css = async (value, relative) => {
+    const url3 = resolveLocal(value, relative);
+    let code = (await bytes(url3.href)).toString("utf8");
+    code = await replaceAsync2(code, /url\(\s*(["']?)([^"')]+)\1\s*\)/g, async (match) => {
+      if (/^(?:data:|blob:|#)/i.test(match[2])) return match[0];
+      return `url("${await dataUrl(match[2], url3)}")`;
+    });
+    return code;
+  };
+  let html = (await bytes(base.href)).toString("utf8");
+  if (!/<head\b[^>]*>/i.test(html)) throw error112("EDITOR_INVALID_DOCUMENT", "The editor did not return an HTML document.");
+  html = html.replace("appifact_extra_export_formats:window.parent===window", "appifact_extra_export_formats:true");
+  html = html.replace(/<base\b[^>]*>/gi, "");
+  html = await replaceAsync2(html, /<link\b([^>]*\bhref\s*=\s*(["'])([^"']+)\2[^>]*)>/gi, async (match) => {
+    if (/\brel\s*=\s*(["'])stylesheet\1/i.test(match[1])) return `<style>
+${(await css(match[3], base)).replace(/<\/style/gi, "<\\/style")}
+</style>`;
+    if (/\brel\s*=\s*(["'])(?:modulepreload|preload)\1/i.test(match[1])) return "";
+    return match[0];
+  });
+  html = await replaceAsync2(html, /<script\b([^>]*\bsrc\s*=\s*(["'])([^"']+)\2[^>]*)>\s*<\/script>/gi, async (match) => {
+    const code = await script(match[3], base);
+    const module = /\btype\s*=\s*(["'])module\1/i.test(match[1]);
+    const deferred = !module && /\bdefer\b/i.test(match[1]);
+    const body = deferred ? `if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>{${code}
+},{once:true});}else{${code}
+}` : code;
+    return `<script${module ? ' type="module"' : ""}>
+${scriptText(body)}
+</script>`;
+  });
+  const bootstrap = typeof config3.bootstrap === "string" ? config3.bootstrap : "";
+  html = html.replace(/<head\b[^>]*>/i, (match) => `${match}
+<meta http-equiv="Content-Security-Policy" content="form-action 'none'">
+<base href="${attribute(virtual.href)}">
+<script>${scriptText(bootstrap)}</script>`);
+  const outputBytes = Buffer.byteLength(html);
+  if (outputBytes > maxBytes) throw error112("EDITOR_DOCUMENT_TOO_LARGE", "The assembled native editor exceeds its content limit.");
+  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash4("sha256").update(html).digest("hex"), virtualBase: virtual.href };
+}
+
+// source/scripts/editor-native-transport.js
+function installNativeEditorTransport(configuration, target) {
+  "use strict";
+  target ??= window;
+  const base = new URL(configuration.baseUrl);
+  const channel = configuration.channel;
+  if (target.document) {
+    const host = configuration.hostDepth === 2 ? target.parent.parent : target.parent;
+    let blocked = 0;
+    for (const property of ["document", "codexDesignBridge"]) {
+      try {
+        void host[property];
+      } catch (error113) {
+        if (error113?.name === "SecurityError") blocked++;
+        else throw error113;
+      }
+    }
+    const isolated = blocked === 2;
+    if (!isolated) {
+      target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: "The editor origin is not isolated from its host. Opening was refused." }, "*");
+      throw new DOMException("The editor must remain isolated from its MCP host.", "SecurityError");
+    }
+    target.document.documentElement?.setAttribute("data-codex-parent-isolation", "blocked");
+    target.document.documentElement?.setAttribute("data-codex-editor-origin", target.location?.origin || "null");
+  }
+  const pending = /* @__PURE__ */ new Map();
+  const pendingWrites = /* @__PURE__ */ new Set();
+  const sources = /* @__PURE__ */ new Set();
+  const assetCache = /* @__PURE__ */ new Map();
+  const assetAliases = /* @__PURE__ */ new Map();
+  const assetIds = /* @__PURE__ */ new Set();
+  let assetBytes = 0;
+  if (target.crypto && typeof target.crypto.randomUUID !== "function" && typeof target.crypto.getRandomValues === "function") {
+    const randomUUID5 = () => {
+      const bytes = target.crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = bytes[6] & 15 | 64;
+      bytes[8] = bytes[8] & 63 | 128;
+      return Array.from(bytes, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
+    };
+    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID5, configurable: true });
+  }
+  const originalFetch = target.fetch.bind(target);
+  let sequence = 0;
+  target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId };
+  target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || "system", systemLocale: configuration.locale };
+  const bytesToBase64 = (bytes) => {
+    let value = "";
+    for (let offset = 0; offset < bytes.length; offset += 16384) value += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
+    return target.btoa(value);
+  };
+  const base64ToBytes = (text) => Uint8Array.from(target.atob(text), (character) => character.charCodeAt(0));
+  const rpc = (action, payload = {}, signal) => new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason || new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const requestId = String(++sequence);
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      pending.delete(requestId);
+    };
+    const abort = () => {
+      cleanup();
+      reject(signal.reason || new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(Object.assign(new Error("The artwork editor connection timed out."), { code: "EDITOR_TRANSPORT_TIMEOUT" }));
+    }, 45e3);
+    pending.set(requestId, { resolve: (value) => {
+      cleanup();
+      resolve(value);
+    }, reject: (error113) => {
+      cleanup();
+      reject(error113);
+    } });
+    signal?.addEventListener("abort", abort, { once: true });
+    target.parent.postMessage({ type: "codex-design:editor-request", channel, requestId, action, payload }, "*");
+  });
+  if (target.crypto && !target.crypto.subtle) {
+    Object.defineProperty(target.crypto, "subtle", { configurable: true, value: {
+      async digest(algorithm, data) {
+        if (String(typeof algorithm === "object" ? algorithm?.name : algorithm).toUpperCase() !== "SHA-256") throw new DOMException("Only SHA-256 is available in this isolated editor.", "NotSupportedError");
+        const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
+        if (bytes.byteLength > 32 * 1024 * 1024) throw new DOMException("The digest input exceeds the transfer limit.", "OperationError");
+        const result = await rpc("editor.digest", { algorithm: "SHA-256", base64: bytesToBase64(bytes) });
+        return base64ToBytes(result.base64).buffer;
+      }
+    } });
+  }
+  const downloads = { async save({ filename, data }) {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    try {
+      return await rpc("editor.download", { filename: filename || "download", mimeType: blob.type || "application/octet-stream", base64: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) });
+    } catch (error113) {
+      if (error113.code === "DOWNLOAD_CANCELLED") error113.code = "declined";
+      throw error113;
+    }
+  } };
+  for (const name of ["slidesHost", "designHost", "designSystemHost", "codex", "claude"]) {
+    const current = Object.getOwnPropertyDescriptor(target, name);
+    if (current && !current.configurable) continue;
+    let host = current?.value;
+    const wrap = (value) => {
+      if (!value || typeof value !== "object") return value;
+      const originalUse = typeof value.use === "function" ? value.use.bind(value) : null;
+      value.downloads = downloads;
+      if (originalUse) value.use = (capability, ...args) => capability === "downloads" ? Promise.resolve(downloads) : originalUse(capability, ...args);
+      return value;
+    };
+    host = wrap(host);
+    Object.defineProperty(target, name, { configurable: true, enumerable: true, get: () => host, set: (value) => {
+      host = wrap(value);
+    } });
+  }
+  target.addEventListener("message", (event) => {
+    const message = event.data;
+    if (event.source !== target.parent || message?.channel !== channel) return;
+    if (message.type === "codex-design:editor-flush") {
+      void (async () => {
+        try {
+          target.document?.activeElement?.blur?.();
+          if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === "function") {
+            const saved = await target.__CODEX_DESIGN_EDITOR_FLUSH__();
+            if (saved !== true) throw new Error("The editor still has unsaved changes.");
+          } else {
+            const deadline = Date.now() + 8e3;
+            while (!target.dispatchEvent(new Event("beforeunload", { cancelable: true }))) {
+              if (Date.now() >= deadline) throw new Error("The editor still has unsaved changes.");
+              if (pendingWrites.size) await Promise.all([...pendingWrites]);
+              else await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          }
+          await Promise.all([...pendingWrites]);
+          target.parent.postMessage({ type: "codex-design:editor-flushed", channel, requestId: message.requestId, saved: true }, "*");
+        } catch (error113) {
+          target.parent.postMessage({
+            type: "codex-design:editor-flushed",
+            channel,
+            requestId: message.requestId,
+            saved: false,
+            error: { code: "EDITOR_UNSAVED_CHANGES", message: String(error113.message || error113) }
+          }, "*");
+        }
+      })();
+      return;
+    }
+    if (message.type === "codex-design:host-context-changed") {
+      const root = target.document?.documentElement;
+      const context = message.context;
+      if (!root || !context || typeof context !== "object") return;
+      if (context.theme === "dark" || context.theme === "light") root.setAttribute("data-theme", context.theme);
+      const variables = context.styles?.variables || {};
+      if (typeof variables["--font-sans"] === "string") {
+        root.style.setProperty("--cds-font-sans", variables["--font-sans"]);
+        root.style.setProperty("--cds-font-sans-display", variables["--font-sans"]);
+      }
+      if (typeof variables["--font-mono"] === "string") root.style.setProperty("--cds-font-mono-ui", variables["--font-mono"]);
+      const size = Number.parseFloat(variables["--font-text-md-size"]);
+      if (Number.isFinite(size) && size >= 10 && size <= 32) root.style.setProperty("--cds-rem-scale", String(size / 16));
+      if (typeof context.styles?.css?.fonts === "string") {
+        let style = target.document.getElementById("codex-native-host-fonts");
+        if (!style) {
+          style = target.document.createElement("style");
+          style.id = "codex-native-host-fonts";
+          target.document.head.appendChild(style);
+        }
+        style.textContent = context.styles.css.fonts;
+      }
+      return;
+    }
+    if (message.type !== "codex-design:editor-response") return;
+    const call = pending.get(message.requestId);
+    if (!call) return;
+    message.error ? call.reject(Object.assign(new Error(message.error.message || "The editor request failed."), { code: message.error.code })) : call.resolve(message.result);
+  });
+  const relative = (value) => {
+    const url3 = new URL(value, base);
+    if (url3.origin !== base.origin) return null;
+    if (!url3.pathname.startsWith(base.pathname)) {
+      if (!/^\/(?:_api(?:\/|$)|_blob\/|_files\.json$|__comments(?:\/|$)|__deck\/|__design(?:-system)?\/|project\/|db\/)/.test(url3.pathname)) return null;
+      return url3.pathname.slice(1) + url3.search;
+    }
+    return url3.pathname.slice(base.pathname.length) + url3.search;
+  };
+  const originalAssets = async (text) => {
+    if (!text.includes("data:")) return text;
+    for (const [embedded, reference] of assetAliases) if (text.includes(embedded)) text = text.split(embedded).join(reference);
+    for (const embedded of new Set(text.match(/data:[a-z0-9.+\/-]+;base64,[A-Za-z0-9+/]+={0,2}/gi) || [])) {
+      const base645 = embedded.slice(embedded.indexOf(",") + 1);
+      if (base645.length > 44739244) continue;
+      const digest = await rpc("editor.digest", { algorithm: "SHA-256", base64: base645 });
+      const id = Array.from(base64ToBytes(digest.base64), (value) => (value + 256).toString(16).slice(1)).join("").slice(0, 32);
+      if (assetIds.has(id)) text = text.split(embedded).join("/_blob/" + id);
+    }
+    return text;
+  };
+  const preserveAssetReferences = async (bytes) => {
+    let body;
+    try {
+      body = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      return bytes;
+    }
+    const walk = async (value) => {
+      if (typeof value === "string") return originalAssets(value);
+      if (Array.isArray(value)) return await Promise.all(value.map(walk));
+      if (value && typeof value === "object") for (const key of Object.keys(value)) value[key] = await walk(value[key]);
+      return value;
+    };
+    await walk(body);
+    if (body.files && typeof body.files === "object") for (const [file3, content] of Object.entries(body.files)) {
+      if (!/\.(?:html?|css|js|mjs|json|svg|md)$/i.test(file3) || typeof content?.base64 !== "string") continue;
+      try {
+        const original = new TextDecoder("utf-8", { fatal: true }).decode(base64ToBytes(content.base64));
+        const restored = await originalAssets(original);
+        if (restored !== original) content.base64 = bytesToBase64(new TextEncoder().encode(restored));
+      } catch {
+      }
+    }
+    return new TextEncoder().encode(JSON.stringify(body));
+  };
+  target.fetch = async (input2, init) => {
+    const url3 = typeof input2 === "string" || input2 instanceof URL ? new URL(String(input2), base).href : input2.url;
+    const path10 = relative(url3);
+    if (path10 === null) return originalFetch(input2, init);
+    const request = input2 instanceof Request ? new Request(input2, init) : new Request(url3, init);
+    const headers = {};
+    for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
+    let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
+    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path10.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
+    const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
+    const responseTask = rpc("editor.request", { request: { path: path10, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
+    const writing = !["GET", "HEAD"].includes(request.method);
+    if (writing) pendingWrites.add(responseTask);
+    let response;
+    try {
+      response = await responseTask;
+    } finally {
+      if (writing) pendingWrites.delete(responseTask);
+    }
+    const result = new Response([101, 204, 205, 304].includes(response.status) || request.method === "HEAD" ? null : base64ToBytes(response.body), { status: response.status, statusText: response.statusText, headers: response.headers });
+    Object.defineProperty(result, "url", { value: url3 });
+    return result;
+  };
+  target.__CODEX_DESIGN_EDITOR_RESOLVE_ASSET__ = async (reference) => {
+    const id = /(?:^|\/)\_blob\/([0-9a-f]{32})(?:[?#].*)?$/.exec(String(reference))?.[1];
+    if (!id) throw new TypeError("Only artwork upload references can be embedded.");
+    const key = "_blob/" + id;
+    if (!assetCache.has(key)) {
+      const entry2 = { size: 0 };
+      entry2.promise = (async () => {
+        const response = await target.fetch(key);
+        if (!response.ok) throw new Error("The artwork image or font could not be loaded.");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > 32 * 1024 * 1024) throw new Error("The artwork asset exceeds its transfer limit.");
+        const url3 = "data:" + (response.headers.get("content-type")?.split(";")[0] || "application/octet-stream") + ";base64," + bytesToBase64(bytes);
+        entry2.size = bytes.byteLength;
+        entry2.ready = true;
+        entry2.url = url3;
+        assetBytes += entry2.size;
+        assetIds.add(id);
+        assetAliases.set(url3, "/_blob/" + id);
+        for (const [oldKey, old] of assetCache) {
+          if (assetCache.size <= 128 && assetBytes <= 64 * 1024 * 1024) break;
+          if (oldKey === key || !old.ready) continue;
+          assetCache.delete(oldKey);
+          assetBytes -= old.size;
+          assetAliases.delete(old.url);
+        }
+        return url3;
+      })().catch((error113) => {
+        assetCache.delete(key);
+        throw error113;
+      });
+      assetCache.set(key, entry2);
+    }
+    return assetCache.get(key).promise;
+  };
+  function installPreviewTransport() {
+    let resolveAsset, fetcher, crypto2;
+    try {
+      resolveAsset = window.parent.__CODEX_DESIGN_EDITOR_RESOLVE_ASSET__;
+      fetcher = window.parent.fetch.bind(window.parent);
+      crypto2 = window.parent.crypto;
+    } catch {
+      return;
+    }
+    if (typeof resolveAsset !== "function") return;
+    window.fetch = (input2, init) => {
+      const method = String(init?.method || input2?.method || "GET").toUpperCase();
+      const url3 = typeof input2 === "string" || input2 instanceof URL ? String(input2) : input2?.url;
+      if (!["GET", "HEAD"].includes(method) || typeof url3 !== "string" || !/^(?:blob:|data:|\/?_blob\/[0-9a-f]{32}(?:[?#]|$))/.test(url3)) return Promise.reject(new TypeError("A preview can only read its uploaded artwork assets."));
+      return fetcher(input2, init);
+    };
+    if (!window.crypto.randomUUID && crypto2?.randomUUID) Object.defineProperty(window.crypto, "randomUUID", { value: crypto2.randomUUID.bind(crypto2), configurable: true });
+    if (!window.crypto.subtle && crypto2?.subtle) Object.defineProperty(window.crypto, "subtle", { value: crypto2.subtle, configurable: true });
+    const reference = /(?:\/?_blob\/[0-9a-f]{32})/g;
+    const seen = /* @__PURE__ */ new WeakMap();
+    const transform3 = async (element, attribute2, value) => {
+      if (typeof value !== "string" || !value.includes("_blob/")) return;
+      let state = seen.get(element);
+      if (!state) {
+        state = /* @__PURE__ */ new Map();
+        seen.set(element, state);
+      }
+      if (state.get(attribute2) === value) return;
+      state.set(attribute2, value);
+      try {
+        let next = value;
+        for (const match of new Set(value.match(reference) || [])) next = next.split(match).join(await resolveAsset(match));
+        if (!element.isConnected || state.get(attribute2) !== value) return;
+        if (attribute2 === "textContent") {
+          if (element.textContent === value) element.textContent = next;
+        } else if (element.getAttribute(attribute2) === value) element.setAttribute(attribute2, next);
+      } catch (error113) {
+        console.error("Codex Design could not display an artwork asset.", error113);
+      }
+    };
+    const inspect = (element) => {
+      if (element.nodeType !== 1) return;
+      for (const attribute2 of ["src", "href", "poster", "style", "srcset"]) if (element.hasAttribute(attribute2)) void transform3(element, attribute2, element.getAttribute(attribute2));
+      if (element.tagName === "STYLE") void transform3(element, "textContent", element.textContent);
+      for (const child of element.querySelectorAll("[src],[href],[poster],[style],[srcset],style")) {
+        for (const attribute2 of ["src", "href", "poster", "style", "srcset"]) if (child.hasAttribute(attribute2)) void transform3(child, attribute2, child.getAttribute(attribute2));
+        if (child.tagName === "STYLE") void transform3(child, "textContent", child.textContent);
+      }
+    };
+    new MutationObserver((records) => {
+      for (const record3 of records) {
+        if (record3.type === "attributes") inspect(record3.target);
+        else if (record3.type === "characterData" && record3.target.parentElement?.tagName === "STYLE") inspect(record3.target.parentElement);
+        else for (const node2 of record3.addedNodes) inspect(node2);
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "href", "poster", "style", "srcset"], characterData: true });
+    inspect(document.documentElement);
+  }
+  const framePrototype = target.HTMLIFrameElement?.prototype;
+  const srcdoc = framePrototype && Object.getOwnPropertyDescriptor(framePrototype, "srcdoc");
+  if (srcdoc?.set && srcdoc.get) {
+    const originals = /* @__PURE__ */ new WeakMap();
+    Object.defineProperty(framePrototype, "srcdoc", {
+      configurable: true,
+      enumerable: srcdoc.enumerable,
+      get() {
+        return originals.has(this) ? originals.get(this) : srcdoc.get.call(this);
+      },
+      set(value) {
+        const source = String(value).replace(/<script data-codex-native-preview-transport>[\s\S]*?<\/script>/gi, "");
+        originals.set(this, source);
+        let preview = source;
+        for (const vendor of configuration.previewVendors || []) {
+          const relative2 = "artifact-type/vendor/" + vendor.file;
+          const url3 = new URL(relative2, base);
+          for (const path10 of [url3.href, url3.pathname, "/" + relative2, relative2]) preview = preview.split(path10).join(vendor.url);
+        }
+        const runtime = "<script data-codex-native-preview-transport>(" + installPreviewTransport.toString() + ")();</script>";
+        srcdoc.set.call(this, /<head\b[^>]*>/i.test(preview) ? preview.replace(/<head\b[^>]*>/i, (head) => head + runtime) : runtime + preview);
+      }
+    });
+    const elementPrototype = target.Element?.prototype;
+    if (elementPrototype) {
+      const setAttribute = elementPrototype.setAttribute;
+      elementPrototype.setAttribute = function(name, value) {
+        if (this instanceof target.HTMLIFrameElement && String(name).toLowerCase() === "srcdoc") {
+          this.srcdoc = value;
+          return;
+        }
+        return setAttribute.call(this, name, value);
+      };
+    }
+  }
+  class EditorEventSource extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSED = 2;
+    CONNECTING = 0;
+    OPEN = 1;
+    CLOSED = 2;
+    readyState = 0;
+    withCredentials = false;
+    onopen = null;
+    onmessage = null;
+    onerror = null;
+    constructor(url3) {
+      super();
+      this.url = new URL(String(url3), base).href;
+      this.path = relative(this.url);
+      this.controller = new AbortController();
+      if (this.path === null) throw new TypeError("Only events from this artwork editor can be subscribed.");
+      sources.add(this);
+      void this.listen();
+    }
+    emit(type, data) {
+      const event = data === void 0 ? new Event(type) : new MessageEvent(type, { data: data.data, lastEventId: data.id || "", origin: base.origin });
+      this.dispatchEvent(event);
+      this["on" + type]?.(event);
+    }
+    async listen() {
+      try {
+        const opened = await rpc("editor.events.open", { path: this.path }, this.controller.signal);
+        if (this.readyState === 2) {
+          void rpc("editor.events.close", { subscriptionId: opened.subscriptionId }).catch(() => {
+          });
+          return;
+        }
+        this.subscriptionId = opened.subscriptionId;
+        this.readyState = 1;
+        let cursor = opened.cursor;
+        this.emit("open");
+        while (this.readyState !== 2) {
+          const result = await rpc("editor.events.poll", { subscriptionId: this.subscriptionId, cursor }, this.controller.signal);
+          for (const event of result.events || []) this.emit(event.event, event);
+          cursor = result.cursor;
+          if (result.ended || result.error) throw new Error(result.error?.message || "The editor event connection closed.");
+        }
+      } catch {
+        if (this.readyState === 2) return;
+        this.readyState = 2;
+        sources.delete(this);
+        this.emit("error");
+      }
+    }
+    close() {
+      if (this.readyState === 2 && !this.subscriptionId) return;
+      this.readyState = 2;
+      sources.delete(this);
+      this.controller.abort();
+      if (this.subscriptionId) void rpc("editor.events.close", { subscriptionId: this.subscriptionId }).catch(() => {
+      });
+    }
+  }
+  target.EventSource = EditorEventSource;
+  const anchorPrototype = target.HTMLAnchorElement?.prototype;
+  if (anchorPrototype) {
+    const click = anchorPrototype.click;
+    anchorPrototype.click = function() {
+      if (!this.hasAttribute("download") || !/^(?:blob:|data:)/i.test(this.href)) return click.call(this);
+      const filename = this.download || "download";
+      void (async () => {
+        const resource = await originalFetch(this.href);
+        const bytes = new Uint8Array(await resource.arrayBuffer());
+        await rpc("editor.download", { filename, mimeType: resource.headers.get("content-type") || "application/octet-stream", base64: bytesToBase64(bytes) });
+      })().catch((error113) => target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(error113.message || error113).slice(0, 500) }, "*"));
+    };
+  }
+  target.addEventListener("unload", () => {
+    for (const source of sources) source.close();
+  });
+  target.addEventListener("error", (event) => {
+    if (!event.message) return;
+    target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(event.message).slice(0, 500) }, "*");
+  });
+  target.parent.postMessage({ type: "codex-design:editor-transport-ready", channel }, "*");
+  if (target.document && target.MutationObserver) {
+    let ready = false;
+    const observe = () => {
+      if (ready || !target.document.querySelector("[data-cds],#root button,.dash-page")) return;
+      ready = true;
+      observer.disconnect();
+      target.parent.postMessage({ type: "codex-design:editor-app-ready", channel }, "*");
+    };
+    const observer = new target.MutationObserver(observe);
+    observer.observe(target.document.documentElement, { childList: true, subtree: true });
+    observe();
+  }
+}
+
+// source/server/service.mjs
+init_worker_client();
+
+// source/server/editor-lifecycle.mjs
+init_bridge_core();
+import { spawn } from "node:child_process";
+import fs5 from "node:fs";
+import path8 from "node:path";
+var failure2 = (code, message) => Object.assign(new Error(message), { code });
+async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 15e3 } = {}) {
+  const stateFile = path8.join(record3.path, ".artifact-server.json");
+  if (!fs5.existsSync(stateFile)) return { stopped: false };
+  const state = readJson(stateFile);
+  if (!state || state.kind !== record3.kind || !samePath(state.root, record3.path)) {
+    throw failure2("EDITOR_IDENTITY_UNVERIFIED", "The selected artwork editor record is invalid. Its process and files were preserved.");
+  }
+  const cli = path8.join(pluginRoot, "skills", `codex-${record3.kind}`, "scripts", "codex-artifact.mjs");
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, "stop", record3.path], {
+      cwd: pluginRoot,
+      env,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "", stderr = "", finished = false;
+    const finish = (error113, result) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      error113 ? reject(error113) : resolve(result);
+    };
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout = (stdout + chunk).slice(-65536);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = (stderr + chunk).slice(-8e3);
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(failure2("EDITOR_STOP_TIMEOUT", "The selected editor did not finish stopping. Artwork files were not moved."));
+    }, timeoutMs);
+    child.once("error", (error113) => finish(failure2("EDITOR_STOP_FAILED", error113.message)));
+    child.once("close", (code) => {
+      if (finished) return;
+      if (code !== 0) {
+        let detail;
+        try {
+          detail = JSON.parse(stderr.trim().split(/\r?\n/).at(-1));
+        } catch {
+        }
+        return finish(failure2(detail?.error || "EDITOR_STOP_FAILED", detail?.message || stderr.trim().slice(-2e3) || `Editor stop exited ${code}.`));
+      }
+      try {
+        const result = JSON.parse(stdout.trim());
+        if (alive(state.pid)) return finish(failure2("EDITOR_STOP_FAILED", "The verified editor is still running. Artwork files were not moved."));
+        finish(null, result);
+      } catch {
+        finish(failure2("EDITOR_STOP_FAILED", "The selected editor stop returned invalid data. Artwork files were not moved."));
+      }
+    });
+  });
+}
+
 // source/server/contract.mjs
 var LIBRARY_UI_URI = "ui://codex-design/library";
 var FILE_UI_URI = "ui://codex-design/file";
@@ -52912,29 +53932,35 @@ var ACTIONS = Object.freeze([
   "view.activateTab",
   "view.closeTab",
   "view.reorderTabs",
-  "editor.open"
+  "editor.open",
+  "editor.document",
+  "editor.request",
+  "editor.digest",
+  "editor.events.open",
+  "editor.events.poll",
+  "editor.events.close"
 ]);
 var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 var referenceUri = (id) => `codex-design://artifacts/${encodeURIComponent(id)}/reference`;
 var fileUri = (id, relative) => `codex-design://artifacts/${encodeURIComponent(id)}/files/${encodeURIComponent(relative)}`;
 
 // source/server/service.mjs
-var failure2 = (code, message) => Object.assign(new Error(message), { code });
+var failure3 = (code, message) => Object.assign(new Error(message), { code });
 var UUID3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function idOf(value) {
-  if (typeof value !== "string" || !UUID3.test(value)) throw failure2("INVALID_ID", "An artifact UUID is required.");
+  if (typeof value !== "string" || !UUID3.test(value)) throw failure3("INVALID_ID", "An artifact UUID is required.");
   return value.toLowerCase();
 }
 function titleOf(value) {
-  if (typeof value !== "string" || !value.trim() || value.length > 200) throw failure2("INVALID_TITLE", "Provide a title of at most 200 characters.");
+  if (typeof value !== "string" || !value.trim() || value.length > 200) throw failure3("INVALID_TITLE", "Provide a title of at most 200 characters.");
   return value.trim();
 }
 function kindOf(value) {
-  if (!KINDS2.includes(value)) throw failure2("INVALID_KIND", "Unsupported artifact kind.");
+  if (!KINDS2.includes(value)) throw failure3("INVALID_KIND", "Unsupported artifact kind.");
   return value;
 }
 function relativeOf(value) {
-  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path8.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
+  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path9.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure3("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
   return value;
 }
 var capabilityState = () => ({
@@ -52945,10 +53971,10 @@ var capabilityState = () => ({
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
 async function openLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 3e4 } = {}) {
-  const current = readJson(path8.join(record3.path, ".artifact-server.json"));
+  const current = readJson(path9.join(record3.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record3.path, record3.kind);
-    const binding = readJson(path8.join(record3.path, ".codex-design-bridge.json"));
+    const binding = readJson(path9.join(record3.path, ".codex-design-bridge.json"));
     return {
       url: current.url,
       artifactId: record3.id,
@@ -52959,9 +53985,9 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
     };
   }
   const skill = `codex-${record3.kind}`;
-  const cli = path8.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
+  const cli = path9.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, "open", record3.path, "--delivery", "native"], {
+    const child = spawn2(process.execPath, [cli, "open", record3.path, "--delivery", "native"], {
       cwd: record3.path,
       env,
       shell: false,
@@ -52969,12 +53995,12 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "", stderr = "", settled = false, timedOut = false;
-    const finish = (error112, result) => {
+    const finish = (error113, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(hardTimer);
-      error112 ? reject(error112) : resolve(result);
+      error113 ? reject(error113) : resolve(result);
     };
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -52990,46 +54016,55 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
     }, timeoutMs);
     const hardTimer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(failure2("EDITOR_TIMEOUT", "The local editor did not finish starting."));
+      finish(failure3("EDITOR_TIMEOUT", "The local editor did not finish starting."));
       child.stdout.destroy();
       child.stderr.destroy();
       child.unref();
     }, timeoutMs + 1e3);
-    child.once("error", (error112) => finish(failure2("EDITOR_START_FAILED", error112.message)));
+    child.once("error", (error113) => finish(failure3("EDITOR_START_FAILED", error113.message)));
     child.once("close", (code) => {
-      if (timedOut) return finish(failure2("EDITOR_TIMEOUT", "The local editor did not finish starting."));
-      if (code !== 0) return finish(failure2("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
+      if (timedOut) return finish(failure3("EDITOR_TIMEOUT", "The local editor did not finish starting."));
+      if (code !== 0) return finish(failure3("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
       let result;
       try {
         result = JSON.parse(stdout.trim());
       } catch {
-        return finish(failure2("EDITOR_INVALID_RESPONSE", "The local editor returned invalid startup data."));
+        return finish(failure3("EDITOR_INVALID_RESPONSE", "The local editor returned invalid startup data."));
       }
       let url3;
       try {
         url3 = new URL(result.url);
       } catch {
-        return finish(failure2("EDITOR_INVALID_RESPONSE", "The local editor did not return a URL."));
+        return finish(failure3("EDITOR_INVALID_RESPONSE", "The local editor did not return a URL."));
       }
       if (url3.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url3.hostname) || url3.username || url3.password) {
-        return finish(failure2("EDITOR_INVALID_RESPONSE", "Only a local editor URL is accepted."));
+        return finish(failure3("EDITOR_INVALID_RESPONSE", "Only a local editor URL is accepted."));
       }
       finish(null, { url: url3.href, artifactId: record3.id, kind: record3.kind, delivery: "native", nativeConversationBound: false });
     });
   });
 }
-function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", import.meta.url)), editorOpen = openLocalEditor } = {}) {
+function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
   if (!store) throw new TypeError("A LibraryStore is required.");
   const opening = /* @__PURE__ */ new Map();
+  const trashing = /* @__PURE__ */ new Set();
   const requireRecord = async (id) => {
     const record3 = await store.get(idOf(id));
-    if (!record3 || record3.deletedAt) throw failure2("ARTIFACT_UNAVAILABLE", "The artifact is missing or in the trash.");
+    if (!record3 || record3.deletedAt) throw failure3("ARTIFACT_UNAVAILABLE", "The artifact is missing or in the trash.");
     return record3;
   };
   const initialize = async () => {
     await store.initialize();
     return store;
   };
+  const editorFor = async (id) => {
+    const record3 = await requireRecord(id);
+    if (trashing.has(record3.id)) throw failure3("ARTIFACT_BUSY", "This artwork is being moved to the trash.");
+    if (record3.contentStatus !== "ok") throw failure3("ARTIFACT_CONTENT_UNAVAILABLE", "Missing or invalid artifact content cannot open as a blank replacement.");
+    if (!opening.has(record3.id)) opening.set(record3.id, Promise.resolve().then(() => editorOpen(record3, { pluginRoot })).finally(() => opening.delete(record3.id)));
+    return await opening.get(record3.id);
+  };
+  const transport = createEditorTransport({ editorFor });
   const reference = async (id) => {
     await initialize();
     const artifact = await requireRecord(id);
@@ -53062,14 +54097,14 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
     async readReferenceFile(id, relative, encoding = "utf8") {
       await initialize();
       await requireRecord(id);
-      if (!["utf8", "base64"].includes(encoding)) throw failure2("INVALID_ENCODING", "Choose utf8 or base64.");
+      if (!["utf8", "base64"].includes(encoding)) throw failure3("INVALID_ENCODING", "Choose utf8 or base64.");
       return await store.readFile(idOf(id), relativeOf(relative), { encoding });
     },
     async invoke(action, payload = {}) {
       await initialize();
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw failure2("INVALID_ARGUMENTS", "An action payload must be an object.");
-      if (action === "conversation.send") throw failure2(UNSUPPORTED_CHAT_CODE, "The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.");
-      if (!ACTIONS.includes(action)) throw failure2("UNKNOWN_ACTION", "Unsupported library action.");
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw failure3("INVALID_ARGUMENTS", "An action payload must be an object.");
+      if (action === "conversation.send") throw failure3(UNSUPPORTED_CHAT_CODE, "The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.");
+      if (!ACTIONS.includes(action)) throw failure3("UNKNOWN_ACTION", "Unsupported library action.");
       switch (action) {
         case "library.list":
           return await store.list({ kind: payload.kind === void 0 ? void 0 : kindOf(payload.kind), query: typeof payload.query === "string" ? payload.query.slice(0, 200) : "", favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
@@ -53082,16 +54117,28 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
         case "library.rename":
           return await store.rename(idOf(payload.id), titleOf(payload.title));
         case "library.setFavorite":
-          if (typeof payload.favorite !== "boolean") throw failure2("INVALID_ARGUMENTS", "favorite must be a boolean.");
+          if (typeof payload.favorite !== "boolean") throw failure3("INVALID_ARGUMENTS", "favorite must be a boolean.");
           return await store.setFavorite(idOf(payload.id), payload.favorite);
         case "library.duplicate":
           return await store.duplicate(idOf(payload.id), { ...payload.title === void 0 ? {} : { title: titleOf(payload.title) } });
-        case "library.trash":
-          return await store.trash(idOf(payload.id));
+        case "library.trash": {
+          const id = idOf(payload.id);
+          if (trashing.has(id)) throw failure3("ARTIFACT_BUSY", "This artwork is already being moved to the trash.");
+          trashing.add(id);
+          try {
+            const record3 = await requireRecord(id);
+            if (opening.has(id)) await opening.get(id);
+            await stopWorker(record3.path, { onlyWhenIdle: true });
+            await editorStop(record3, { pluginRoot });
+            return await store.trash(id);
+          } finally {
+            trashing.delete(id);
+          }
+        }
         case "library.restore":
           return await store.restore(idOf(payload.id));
         case "library.snapshot":
-          return await store.snapshot(idOf(payload.id));
+          return await store.snapshot(idOf(payload.id), payload.label === void 0 ? {} : { label: titleOf(payload.label) });
         case "library.listSnapshots":
           return await store.listSnapshots(idOf(payload.id));
         case "library.restoreSnapshot":
@@ -53100,7 +54147,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
           return await store.exportArtifact(idOf(payload.id));
         case "library.importArtifact": {
           if (!payload.bundle || typeof payload.bundle !== "object" || Array.isArray(payload.bundle) || Object.hasOwn(payload, "sourcePath")) {
-            throw failure2("INVALID_IMPORT", "Choose a native artwork package; browser calls cannot import an arbitrary local path.");
+            throw failure3("INVALID_IMPORT", "Choose a native artwork package; browser calls cannot import an arbitrary local path.");
           }
           return await store.importArtifact({ bundle: payload.bundle, ...payload.title === void 0 ? {} : { title: titleOf(payload.title) } });
         }
@@ -53113,14 +54160,61 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
         case "view.closeTab":
           return await store.closeTab(payload.id === "library" ? "library" : idOf(payload.id));
         case "view.reorderTabs":
-          if (!Array.isArray(payload.ids)) throw failure2("INVALID_ARGUMENTS", "ids must be an array.");
+          if (!Array.isArray(payload.ids)) throw failure3("INVALID_ARGUMENTS", "ids must be an array.");
           return await store.reorderTabs(payload.ids.map((id) => id === "library" ? "library" : idOf(id)));
-        case "editor.open": {
-          const record3 = await requireRecord(payload.id);
-          if (record3.contentStatus !== "ok") throw failure2("ARTIFACT_CONTENT_UNAVAILABLE", "Missing or invalid artifact content cannot open as a blank replacement.");
-          if (!opening.has(record3.id)) opening.set(record3.id, Promise.resolve().then(() => editorOpen(record3, { pluginRoot })).finally(() => opening.delete(record3.id)));
-          return await opening.get(record3.id);
+        case "editor.open":
+          return await editorFor(payload.id);
+        case "editor.document": {
+          const id = idOf(payload.id);
+          if (typeof payload.channel !== "string" || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure3("INVALID_EDITOR_REQUEST", "A unique editor channel is required.");
+          const language = /^zh(?:-|$)/i.test(String(payload.language)) ? "zh" : "en";
+          const editor = await editorFor(id);
+          const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
+          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };
+          if (editor.kind === "design-system") {
+            configuration.previewVendors = await Promise.all([
+              ["react.production.min.js", "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"],
+              ["react-dom.production.min.js", "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"]
+            ].map(async ([file3, expected]) => {
+              const bytes = await readFile(path9.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file3));
+              if (bytes.length > 256 * 1024 || createHash5("sha256").update(bytes).digest("hex") !== expected) throw failure3("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
+              return { file: file3, url: "data:text/javascript;base64," + bytes.toString("base64") };
+            }));
+          }
+          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, "\\u003c")});`;
+          const root = new URL(editor.url);
+          const fetchLocal = async (value) => {
+            const url3 = new URL(String(value));
+            if (url3.origin !== root.origin || !url3.pathname.startsWith(root.pathname)) throw failure3("INVALID_EDITOR_REQUEST", "Editor assets must stay inside their artwork session.");
+            const relative = url3.pathname.slice(root.pathname.length);
+            editorRequestUrl(root.href, relative + url3.search);
+            let asset;
+            if (!relative) asset = path9.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
+            else if (relative === "__codex/annotations.js") asset = path9.join(pluginRoot, "scripts/browser-annotations.js");
+            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
+              asset = path9.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
+            } else throw failure3("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
+            const bytes = await readFile(asset);
+            return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
+          };
+          const document2 = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap } });
+          return { ...editor, ...document2, artifactId: id, channel: payload.channel, transport: "mcp" };
         }
+        case "editor.request":
+          return await transport.request(idOf(payload.id), payload.request);
+        case "editor.digest": {
+          await requireRecord(payload.id);
+          if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase643(payload.base64)) throw failure3("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");
+          const bytes = Buffer.from(payload.base64, "base64");
+          if (bytes.length > 32 * 1024 * 1024) throw failure3("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
+          return { base64: createHash5("sha256").update(bytes).digest("base64") };
+        }
+        case "editor.events.open":
+          return await transport.openEvents(idOf(payload.id), payload.path);
+        case "editor.events.poll":
+          return await transport.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
+        case "editor.events.close":
+          return await transport.closeEvents(idOf(payload.id), payload.subscriptionId);
         case "conversation.get": {
           const record3 = await requireRecord(payload.id);
           return {
@@ -53146,7 +54240,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
 // source/server/register.mjs
 var readonly3 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 var appOnly = (uri2) => ({ ui: { resourceUri: uri2, visibility: ["app"] } });
-var briefError = (error112) => ({ code: error112.code || "DESIGN_LIBRARY_ERROR", message: String(error112.message || error112).slice(0, 2e3) });
+var briefError = (error113) => ({ code: error113.code || "DESIGN_LIBRARY_ERROR", message: String(error113.message || error113).slice(0, 2e3) });
 async function nativeActivity(record3) {
   try {
     const status = await getWorkerStatus(record3.path);
@@ -53169,11 +54263,11 @@ async function createDesignServer({
   icons,
   editorOpen,
   pluginRoot,
-  version: version3 = "0.3.0"
+  version: version3 = "0.4.0"
 } = {}) {
-  if (html === void 0) html = await readFile(htmlPath, "utf8");
+  if (html === void 0) html = await readFile2(htmlPath, "utf8");
   if (icons === void 0) {
-    const icon = await readFile(new URL("../assets/icon.png", import.meta.url));
+    const icon = await readFile2(new URL("../assets/icon.png", import.meta.url));
     icons = [{ src: `data:image/png;base64,${icon.toString("base64")}`, mimeType: "image/png", sizes: ["512x512"] }];
   }
   const server = new McpServer({ name: "codex-design", title: "codex design", version: version3, icons });
@@ -53184,7 +54278,12 @@ async function createDesignServer({
     mimeType: UI_MIME_TYPE,
     text: html,
     _meta: {
-      ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: ["http://127.0.0.1:*", "http://localhost:*"] } },
+      ui: { csp: {
+        connectDomains: ["blob:", "data:", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+        resourceDomains: ["blob:", "data:", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdn.oaistatic.com", "https://cdn.openai.com"],
+        frameDomains: ["blob:", "data:"],
+        baseUriDomains: ["https://codex-design.invalid"]
+      } },
       "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["fullscreen"] }
     }
   });
@@ -53220,8 +54319,8 @@ async function createDesignServer({
     }, async ({ action, payload }) => {
       try {
         return resultFor(await service.invoke(action, payload), action);
-      } catch (error112) {
-        const detail = briefError(error112);
+      } catch (error113) {
+        const detail = briefError(error113);
         return { isError: true, content: [{ type: "text", text: JSON.stringify(detail) }], structuredContent: { error: detail } };
       }
     });
@@ -53245,11 +54344,16 @@ async function createDesignServer({
     let content;
     try {
       content = await service.readReferenceFile(id, relative);
-    } catch (error112) {
-      if (error112.code !== "BINARY_ENCODING_REQUIRED") throw error112;
+    } catch (error113) {
+      if (error113.code !== "BINARY_ENCODING_REQUIRED") throw error113;
       content = await service.readReferenceFile(id, relative, "base64");
     }
-    return { contents: [{ uri: uri2.href, mimeType: content.contentType, ...content.text === void 0 ? { blob: content.data } : { text: content.text } }] };
+    return { contents: [{
+      uri: uri2.href,
+      mimeType: content.contentType,
+      _meta: { "codex-design/contentRevision": content.revision },
+      ...content.text === void 0 ? { blob: content.data } : { text: content.text }
+    }] };
   });
   return server;
 }

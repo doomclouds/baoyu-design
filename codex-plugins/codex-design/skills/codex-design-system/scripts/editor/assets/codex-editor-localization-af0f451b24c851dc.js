@@ -2434,6 +2434,13 @@
       getStatus: status,
       setPreference,
       t: (key, values) => engine.t(key, values),
+      formatSlideLabel({ number, count, title, skipped = false, thumbnail = false, comments = "" }) {
+        let label = engine.t(count === void 0 ? "slides.numberLabel" : "slides.positionLabel", { number, count });
+        if (skipped) label += engine.t("slides.skippedSuffix");
+        if (thumbnail) label += engine.t("slides.thumbnailSuffix");
+        if (typeof title === "string" && title !== "") label += engine.t("slides.titleSuffix", { title });
+        return label + comments;
+      },
       formatCommentTime,
       formatCommentTimestamp
     });
