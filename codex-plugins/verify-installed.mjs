@@ -43,12 +43,17 @@ try {
   const initialized = await rpc('initialize', { clientInfo: { name: 'codex-design-verifier', version: '0.1.0' } });
   child.stdin.write(`${JSON.stringify({ method: 'initialized', params: {} })}\n`);
   const result = await rpc('skills/list', { cwds: [cwd], forceReload: true });
-  const expected = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-dataviz'];
+  const expected = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-dataviz']
+    .map(name => `codex-design:${name}`);
   const entries = result.data?.find(entry => path.resolve(entry.cwd).toLowerCase() === cwd.toLowerCase());
   if (!entries) throw new Error('Codex did not return skill discovery for the requested workspace.');
   const skills = entries.skills.filter(skill => expected.includes(skill.name) && /[\\/]plugins[\\/]cache[\\/]codex-design-marketplace[\\/]codex-design[\\/]/i.test(skill.path));
   for (const name of expected) {
-    if (!skills.some(skill => skill.name === name && skill.enabled !== false)) throw new Error(`Installed plugin skill was not enabled in Codex: ${name}`);
+    if (!skills.some(skill => skill.name === name && skill.enabled !== false)) {
+      const candidates = entries.skills.filter(skill => /codex-design-marketplace|codex-(?:slides|design|dashboard|dataviz)/i.test(`${skill.name} ${skill.path}`))
+        .map(({ name, path, enabled, scope }) => ({ name, path, enabled, scope }));
+      throw new Error(`Installed plugin skill was not enabled in Codex: ${name}; discovery: ${JSON.stringify({ candidates, errors: entries.errors })}`);
+    }
   }
   const errors = (entries.errors || []).filter(error => /codex-design/i.test(JSON.stringify(error)));
   if (errors.length) throw new Error(`Installed plugin skill diagnostics: ${JSON.stringify(errors)}`);
