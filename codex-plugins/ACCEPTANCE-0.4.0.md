@@ -54,6 +54,26 @@ inventory remained empty. Therefore native global/file visuals, host font and
 theme changes, interactions, and native download dialogs remain unexecuted;
 the successful installation and runtime discovery do not close those gates.
 
+### Existing-chat connection follow-up
+
+A direct `codex-design/design_read` call from the existing chat after the
+installation returned **Transport closed**. This is a failed consuming-chat
+check; the fresh-runtime catalog result above remains a separate passed check.
+Official app navigation reported `navigated: true`, but the subsequent file-view
+request still returned `queued` and the MCP Apps browser inventory stayed empty.
+Neither response establishes a rendered native editor or a repaired connection.
+
+The public [App Server API](https://learn.chatgpt.com/docs/app-server#api-overview)
+documents `config/mcpServer/reload`, which queues a refresh for loaded threads.
+No tool attached to the current Desktop app-server connection exposes that
+method here. Invoking it against a newly spawned app server would not prove
+that the existing Desktop chat recovered. The official
+[MCP settings guide](https://learn.chatgpt.com/docs/extend/mcp#configure-in-the-chatgpt-desktop-app)
+offers a Restart control for configured MCP servers; it does not establish that
+this control is available for this embedded plugin server. If no such control
+is exposed, reopening the app is needed before retrying the existing chat's
+live tools. No private transport or host process modification was used.
+
 The 194-test run does not automatically cover later text-only corrections to
 the visible `No open comments` and `Resolved` labels. Their targeted regression
 status is tracked separately below; the frozen full-suite log remains unchanged.
