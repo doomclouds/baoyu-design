@@ -1,8 +1,8 @@
 # Codex Design 0.4.0 acceptance record
 
 Recorded on 2026-11-01. This records local checks, isolated browser acceptance,
-and real native-worker execution. **The final 0.4.0 GitHub installation and
-visual acceptance inside Codex Desktop are still pending.** A browser sandbox
+and real native-worker execution. **The final 0.4.0 GitHub installation is
+verified; visual acceptance inside Codex Desktop is still pending.** A browser sandbox
 must not be described as the actual Codex host.
 
 This is a checkpoint report. Comment reopen has its own status row below;
@@ -17,7 +17,7 @@ persisted resolution must not be treated as acceptance of the reopen UI.
 | Generated package | **179 owned files**; build ownership/check and portable relocation verification passed | Package completeness and portable execution at that checkpoint; does not establish Desktop rendering |
 | Isolated browser workspace | Four real editors, local artwork files, native-style scoped transport, and captured output exercised | Browser/component acceptance; the bridge and host fixture are controlled test infrastructure |
 | Native worker | The same real platform-spawned child completed two comment jobs | Actual native-agent execution; does not establish the installed 0.4.0 app's sidebar or composer behavior |
-| Installed Codex Desktop 0.4.0 | **Pending** | Requires the final GitHub-installed package and the real consuming-app surface |
+| Installed Codex Desktop 0.4.0 | **Installation/catalog verified; visual acceptance pending** | GitHub marketplace install, all 179 file hashes and actual Desktop runtime discovery passed; no native app tab was exposed for visual control |
 
 The local release checks use the repository scripts:
 
@@ -31,6 +31,28 @@ npm run verify:codex-plugin-portable
 Build and verification run locally. No GitHub workflow is required or used for
 this release process. Installed-version hashes, temporary-probe discovery, and
 older release results must not be carried forward as 0.4.0 host acceptance.
+
+## Final GitHub installation
+
+The code release is `ea37365d99cc7c804ee94534f918cca92cbc2d7f` on
+`codex/plugin`. The formal Git marketplace refreshed to that exact commit,
+then installed `codex-design@codex-design-marketplace` version **0.4.0**.
+The first install attempt failed with Windows access denied while backing up
+the live old cache. Only the six verified old 0.3.0 MCP server processes were
+stopped; the supported install command then succeeded. No temporary market,
+host restart, global proxy change, workflow or tag was used.
+
+The installed package matches all **179** generated SHA-256 entries. Actual
+Codex Desktop runtime **0.166.0-alpha.5.1** discovered all five enabled skills,
+`DesignLibrary`, `DesignFile`, the action/reference tools, and the global
+entrypoint with no tools error. The installed CLI also created and checked
+a fresh global-library Slides work for acceptance.
+
+Opening its `.codexdesign` descriptor through the supported Codex file-viewer
+tool returned **queued** for the current background chat. The MCP Apps
+inventory remained empty. Therefore native global/file visuals, host font and
+theme changes, interactions, and native download dialogs remain unexecuted;
+the successful installation and runtime discovery do not close those gates.
 
 The 194-test run does not automatically cover later text-only corrections to
 the visible `No open comments` and `Resolved` labels. Their targeted regression
@@ -166,6 +188,8 @@ absolute paths are embedded in this document or the published package.
 | `codex-design-0.4-tests-after-runtime-fixes.txt` | Earlier 189-test run, preserved |
 | `codex-design-0.4-tests-release-frozen.txt` | Latest frozen 194-test run, before the final two display-label edits |
 | `codex-design-0.4-tests-final-copy.txt` | Final related 50-test run after the two label edits |
+| `codex-design-0.4-installed-verification.txt` | Actual Desktop runtime skill/MCP discovery for the GitHub-installed 0.4.0 |
+| `codex-design-0.4-installed-hashes.json` | All 179 installed files match the generated release |
 | `codex-design-0.4-library-final-qa.jpg` | Library layout/type-column browser evidence |
 | `codex-design-0.4-canvas-native-sandbox.jpg` | Actual artboard/image rendering in the isolated sandbox |
 | `codex-design-0.4-slides-native-sandbox.jpg` | Reopened saved slide content in the sandbox |
@@ -196,7 +220,7 @@ entrypoints, real visuals, styles, comments and downloads. Also see
 
 | Requirement | Current status |
 | --- | --- |
-| Final GitHub marketplace installation of 0.4.0 | **Pending** |
+| Final GitHub marketplace installation of 0.4.0 | **Passed**; exact release commit, 179 hashes, five enabled skills and MCP discovery verified |
 | Actual Codex Desktop 0.4.0 visual/interaction acceptance | **Pending** |
 | Final `No open comments` / `Resolved` display-label regression | **50/50 related checks passed**; Chinese empty-list text was also observed in the running sandbox, independently of the earlier 194-test run |
 | Replace the host-wide middle sidebar with app categories | **No current public API; not implemented** |
