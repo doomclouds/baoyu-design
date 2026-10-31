@@ -1,0 +1,7 @@
+<!-- @dsCard group="Actions" height=160 subtitle="主操作、安静操作与禁用状态" -->
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Nimbus Button</title></head><body style="margin:0">
+<div id="demo"></div>
+<script>
+(function(){const h=React.createElement;function Demo(){const[located,setLocated]=React.useState(false);const[message,setMessage]=React.useState('点击按钮，查看操作反馈。');return h('div',{className:'nb-demo'},h('div',{className:'nb-demo-row'},h(Nimbus.Button,{variant:'primary',onClick:function(){setLocated(!located);setMessage(located?'已回到城市选择。':'演示位置已切换到杭州。');}},located?'杭州已定位':'定位我'),h(Nimbus.Button,{onClick:function(){setMessage('已选择查看未来七天。');}},'查看七天'),h(Nimbus.Button,{disabled:true},'暂不可用')),h('p',{className:'nb-demo-status caption',role:'status'},message));}ReactDOM.createRoot(document.getElementById('demo')).render(h(Demo));})();
+</script></body></html>

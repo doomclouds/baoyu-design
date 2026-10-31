@@ -1,0 +1,8 @@
+# Local editor and native-agent state is never part of a published example.
+**/.artifact-server.json
+**/.artifact-server.log
+**/comments.json
+**/.codex-design-*
+**/db/data/users/
+**/db/dash/check.json
+**/*.tmp

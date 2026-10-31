@@ -6,6 +6,23 @@ import path from 'node:path';
 const createdAt = '2026-10-31T00:00:00.000Z';
 const marker = { v: 1, at: createdAt };
 
+export const dashboardFixtureHtml = `<style>
+#dash-root { box-sizing: border-box; min-height: 100%; padding: 40px; font-family: Arial, sans-serif; color: #172033; background: #f5f7fa; }
+#dash-root .codex-verification-card { max-width: 720px; margin: 0 auto; padding: 32px; border: 1px solid #d8e0ea; border-radius: 16px; color: #172033; background: #ffffff; }
+#dash-root .codex-verification-title { margin: 0 0 12px; font-size: 32px; line-height: 1.25; color: #172033; }
+#dash-root .codex-verification-description { margin: 0 0 28px; font-size: 16px; line-height: 1.6; color: #475569; }
+#dash-root .codex-verification-label { margin: 0 0 8px; font-size: 16px; line-height: 1.5; color: #475569; }
+#dash-root .codex-verification-metric { margin: 0 0 24px; font-size: 56px; line-height: 1.1; font-weight: 600; color: #0f172a; }
+#dash-root .codex-verification-source { margin: 0; font-size: 14px; line-height: 1.5; color: #475569; }
+</style>
+<article class="codex-verification-card">
+  <h1 class="codex-verification-title">codex design 安装验收</h1>
+  <p class="codex-verification-description">此页面使用示例数据，用于验证本地看板编辑、数据溯源和批注联动。</p>
+  <p class="codex-verification-label">Monthly revenue</p>
+  <p class="codex-verification-metric" data-source="revenue" data-field="value" data-row="0">120</p>
+  <p class="codex-verification-source">示例来源：verification.csv，October 行。可在 Sources 面板查看原始数据。</p>
+</article>`;
+
 async function write(root, relative, text) {
   const file = path.join(root, ...relative.split('/'));
   await mkdir(path.dirname(file), { recursive: true });
@@ -69,7 +86,7 @@ export async function createFixture(kind, parentDir = tmpdir()) {
       updated: { at: createdAt, by: 'Codex verification' },
     });
     await write(root, fixture.contentFile, {
-      text: '<style>body{font-family:Arial,sans-serif;color:#172033;background:#fff;padding:40px}h1{font-size:36px}.metric{font-size:48px}</style><h1>Codex Design verification</h1><p>Monthly revenue</p><p class="metric" data-source="revenue" data-field="value" data-row="0">120</p>',
+      text: dashboardFixtureHtml,
     });
     fixture.comment = { anchor: 'metric:revenue', label: 'Revenue metric', detail: 'October revenue value' };
   }

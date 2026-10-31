@@ -28,7 +28,7 @@ async function setup(t) {
   const fake = path.join(root, 'fake codex.mjs');
   await fsp.writeFile(fake, fakeSource);
   const trace = path.join(root, 'trace.jsonl');
-  const binding = { version: 1, root, skillDir: path.join(root, 'skills', 'codex-design'), threadId: THREAD, token: 'token-test', codexPath: fake };
+  const binding = { version: 1, root, skillDir: path.join(root, 'skills', 'codex-design'), threadId: THREAD, token: 'token-test', codexPath: fake, deliveryMode: 'main' };
   atomicJson(path.join(root, BINDING_FILE), binding);
   const env = { ...process.env, FAKE_TRACE: trace };
   return { root, fake, trace, binding, env, runner: { command: process.execPath, args: [fake] } };

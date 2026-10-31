@@ -9,6 +9,23 @@ const skills = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-da
 // Written next to each generated server, never into the upstream skills.
 const serverModule = String.raw`import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+
+export function userRevisionHash(thread) {
+  const messages = Array.isArray(thread) ? thread : thread?.messages || [];
+  const revision = messages.filter(message => (message.from || message.author?.kind) === 'user')
+    .map(message => ({text: message.text, at: message.at, editedAt: message.editedAt}));
+  return createHash('sha256').update(JSON.stringify(revision)).digest('hex');
+}
+
+export function assertUserRevision(thread, expected) {
+  if (!expected) return;
+  if (!/^[a-f0-9]{64}$/.test(expected) || thread?.status !== 'open' || userRevisionHash(thread) !== expected) {
+    const error = new Error('The user changed or resolved this comment before the reply was saved; the newer request was preserved.');
+    error.code = 'COMMENT_REVISION_CHANGED';
+    throw error;
+  }
+}
 
 export async function renameWithRetry(source, destination, {platform = process.platform, rename = fs.rename, pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)), delays = [10, 20, 40, 80, 160, 250, 400, 600, 800]} = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -123,6 +140,12 @@ export async function adaptAnnotations(pluginRoot) {
         if (!runtime.includes(prefix + skill)) runtime = replaceOnce(runtime, prefix + upstreamName, prefix + skill, file);
         if (skill === 'codex-dashboard') runtime = runtime.replaceAll('need the claude.ai page', 'require the hosted editor');
         else if (!runtime.includes('process.env.CODEX_DESIGN_SYSTEMS')) runtime = replaceOnce(runtime, 'process.env.CLAUDE_DESIGN_SYSTEMS ?? ""', 'process.env.CODEX_DESIGN_SYSTEMS ?? process.env.CLAUDE_DESIGN_SYSTEMS ?? ""', file);
+        if (!runtime.includes('codexAssertUserRevision')) {
+          runtime = runtime.replace(/(#![^\n]*\n)/, '$1import { assertUserRevision as codexAssertUserRevision } from "./codex-annotation-server.mjs";\n');
+          const replyAnchor = '    const found = findThread(doc, id);\n    const now = (/* @__PURE__ */ new Date()).toISOString();\n    addMessage(found, AGENT_AUTHOR, text, now);';
+          const guardedReply = '    const found = findThread(doc, id);\n    codexAssertUserRevision(found, process.env.CODEX_DESIGN_EXPECTED_USER_REVISION);\n    const now = (/* @__PURE__ */ new Date()).toISOString();\n    addMessage(found, AGENT_AUTHOR, text, now);';
+          runtime = replaceOnce(runtime, replyAnchor, guardedReply, file);
+        }
       }
       runtime = runtime.replaceAll('{ detached: true, stdio:', '{ detached: true, windowsHide: true, stdio:');
       runtime = runtime.replace(/spawn\(command, \{\r?\n\s*shell: true,(?!\r?\n\s*windowsHide:)/g, 'spawn(command, {\n        shell: true,\n        windowsHide: true,');

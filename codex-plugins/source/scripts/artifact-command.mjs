@@ -4,9 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BINDING_FILE, BridgeError, readJson, atomicJson, alive, withLock, resolveCodexRunner, samePath } from './bridge-core.mjs';
+import { getWorkerStatus, retryWorkerJob, stopWorker, registerNativeWorker, nextNativeJob, completeNativeJob } from './worker-client.mjs';
 
 const BRIDGE_FLAGS = new Map([
   ['thread', 'threadId'], ['remote', 'remote'], ['remote-auth-token-env', 'remoteAuthTokenEnv'], ['codex-path', 'codexPath'],
+  ['delivery', 'deliveryMode'], ['worker-model', 'workerModel'],
 ]);
 const SWITCHES = new Set(['all', 'wait', 'resolve', 'reopen']);
 
@@ -93,7 +95,29 @@ function originalCommand(script, argv, env, onStart) {
   });
 }
 
-const sameTarget = (a, b) => ['threadId', 'remote', 'remoteAuthTokenEnv', 'codexPath', 'skillDir'].every((key) => (a[key] ?? null) === (b[key] ?? null));
+const sameTarget = (a, b) => ['remote', 'remoteAuthTokenEnv', 'codexPath', 'skillDir', 'deliveryMode', 'workerModel'].every((key) => (a[key] ?? null) === (b[key] ?? null))
+  && (['native', 'worker'].includes(b.deliveryMode) || a.threadId === b.threadId);
+
+function workerArguments(argv) {
+  const positional = [], flags = {};
+  for (let i = 1; i < argv.length; i++) {
+    const argument = argv[i];
+    if (!argument.startsWith('--')) { positional.push(argument); continue; }
+    const match = /^--([^=]+)(?:=(.*))?$/s.exec(argument);
+    if (match[1] === 'replace' && match[2] === undefined) { flags.replace = true; continue; }
+    if (!['name', 'timeout'].includes(match[1])) throw new BridgeError('INVALID_WORKER_FLAG', `Unsupported native worker option: ${argument}`);
+    const value = match[2] ?? argv[++i];
+    if (!value || value.startsWith('--')) throw new BridgeError('INVALID_WORKER_FLAG', `${argument} requires a value.`);
+    flags[match[1]] = value;
+  }
+  return { positional, flags };
+}
+
+async function completionInput() {
+  const chunks = []; let bytes = 0;
+  for await (const chunk of process.stdin) { bytes += chunk.length; if (bytes > 1024 * 1024) throw new BridgeError('WORKER_RESULT_TOO_LARGE', 'A native completion cannot exceed 1 MiB.'); chunks.push(chunk); }
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 export async function runArtifactCommand(skillDir, argv, { env = process.env, startupTimeoutMs = 20_000 } = {}) {
   try {
@@ -103,10 +127,31 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
     const { forwarded, options } = parseBridgeArguments(argv);
     const command = forwarded[0];
     const customHook = forwarded.some((arg) => arg === '--agent-hook' || arg.startsWith('--agent-hook='));
+    if (['worker-status', 'worker-retry', 'worker-register', 'worker-next', 'worker-complete', 'worker-stop'].includes(command)) {
+      const { root } = artifactRoot(skillDir, forwarded);
+      const parsed = workerArguments(forwarded);
+      let result;
+      if (command === 'worker-status') result = await getWorkerStatus(root);
+      else if (command === 'worker-register') result = await registerNativeWorker(root, { env, name: parsed.flags.name, replace: Boolean(parsed.flags.replace) });
+      else if (command === 'worker-next') result = await nextNativeJob(root, { env, timeoutSeconds: parsed.flags.timeout === undefined ? 60 : Number(parsed.flags.timeout) });
+      else if (command === 'worker-stop') result = await stopWorker(root);
+      else {
+        const jobId = parsed.positional[1];
+        if (!jobId) throw new BridgeError('MISSING_JOB', 'Give the native worker job id after its artifact root.');
+        if (command === 'worker-retry') result = await retryWorkerJob(root, jobId);
+        else {
+          if (parsed.positional[2] !== '-') throw new BridgeError('WORKER_STDIN_REQUIRED', 'Use worker-complete <root> <jobId> - and pass text or JSON {text,status?} on stdin.');
+          result = await completeNativeJob(root, jobId, await completionInput(), { env });
+        }
+      }
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); const code = result.status === 'failed' ? 1 : 0; process.exitCode = code; return code;
+    }
     if (command === 'stop') {
       const { root, rootIndex } = artifactRoot(skillDir, forwarded, { allowMissing: true });
       forwarded[rootIndex] = root;
       const code = !fs.existsSync(root) ? await originalCommand(script, forwarded, env) : await withLock(path.join(root, `${BINDING_FILE}.lock`), async () => {
+        const nativeStop = await stopWorker(root);
+        if (nativeStop.interruptRequired) process.stderr.write(`${JSON.stringify({ warning: 'NATIVE_INTERRUPT_REQUIRED', ...nativeStop })}\n`);
         const result = await stopVerified(script, root, kindForSkill(skillDir), readJson(path.join(root, '.artifact-server.json')), env, forwarded);
         if (result === 0 && !alive(readJson(path.join(root, '.artifact-server.json'))?.pid)) fs.rmSync(path.join(root, BINDING_FILE), { force: true });
         return result;
@@ -124,15 +169,18 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       process.exitCode = code;
       return code;
     }
-    const threadId = options.threadId ?? env.CODEX_THREAD_ID;
-    if (!threadId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+    const deliveryMode = options.deliveryMode === 'worker' ? 'native' : options.deliveryMode ?? 'native';
+    if (!['native', 'main'].includes(deliveryMode)) throw new BridgeError('INVALID_DELIVERY_MODE', 'Use --delivery native (default; worker is an alias) or --delivery main for compatibility.');
+    if (deliveryMode === 'native' && (options.remote || options.remoteAuthTokenEnv || options.workerModel)) throw new BridgeError('NATIVE_AGENT_OPTIONS', 'The parent creates/resumes native agents using native tools and chooses their model there. Remote queue/model-process options do not apply to native delivery.');
+    const threadId = options.threadId ?? (env.CODEX_THREAD_ID || null);
+    if ((deliveryMode === 'main' && !threadId) || (threadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId))) {
       throw new BridgeError('NO_CODEX_THREAD', 'Open this editor from Codex, pass --thread <session UUID>, or use --no-agent to open without comment delivery.');
     }
     if (options.codexPath) options.codexPath = fs.realpathSync(path.resolve(options.codexPath));
-    resolveCodexRunner({ codexPath: options.codexPath, env });
+    if (deliveryMode === 'main') resolveCodexRunner({ codexPath: options.codexPath, env });
     const { root, rootIndex } = artifactRoot(skillDir, forwarded);
     forwarded[rootIndex] = root;
-    const target = { version: 1, root, skillDir, threadId, ...Object.fromEntries(['remote', 'remoteAuthTokenEnv', 'codexPath'].filter((key) => options[key]).map((key) => [key, options[key]])) };
+    const target = { version: 1, root, skillDir, threadId, deliveryMode, ...Object.fromEntries(['remote', 'remoteAuthTokenEnv', 'codexPath', 'workerModel'].filter((key) => options[key]).map((key) => [key, options[key]])) };
     const bindingFile = path.join(root, BINDING_FILE);
     const serverFile = path.join(root, '.artifact-server.json');
     let runningPromise;
@@ -147,6 +195,7 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       const owned = running && previous && previous.serverPid === state.pid && sameTarget(previous, target);
       if (running && !owned) {
         if (!options.rebind) throw new BridgeError('EDITOR_ALREADY_BOUND', 'This running editor is not bound to this Codex chat. Stop it first, or pass --rebind to restart this editor and bind it here.');
+        await stopWorker(root);
         const stopCode = await stopVerified(script, root, expectedKind, state, env);
         if (stopCode !== 0) return stopCode;
         const deadline = Date.now() + 6000;

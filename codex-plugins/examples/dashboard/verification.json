@@ -1,0 +1,160 @@
+{
+  "dataset": {
+    "kind": "deterministic synthetic sample",
+    "seed": "0xC0DE2026",
+    "rows": 365,
+    "first": "2025-11-01",
+    "last": "2026-10-31",
+    "csvSha256": "fd7dc5b29faffb7779c2bf65edac1a8abe51101df84e0fbca55eb88bf0796341",
+    "uploadedUrl": "/_blob/fd7dc5b29faffb7779c2bf65edac1a8a"
+  },
+  "currentPeriod": {
+    "from": "2026-10-04",
+    "to": "2026-10-31",
+    "impressions": 4050400,
+    "engagements": 55828,
+    "net_followers": 1206,
+    "profile_visits": 5614,
+    "engagementRate": 0.013783330041477386
+  },
+  "previousPeriod": {
+    "from": "2026-09-06",
+    "to": "2026-10-03",
+    "impressions": 6372444,
+    "engagements": 86785,
+    "net_followers": 2016,
+    "profile_visits": 8751,
+    "engagementRate": 0.013618793668488888
+  },
+  "changes": {
+    "impressions": -0.3643882943498601,
+    "engagements": -0.35670910871694417,
+    "engagementRatePoints": 0.016453637298849758,
+    "netFollowers": -0.4017857142857143,
+    "profileVisits": -0.35847331733516175
+  },
+  "last7DayMeans": {
+    "impressions": 147541.42857142858,
+    "engagements": 1933.4285714285713,
+    "netFollowers": 45.142857142857146,
+    "profileVisits": 207.42857142857142
+  },
+  "pageCalcChecks": {
+    "contiguousDates": true,
+    "engagementComponentsMatch": true,
+    "followerComponentsMatch": true,
+    "periodRows": 310,
+    "trendRows": 365,
+    "weightedRateMatches": true,
+    "validSevenDayMeans": 359,
+    "calcOutputBytes": {
+      "trend": 104454,
+      "periods": 133702
+    }
+  },
+  "writeResult": {
+    "root": "C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard",
+    "written": [
+      {
+        "op": "set",
+        "path": "dash/meta",
+        "bytes": 50
+      },
+      {
+        "op": "set",
+        "path": "dash/params",
+        "bytes": 82
+      },
+      {
+        "op": "set",
+        "path": "datasets/daily",
+        "bytes": 518
+      },
+      {
+        "op": "set",
+        "path": "files/index.html",
+        "bytes": 6848
+      },
+      {
+        "op": "set",
+        "path": "files/dashboard.css",
+        "bytes": 8757
+      },
+      {
+        "op": "set",
+        "path": "files/dashboard.js",
+        "bytes": 17249
+      }
+    ],
+    "next": "Run node 'C:\\WorkSpace\\ResearchProjects\\baoyu-design\\skills\\claude-dashboard\\scripts\\artifact.mjs' check 'C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard'."
+  },
+  "check": {
+    "root": "C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard",
+    "title": "X 账号数据看板（示例数据）",
+    "problems": 0,
+    "datasets": [
+      {
+        "id": "daily",
+        "kind": "file",
+        "format": "csv",
+        "rows": 365,
+        "columns": [
+          "date",
+          "impressions",
+          "engagements",
+          "net_followers",
+          "profile_visits",
+          "likes",
+          "bookmarks",
+          "replies",
+          "reposts",
+          "shares",
+          "followers_gained",
+          "followers_lost",
+          "posts"
+        ]
+      }
+    ],
+    "calcs": [
+      "source_meta",
+      "trend",
+      "periods"
+    ],
+    "notChecked": "Nothing is rendered here: whether scripts run, values shown match the data, and the layout are checked by the page itself while a browser has it open (pageCheck after a page write; page for what its readers ran into).",
+    "next": "No problems. Start the editor (it keeps running in the background): node 'C:\\WorkSpace\\ResearchProjects\\baoyu-design\\skills\\claude-dashboard\\scripts\\artifact.mjs' open 'C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard', then give the person the url it prints and the folder."
+  },
+  "paletteValidation": "Palette (light, surface #ffffff, categorical): 1 slots\n  [PASS] Lightness band         all 1 inside L 0.43–0.77\n  [PASS] Chroma floor           all 1 >= 0.1\n  [PASS] CVD separation         n/a\n  [PASS] Normal-vision floor    n/a\n  [PASS] Contrast vs surface    all 1 >= 3:1\n\n  → ALL CHECKS PASS  (CVD in the 6–8 floor band is legal ONLY with secondary encoding: direct labels, gaps, or texture)\n  scope: categorical palettes only. For a lone status/text color check text contrast with this script's apca() or contrast(); for a sequential ramp, lightness monotonicity.",
+  "textContrast": {
+    "minimumRatio": 4.677567896532699,
+    "checkedForegrounds": [
+      "#20211f",
+      "#191b19",
+      "#62655f",
+      "#242622",
+      "#68725e",
+      "#64685f",
+      "#252923",
+      "#526153",
+      "#202b20",
+      "#272b25",
+      "#6b7461",
+      "#181b17",
+      "#575c52",
+      "#347641",
+      "#a04645",
+      "#252922",
+      "#62695d",
+      "#252b21",
+      "#20271a",
+      "#3d4436",
+      "#444c3b"
+    ],
+    "surfaces": [
+      "#ffffff",
+      "#fafaf8"
+    ]
+  },
+  "notRun": [
+    "Browser rendering and native UI interaction are left to the parent agent; this script does not start an editor or model."
+  ]
+}

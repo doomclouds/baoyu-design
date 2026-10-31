@@ -1,24 +1,17 @@
-// Browser Annotation API adapter. Runs only on the top-level local editor.
-// request() opens the native composer; the person still reviews and sends it.
+// Browser annotation metadata only. Use the browser's existing annotation UI.
+// Runs only on the top-level local editor and adds no page controls.
 (() => {
   'use strict';
   if (window.top !== window || window.__baoyuCodexAnnotations) return;
-  const api = document.oai?.annotation;
-  if (typeof api?.request !== 'function') return;
+  if (!document.oai?.annotation) return;
   const endpoint = new URL('annotation-context', document.currentScript.src);
   let context = null;
-  let selection = null;
-  let panel, select, status, container, originalContainer;
+  let container, originalContainer;
   let disposed = false;
   let queued = false;
   const marked = new Map();
-  const selector = '[data-mega-artboard], [data-slide-id], [data-slide-surface], [data-card-key], [data-path], [data-comment-target], .dash-page';
+  const selector = '[data-mega-artboard], [data-slide-id], [data-slide-surface], [data-card-key], [data-path], [data-comment-target], [data-id], [data-testid="ds-readme-rendered"], [data-testid="files-browser-text"], #dash-root, .dash-page';
   const readable = value => typeof value === 'string' && value.length > 0 && value.length <= 256;
-  const visible = element => {
-    if (!element?.isConnected || element.ownerDocument !== document) return false;
-    const r = element.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
-  };
 
   function metadata(object, target) {
     const result = {skill: context.skill, file: object.file, objectId: object.id};
@@ -35,6 +28,25 @@
 
   function objectFor(element) {
     if (!context || !element) return null;
+    if (context.skill === 'codex-design-system') {
+      const readme = element.closest('[data-testid="ds-readme-rendered"]');
+      if (readme) {
+        const source = context.objects.find(object => object.file === 'project/README.md');
+        return source ? {...source, id: 'ds-readme-rendered', name: 'README'} : null;
+      }
+      const preview = element.closest('[data-testid="files-browser-text"]');
+      if (preview) {
+        const browser = preview.closest('[data-testid="files-browser"]');
+        const row = browser?.querySelector('[data-testid="files-browser-row"][aria-selected="true"][data-path]');
+        const file = row?.getAttribute('data-path');
+        const label = (preview.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent?.trim() || '').join(' ');
+        // Tree selection can update before an asynchronous preview finishes.
+        // Never assign the selected file to a preview still labelled for another.
+        if (!file || label !== file) return null;
+        const source = context.objects.find(object => object.file === 'project/' + file);
+        return source ? {...source, id: 'file:' + file, name: file} : null;
+      }
+    }
     const closest = attribute => element.closest('[' + attribute + ']')?.getAttribute(attribute);
     const keys = [closest('data-mega-artboard'), closest('data-slide-id'), closest('data-path'), closest('data-card-key')].filter(Boolean);
     const found = context.objects.find(object => object.keys.some(key => keys.includes(key)));
@@ -44,26 +56,26 @@
       const current = document.querySelector('[data-slide-id][aria-current="true"]');
       return context.objects.find(object => object.id === current?.getAttribute('data-slide-id')) || null;
     }
-    if (context.skill === 'codex-design-system' && element.closest('[data-comment-target], [data-card-key]')) {
-      // Token/asset cards can span several files. Report the real index rather
-      // than guess a component source path from the visible title.
+    if (context.skill === 'codex-design-system' && element.closest('[data-id], [data-card-key]')) {
       const holder = element.closest('[data-id], [data-card-key]');
       const id = holder?.getAttribute('data-id') || holder?.getAttribute('data-card-key');
-      if (readable(id)) return {id, file: context.indexFile, name: element.getAttribute('data-comment-name') || id, keys: [id]};
+      // These are the editor's observed stable semantic ids, not file names.
+      // Preserve the exact selected token/style identity while naming its real
+      // backing document from the server's verified file inventory.
+      let file;
+      if (/^(?:token-|style-|tset-|cgroup-)/.test(id || '') || /^type:/.test(holder?.getAttribute('data-card-key') || '') || ['page-colors', 'page-type', 'page-spacing', 'page-corners', 'page-shadows'].includes(id)) file = 'project/tokens.json';
+      else if (id === 'ds-cover') file = 'project/components/Cover/preview.html';
+      const source = context.objects.find(object => object.file === file);
+      if (source && readable(id)) return {...source, id, name: element.getAttribute('data-comment-name') || element.getAttribute('aria-label') || id};
+      // Other multi-file groups can honestly identify the index; don't infer
+      // a component source file from the visible title.
+      if (readable(id) && (element.closest('[data-comment-target], [data-card-key]') || ['page-components', 'page-assets'].includes(id))) return {id, file: context.indexFile, name: element.getAttribute('data-comment-name') || id, keys: [id]};
     }
-    if (context.skill === 'codex-dashboard' && element.closest('.dash-page')) {
-      return context.objects.find(object => object.id === 'index.html') || null;
+    if (context.skill === 'codex-dashboard' && element.closest('#dash-root, .dash-page')) {
+      const source = context.objects.find(object => object.id === 'index.html');
+      return source ? {...source, name: context.title || 'Dashboard'} : null;
     }
     return null;
-  }
-
-  function choose(element) {
-    const target = element?.closest(selector);
-    const object = objectFor(target);
-    if (!target || !object || !visible(target)) return;
-    selection = {element: target, object};
-    select.value = object.id;
-    status.textContent = object.name;
   }
 
   function mark(element) {
@@ -87,7 +99,6 @@
     if (!context || disposed) return;
     for (const element of document.querySelectorAll(selector)) mark(element);
     for (const [element] of marked) if (!element.isConnected || !element.matches(selector) || !objectFor(element)) unmark(element);
-    if (selection && (!visible(selection.element) || !objectFor(selection.element))) selection = null;
   }
 
   function schedule() {
@@ -103,67 +114,25 @@
       const next = await response.json();
       if (!Array.isArray(next.objects) || typeof next.skill !== 'string') return;
       context = next;
-      const old = select.value;
-      select.replaceChildren();
-      const blank = document.createElement('option');
-      blank.value = ''; blank.textContent = '选择要批注的对象'; select.append(blank);
-      for (const object of context.objects) {
-        const option = document.createElement('option');
-        option.value = object.id; option.textContent = object.name; select.append(option);
-      }
-      select.value = old;
       refreshTargets();
-    } catch { status.textContent = '本地编辑器上下文暂不可用'; }
-  }
-
-  function onPointer(event) { if (!panel.contains(event.target)) choose(event.target); }
-  function onRequest() {
-    if (!context) return;
-    const selected = select.value;
-    // Resolve again immediately before request; route/slide changes can replace
-    // nodes and a cached element must never send the previous object's identity.
-    if (selected && (!selection || selection.object.id !== selected || !visible(selection.element))) {
-      const element = [...document.querySelectorAll(selector)].find(element => visible(element) && objectFor(element)?.id === selected);
-      selection = element ? {element, object: objectFor(element)} : null;
-    }
-    if (!selection || !visible(selection.element)) { status.textContent = '请先在编辑器中显示并选择这个对象'; return; }
-    const current = objectFor(selection.element);
-    if (!current || current.id !== selection.object.id) { selection = null; status.textContent = '对象已变化，请重新选择'; return; }
-    try {
-      const result = api.request(selection.element, {metadata: metadata(current, selection.element), initialComment: '请修改这个对象：'});
-      status.textContent = result?.accepted ? '请在浏览器批注中填写意见并发送给 Codex' : '浏览器未接受批注，请检查网站的批注权限';
-    } catch { status.textContent = '浏览器未打开批注，请稍后重试'; }
+    } catch { /* Native browser annotations remain usable without extra context. */ }
   }
 
   function start() {
     if (disposed || !document.body) return;
-    panel = document.createElement('aside');
-    panel.id = 'baoyu-codex-annotations';
-    panel.setAttribute('aria-label', 'Codex 浏览器批注');
-    panel.style.cssText = 'position:fixed;right:16px;bottom:64px;z-index:2147483000;display:flex;flex-direction:column;gap:6px;max-width:310px;padding:10px;border:1px solid #8886;border-radius:10px;background:Canvas;color:CanvasText;font:12px system-ui;box-shadow:0 4px 20px #0002;';
-    select = document.createElement('select');
-    select.setAttribute('aria-label', '批注对象');
-    select.style.cssText = 'max-width:285px;color:inherit;background:inherit;';
-    const button = document.createElement('button');
-    button.type = 'button'; button.textContent = '向 Codex 批注'; button.addEventListener('click', onRequest);
-    button.title = '打开浏览器原生批注；由你填写、保存并发送';
-    status = document.createElement('span'); status.setAttribute('role', 'status'); status.textContent = '点选对象，再打开浏览器批注';
-    panel.append(select, button, status); document.body.append(panel);
     container = document.getElementById('root') || document.body;
     originalContainer = container.getAttribute('oai-annotation-container');
     container.setAttribute('oai-annotation-container', '');
-    document.addEventListener('pointerdown', onPointer, true);
     const observer = new MutationObserver(schedule);
-    observer.observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['data-slide-id', 'data-slide-surface', 'aria-current', 'data-mega-artboard', 'data-card-key', 'data-path', 'data-comment-target', 'data-comment-name', 'data-id', 'data-node-path', 'class']});
+    observer.observe(document.body, {childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['data-slide-id', 'data-slide-surface', 'aria-current', 'aria-selected', 'aria-labelledby', 'aria-label', 'data-mega-artboard', 'data-card-key', 'data-path', 'data-comment-target', 'data-comment-name', 'data-testid', 'data-id', 'data-node-path', 'id', 'class']});
     // Poll only project data, never API readiness. New files/ordering can arrive
     // through the agent while the editor remains open.
     const timer = setInterval(refresh, 10000);
     const dispose = () => {
       disposed = true; clearInterval(timer); observer.disconnect();
-      document.removeEventListener('pointerdown', onPointer, true);
       for (const [element] of marked) unmark(element);
       if (originalContainer === null) container.removeAttribute('oai-annotation-container'); else container.setAttribute('oai-annotation-container', originalContainer);
-      panel.remove(); marked.clear();
+      marked.clear();
     };
     window.__baoyuCodexAnnotations = Object.freeze({refresh, dispose});
     window.addEventListener('pagehide', dispose, {once: true});

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="bean" x1="0" y1="0" x2="1" y2=".5">
+      <stop offset="0" stop-color="#B8DDFF"/>
+      <stop offset=".22" stop-color="#90BFF4"/>
+      <stop offset=".58" stop-color="#5B96E3"/>
+      <stop offset="1" stop-color="#3872C7"/>
+    </linearGradient>
+    <linearGradient id="groove" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3976C7"/>
+      <stop offset=".55" stop-color="#679DE0"/>
+      <stop offset="1" stop-color="#A3CFF8"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E1F1FF" stop-opacity=".72"/>
+      <stop offset=".65" stop-color="#9CCBFA" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-20%" width="170%" height="160%">
+      <feDropShadow dx="12" dy="18" stdDeviation="13" flood-color="#265C9B" flood-opacity=".22"/>
+    </filter>
+    <g id="coffee-bean">
+      <rect x="-112" y="-184" width="224" height="368" rx="112" fill="url(#bean)" filter="url(#shadow)"/>
+      <path d="M-74 66 C-93 12 -86-74 -41-118 C-10-148 23-150 50-133" fill="none" stroke="url(#highlight)" stroke-width="24" stroke-linecap="round"/>
+      <path d="M24-143 C-36-75 29-22-18 41 C-49 83-38 116-7 147" fill="none" stroke="#427FCB" stroke-opacity=".5" stroke-width="30" stroke-linecap="round"/>
+      <path d="M24-143 C-36-75 29-22-18 41 C-49 83-38 116-7 147" fill="none" stroke="url(#groove)" stroke-width="19" stroke-linecap="round"/>
+    </g>
+  </defs>
+  <rect width="1200" height="1200" fill="#D7E8F0"/>
+  <g transform="rotate(23 600 600)">
+    <use href="#coffee-bean" transform="translate(-28 -54)"/>
+    <use href="#coffee-bean" transform="translate(246 -54) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(520 -54)"/>
+    <use href="#coffee-bean" transform="translate(794 -54) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(1068 -54)"/>
+    <use href="#coffee-bean" transform="translate(1342 -54) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(-28 350) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(246 350)"/>
+    <use href="#coffee-bean" transform="translate(520 350) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(794 350)"/>
+    <use href="#coffee-bean" transform="translate(1068 350) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(1342 350)"/>
+    <use href="#coffee-bean" transform="translate(-28 754)"/>
+    <use href="#coffee-bean" transform="translate(246 754) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(520 754)"/>
+    <use href="#coffee-bean" transform="translate(794 754) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(1068 754)"/>
+    <use href="#coffee-bean" transform="translate(1342 754) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(-28 1158) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(246 1158)"/>
+    <use href="#coffee-bean" transform="translate(520 1158) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(794 1158)"/>
+    <use href="#coffee-bean" transform="translate(1068 1158) rotate(180)"/>
+    <use href="#coffee-bean" transform="translate(1342 1158)"/>
+  </g>
+</svg>

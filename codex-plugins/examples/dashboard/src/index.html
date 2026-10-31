@@ -1,0 +1,51 @@
+<meta name="dash-one-writer">
+<link rel="stylesheet" href="dashboard.css">
+<main class="sc-dashboard">
+  <header class="sc-header">
+    <h1 class="sc-title">X 账号数据看板<span class="sc-title-note">（示例数据）</span></h1>
+    <p class="sc-intro" data-draw="summary" data-source="periods">—</p>
+    <p class="sc-disclaimer">确定性合成示例 · 非真实账号数据</p>
+  </header>
+
+  <div class="sc-filters" aria-label="数据筛选">
+    <label class="sc-field"><span>统计截止日期</span><input class="sc-end-date" type="date" aria-label="统计截止日期" data-draw="end-control" data-source="periods"></label>
+    <label class="sc-field"><span>年度趋势指标</span><select class="sc-metric" aria-label="年度趋势指标"><option value="impressions">曝光量</option><option value="engagements">互动数</option><option value="net_followers">净增关注者</option><option value="profile_visits">主页访问</option></select></label>
+    <button class="sc-reset" type="button">恢复最新日期</button>
+  </div>
+
+  <section class="sc-section" aria-labelledby="sc-period-title">
+    <h2 class="sc-section-title" id="sc-period-title">近 28 天</h2>
+    <p class="sc-section-note" data-draw="period-label" data-source="periods">—</p>
+    <div class="sc-kpis">
+      <article class="sc-kpi"><h3>曝光量</h3><p class="sc-value" data-draw="kpi-impressions" data-source="periods" data-field="impressions">—</p><p class="sc-change"><span data-draw="delta-impressions" data-source="periods" data-field="impressions_change">—</span><span class="sc-change-note">较前 28 天</span></p><p class="sc-definition">帖子被看到的次数</p></article>
+      <article class="sc-kpi"><h3>互动数</h3><p class="sc-value" data-draw="kpi-engagements" data-source="periods" data-field="engagements">—</p><p class="sc-change"><span data-draw="delta-engagements" data-source="periods" data-field="engagements_change">—</span><span class="sc-change-note">较前 28 天</span></p><p class="sc-definition">赞、收藏、回复、转发、分享与主页访问</p></article>
+      <article class="sc-kpi"><h3>互动率</h3><p class="sc-value" data-draw="kpi-rate" data-source="periods" data-field="engagement_rate">—</p><p class="sc-change"><span data-draw="delta-rate" data-source="periods" data-field="rate_change_points">—</span><span class="sc-change-note">个百分点，较前 28 天</span></p><p class="sc-definition">互动数 ÷ 曝光量</p></article>
+      <article class="sc-kpi"><h3>净增关注者</h3><p class="sc-value" data-draw="kpi-followers" data-source="periods" data-field="net_followers">—</p><p class="sc-change"><span data-draw="delta-followers" data-source="periods" data-field="followers_change">—</span><span class="sc-change-note">较前 28 天</span></p><p class="sc-definition">新增关注者 − 取消关注</p></article>
+      <article class="sc-kpi"><h3>主页访问</h3><p class="sc-value" data-draw="kpi-visits" data-source="periods" data-field="profile_visits">—</p><p class="sc-change"><span data-draw="delta-visits" data-source="periods" data-field="visits_change">—</span><span class="sc-change-note">较前 28 天</span></p><p class="sc-definition">进入账号主页的次数</p></article>
+    </div>
+  </section>
+
+  <section class="sc-section" aria-labelledby="sc-annual-title">
+    <h2 class="sc-section-title" id="sc-annual-title">这一年的表现</h2>
+    <article class="sc-chart-card sc-main-card">
+      <div class="sc-chart-header"><div><h3>每天的表现与 7 日均值</h3><p class="sc-card-note">灰柱为每日值，蓝线为当天及之前 6 天的均值。可悬停查看，或聚焦后使用左右方向键。</p></div><div class="sc-legend" aria-label="图例"><span><i class="sc-legend-bar"></i>每日值</span><span><i class="sc-legend-line"></i>7 日均值</span></div></div>
+      <div class="sc-chart sc-chart-main" data-draw="main-chart" data-source="trend">—</div>
+      <p class="sc-chart-range" data-draw="chart-range" data-source="trend">—</p>
+    </article>
+  </section>
+
+  <section class="sc-section" aria-labelledby="sc-related-title">
+    <h2 class="sc-section-title" id="sc-related-title">其他指标的走势</h2>
+    <div class="sc-related-grid">
+      <article class="sc-chart-card"><h3>互动率</h3><p class="sc-card-note">最近 90 天的每日互动数 ÷ 当日曝光量</p><div class="sc-chart sc-chart-small" data-draw="rate-chart" data-source="trend">—</div></article>
+      <article class="sc-chart-card"><h3>净增关注者</h3><p class="sc-card-note">最近 90 天的新增关注者 − 取消关注</p><div class="sc-chart sc-chart-small" data-draw="followers-chart" data-source="trend">—</div></article>
+    </div>
+  </section>
+
+  <section class="sc-section" aria-labelledby="sc-table-title">
+    <div class="sc-table-heading"><div><h2 class="sc-section-title" id="sc-table-title">逐日数据</h2><p class="sc-section-note">点击列名排序。Sources 面板可查看原始 CSV、计算公式与逐行来源。</p></div><p class="sc-table-count" data-draw="row-count" data-source="trend">—</p></div>
+    <div class="sc-table-scroll"><table class="sc-table" data-source="trend" data-row-key="date"><thead><tr><th data-field="date"><button type="button" data-sort="date">日期</button></th><th data-field="impressions"><button type="button" data-sort="impressions">曝光量</button></th><th data-field="engagements"><button type="button" data-sort="engagements">互动数</button></th><th data-field="engagement_rate"><button type="button" data-sort="engagement_rate">互动率</button></th><th data-field="net_followers"><button type="button" data-sort="net_followers">净增关注者</button></th><th data-field="profile_visits"><button type="button" data-sort="profile_visits">主页访问</button></th></tr></thead><tbody data-draw="data-table"></tbody></table></div>
+  </section>
+  <footer class="sc-footer"><p data-source="daily">数据说明：本页所有指标来自同一份 <span data-draw="source-count" data-source="source_meta" data-field="rows_count" data-row="0">—</span> 天的合成日度数据；示例仅用于演示交互、计算与溯源，不代表任何真实账号。</p><p>可在原编辑器的 Comments 留下修改要求，通过 Send to agent 交给设计 worker；浏览器顶栏的原生批注由当前聊天处理。</p></footer>
+</main>
+<script src="dashboard.js"></script>

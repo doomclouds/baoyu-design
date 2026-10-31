@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { renameWithRetry as codexRenameWithRetry } from "./codex-annotation-server.mjs";
+import { assertUserRevision as codexAssertUserRevision } from "./codex-annotation-server.mjs";
 // codex-slides: local Artifact tool (prebuilt; do not edit).
 
 import { spawn } from "node:child_process";
@@ -2960,6 +2961,7 @@ async function replyComment(a, id, words, resolve) {
   if (text.length > LIMITS.text) throw new CliError("REPLY_TOO_LONG", `A reply is at most ${LIMITS.text} characters.`);
   const thread = await updateComments(a.root, (doc) => {
     const found = findThread(doc, id);
+    codexAssertUserRevision(found, process.env.CODEX_DESIGN_EXPECTED_USER_REVISION);
     const now = (/* @__PURE__ */ new Date()).toISOString();
     addMessage(found, AGENT_AUTHOR, text, now);
     if (resolve) setStatus(found, "resolved", now);

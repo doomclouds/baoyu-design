@@ -1,10 +1,12 @@
 // Read-only verification through Codex's real app-server skill discovery.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveCodexRunner } from './source/scripts/bridge-core.mjs';
 
 const cwd = path.resolve(process.argv[2] || process.cwd());
+const { version } = JSON.parse(await readFile(new URL('./source/plugin.json', import.meta.url), 'utf8'));
 const runner = resolveCodexRunner();
 const child = spawn(runner.command, [...runner.args, 'app-server', '--stdio'], {
   stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: false,
@@ -40,7 +42,7 @@ function rpc(method, params) {
 }
 
 try {
-  const initialized = await rpc('initialize', { clientInfo: { name: 'codex-design-verifier', version: '0.1.0' } });
+  const initialized = await rpc('initialize', { clientInfo: { name: 'codex-design-verifier', version } });
   child.stdin.write(`${JSON.stringify({ method: 'initialized', params: {} })}\n`);
   const result = await rpc('skills/list', { cwds: [cwd], forceReload: true });
   const expected = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-dataviz']
@@ -57,7 +59,11 @@ try {
   }
   const errors = (entries.errors || []).filter(error => /codex-design/i.test(JSON.stringify(error)));
   if (errors.length) throw new Error(`Installed plugin skill diagnostics: ${JSON.stringify(errors)}`);
-  console.log(JSON.stringify({ verified: true, codex: initialized.userAgent ?? null, cwd,
+  const pluginRoots = [...new Set(skills.map(skill => path.resolve(path.dirname(skill.path), '../..')))];
+  if (pluginRoots.length !== 1) throw new Error('Codex resolved these plugin skills from different installed packages.');
+  const installed = JSON.parse(await readFile(path.join(pluginRoots[0], 'plugin.json'), 'utf8'));
+  if (installed.name !== 'codex-design' || installed.version !== version) throw new Error(`Expected installed codex-design ${version}, found ${installed.name} ${installed.version}.`);
+  console.log(JSON.stringify({ verified: true, pluginVersion: installed.version, pluginRoot: pluginRoots[0], codex: initialized.userAgent ?? null, cwd,
     skills: skills.map(({ name, path: skillPath, enabled, scope }) => ({ name, path: skillPath, enabled, scope })), errors }, null, 2));
 } finally {
   for (const call of pending.values()) clearTimeout(call.timer);

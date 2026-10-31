@@ -56,40 +56,101 @@ export function samePath(first, second) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function withLock(lockPath, action, { timeoutMs = 45_000, staleMs = 120_000 } = {}) {
+function reapDeadReaper(directory, initializationGraceMs) {
+  const stat = fs.statSync(directory, { throwIfNoEntry: false });
+  if (!stat) return;
+  const names = fs.readdirSync(directory);
+  const markers = names.filter((name) => name === 'owner.json' || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
+  // Unknown/multiple ownership records are preserved for manual inspection.
+  if (names.length !== markers.length || markers.length > 1) return;
+  const marker = markers[0];
+  let owner;
+  if (marker) { try { owner = readJson(path.join(directory, marker)); } catch (error) { if (error.code !== 'INVALID_BRIDGE_STATE') throw error; } }
+  const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === 'string' && Number.isFinite(owner.at);
+  if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
+  // The unique marker is the ownership fence: another reaper can publish a
+  // different marker after stale removal, and this attempt cannot remove it.
+  if (marker) fs.rmSync(path.join(directory, marker), { force: true });
+  try { fs.rmdirSync(directory); } catch (error) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; }
+}
+
+function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const ownerFile = path.join(lockPath, 'owner.json');
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      await fsp.mkdir(lockPath);
-      await fsp.writeFile(ownerFile, JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 0o600 });
-      break;
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      try {
-        let owner;
-        try { owner = readJson(ownerFile); }
-        catch (error) { if (error.code !== 'INVALID_BRIDGE_STATE') throw error; }
-        const age = Date.now() - (owner?.at ?? (await fsp.stat(lockPath)).mtimeMs);
-        if (age > staleMs && !alive(owner?.pid)) {
-          await fsp.rm(ownerFile, { force: true });
-          await fsp.rmdir(lockPath);
-          continue;
-        }
-      } catch (error) {
-        if (error.code !== 'ENOENT' && error.code !== 'ENOTEMPTY' && error.code !== 'INVALID_BRIDGE_STATE') throw error;
-      }
-      if (Date.now() >= deadline) throw new BridgeError('BRIDGE_BUSY', 'Another comment delivery or editor open is still running; try again.');
-      await sleep(25);
+  const marker = `owner-${token}.json`;
+  const staging = `${directory}.${process.pid}.${token}.initializing`;
+  fs.mkdirSync(staging);
+  let published = false;
+  try {
+    fs.writeFileSync(path.join(staging, marker), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 0o600 });
+    if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
+    if (fs.existsSync(directory)) return null;
+    try { fs.renameSync(staging, directory); published = true; }
+    catch (error) { if (['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(error.code)) return null; throw error; }
+    return () => {
+      // Never unlink a fixed owner filename here: a concurrent stale recovery
+      // must be unable to delete the marker of a newly published live owner.
+      fs.rmSync(path.join(directory, marker), { force: true });
+      try { fs.rmdirSync(directory); } catch (error) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; }
+    };
+  } finally {
+    if (!published) {
+      fs.rmSync(path.join(staging, marker), { force: true });
+      try { fs.rmdirSync(staging); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
   }
-  try { return await action(); }
-  finally {
-    if (readJson(ownerFile)?.token === token) {
-      await fsp.rm(ownerFile, { force: true });
-      await fsp.rmdir(lockPath);
+}
+
+export async function withLock(lockPath, action, { timeoutMs = 45_000, staleMs = 120_000, initializationGraceMs = 10_000 } = {}) {
+  const token = randomUUID();
+  const ownerFile = path.join(lockPath, 'owner.json');
+  const initializing = `${lockPath}.${process.pid}.${token}.initializing`;
+  const deadline = Date.now() + timeoutMs;
+  fs.mkdirSync(initializing);
+  fs.writeFileSync(path.join(initializing, 'owner.json'), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 0o600 });
+  let acquired = false;
+  const removeInitializing = () => {
+    fs.rmSync(path.join(initializing, 'owner.json'), { force: true });
+    try { fs.rmdirSync(initializing); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  };
+  try {
+  for (;;) {
+    try {
+      // Publish a fully initialized directory atomically. Another contender
+      // never sees the mkdir -> owner-file-write initialization window.
+      if (!fs.existsSync(lockPath)) {
+        await fsp.rename(initializing, lockPath);
+        acquired = true; break;
+      }
+    } catch (error) {
+      if (!['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
     }
+    const reaper = `${lockPath}.reaper`;
+    let releaseReaper;
+    try {
+      releaseReaper = tryReaper(reaper, initializationGraceMs);
+      if (!releaseReaper) {
+        if (Date.now() >= deadline) throw new BridgeError('BRIDGE_BUSY', 'Another lock owner or recovery process is still running; try again.');
+        await sleep(25); continue;
+      }
+      let owner;
+      try { owner = readJson(ownerFile); } catch (error) { if (error.code !== 'INVALID_BRIDGE_STATE') throw error; }
+      const stat = fs.statSync(lockPath, { throwIfNoEntry: false });
+      const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === 'string' && Number.isFinite(owner.at);
+      const expired = stat && (valid ? Date.now() - owner.at > staleMs && !alive(owner.pid) : Date.now() - stat.mtimeMs > initializationGraceMs);
+      if (expired) { fs.rmSync(ownerFile, { force: true }); fs.rmdirSync(lockPath); }
+    } catch (error) {
+      if (!['EEXIST', 'ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
+    } finally { releaseReaper?.(); }
+    if (Date.now() >= deadline) throw new BridgeError('BRIDGE_BUSY', 'Another comment delivery or editor operation is still running; try again.');
+    await sleep(25);
+  }
+  return await action();
+  } finally {
+    if (acquired && readJson(ownerFile)?.token === token) {
+      fs.rmSync(ownerFile, { force: true });
+      try { fs.rmdirSync(lockPath); } catch (error) { if (error.code !== 'ENOTEMPTY') throw error; }
+    }
+    if (!acquired) removeInitializing();
   }
 }
 
@@ -206,7 +267,8 @@ export function normalizeEvent(payload) {
 
 export function deliveryKey(binding, event) {
   const revision = event.kind === 'comment' ? { id: event.data.id, messages: event.data.messages } : event.data;
-  return createHash('sha256').update(JSON.stringify({ threadId: binding.threadId, remote: binding.remote ?? null, kind: event.kind, revision })).digest('hex');
+  const target = ['native', 'worker'].includes(binding.deliveryMode) ? { root: canonicalPath(binding.root) } : { threadId: binding.threadId, remote: binding.remote ?? null };
+  return createHash('sha256').update(JSON.stringify({ ...target, kind: event.kind, revision })).digest('hex');
 }
 
 export function commentMessage(binding, event, eventFile) {
@@ -235,13 +297,20 @@ export async function deliverComment(binding, payload, { runner, env = process.e
   const key = deliveryKey(binding, event);
   return await withLock(path.join(binding.root, `${BINDING_FILE}.lock`), async () => {
     const current = readJson(path.join(binding.root, BINDING_FILE));
-    if (!current || current.token !== binding.token || ['threadId', 'root', 'skillDir', 'remote', 'remoteAuthTokenEnv', 'codexPath'].some((key) => (current[key] ?? null) !== (binding[key] ?? null))) {
+    if (!current || current.token !== binding.token || ['threadId', 'root', 'skillDir', 'remote', 'remoteAuthTokenEnv', 'codexPath', 'deliveryMode', 'workerModel'].some((key) => (current[key] ?? null) !== (binding[key] ?? null))) {
       throw new BridgeError('INVALID_BINDING', 'The editor was rebound before this comment could be delivered; reopen it from the intended chat.');
     }
     return await withLock(path.join(binding.root, `${DELIVERY_FILE}.lock`), async () => {
     const file = path.join(binding.root, DELIVERY_FILE);
     const state = readJson(file, { version: 1, delivered: {} });
     if (state.version !== 1 || !state.delivered || typeof state.delivered !== 'object') throw new BridgeError('INVALID_BRIDGE_STATE', 'Invalid comment delivery state.');
+    if (['native', 'worker'].includes(binding.deliveryMode)) {
+      const { submitWorkerJob } = await import('./worker-client.mjs');
+      const accepted = await submitWorkerJob(binding, event, key, { env });
+      state.delivered[key] = { id: event.data.id, kind: event.kind, mode: 'native', jobId: key, acceptedAt: new Date().toISOString() };
+      atomicJson(file, state);
+      return accepted;
+    }
     if (state.delivered[key]) return { delivered: true, duplicate: true, id: event.data.id };
     let message = commentMessage(binding, event);
     if (message.length > 12_000) {

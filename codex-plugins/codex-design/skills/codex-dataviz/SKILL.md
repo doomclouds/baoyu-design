@@ -8,11 +8,11 @@ license: "Mixed sources. See the bundled ../../NOTICE.md for source-specific ter
 
 ## Codex execution
 
-This skill is bundled in **codex design**. These Codex instructions take precedence over host-specific instructions in the format references; the user's instructions take precedence over both.
+This skill is bundled in **codex design**. These local instructions take precedence over host-specific format references; the user's instructions take precedence over both.
 
-- Require **Node.js 22 or later**. Resolve this installed skill's absolute path and quote paths in shell commands. Keep user artifacts in the user's working project, usually `designs/<slug>/`; never write them into the installed plugin.
+- Require **Node.js 22 or later**. Resolve this installed skill's absolute path and quote paths in shell commands. Keep user output in the user's working project, usually `designs/<slug>/`; never write it into the installed plugin.
+- Use Codex file-editing tools for requested changes. Read current files immediately before editing and preserve unrelated data.
 - Run the palette validator using its absolute installed path: `node "<this skill folder>/scripts/validate_palette.js" ...`.
-- Use Codex file-editing tools for artifact changes. Read current files immediately before editing; the user can save from the editor between turns. Preserve unrelated data.
 - **Verification:** Run the bundled `scripts/validate_palette.js` with the actual palette, mode, and surface; the matching `scripts/validate_palette.py` is an alternative when Python is available. Fix hard failures and follow the documented secondary-encoding requirements for warnings. Render the actual chart with available tools and inspect its marks, labels, contrast, and relevant interactions. State which validators and visual checks ran and which could not run.
 - Use the bundled local commands and available Codex tools.
 

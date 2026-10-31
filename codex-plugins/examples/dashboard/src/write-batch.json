@@ -1,0 +1,65 @@
+[
+  {
+    "op": "set",
+    "path": "dash/meta",
+    "data": {
+      "title": "X 账号数据看板（示例数据）"
+    }
+  },
+  {
+    "op": "set",
+    "path": "dash/params",
+    "data": {
+      "end": "2026-10-31",
+      "metric": "impressions",
+      "table_sort": "date",
+      "table_dir": "desc"
+    }
+  },
+  {
+    "op": "set",
+    "path": "datasets/daily",
+    "data": {
+      "title": "Sample · X 账号每日表现",
+      "description": "2025-11-01 至 2026-10-31 的 365 条确定性合成日记录，seed 0xC0DE2026。曝光含长期趋势、周周期和预设事件峰值；互动及增长由公开写明的生成公式产生。仅演示，不是用户或任何真实账号的数据。",
+      "source": {
+        "kind": "file",
+        "url": "/_blob/fd7dc5b29faffb7779c2bf65edac1a8a",
+        "name": "x-account-daily.csv",
+        "format": "csv"
+      },
+      "fixed": true,
+      "updated": {
+        "at": "2026-10-31T12:52:12.505Z",
+        "by": "Codex · synthetic showcase"
+      }
+    }
+  },
+  {
+    "op": "set",
+    "path": "files/index.html",
+    "data": {
+      "text": {
+        "$file": "C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard\\src\\index.html"
+      }
+    }
+  },
+  {
+    "op": "set",
+    "path": "files/dashboard.css",
+    "data": {
+      "text": {
+        "$file": "C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard\\src\\dashboard.css"
+      }
+    }
+  },
+  {
+    "op": "set",
+    "path": "files/dashboard.js",
+    "data": {
+      "text": {
+        "$file": "C:\\WorkSpace\\ResearchProjects\\baoyu-design\\codex-plugins\\examples\\dashboard\\src\\dashboard.js"
+      }
+    }
+  }
+]

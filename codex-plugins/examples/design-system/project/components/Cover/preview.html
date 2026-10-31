@@ -1,0 +1,34 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Nimbus</title>
+<style>
+html,body{margin:0;padding:0}.nimbus-cover{position:relative;width:960px;height:288px;overflow:hidden;background:var(--surface);color:var(--ink);font-family:var(--font-sans)}
+.nimbus-cover svg{position:absolute;inset:0;width:960px;height:288px}.nimbus-cover .sky{fill:var(--sky)}.nimbus-cover .haze{fill:var(--haze)}.nimbus-cover .deep{fill:var(--sky-strong)}.nimbus-cover .ink{fill:var(--ink)}.nimbus-cover .cloud-disc{r:var(--space-4)}.nimbus-cover .block{rx:var(--radius-lg)}
+.nimbus-cover-name{position:absolute;left:32px;bottom:60px;width:440px;margin:0;color:var(--ink)}.nimbus-cover-tagline{position:absolute;left:32px;bottom:28px;width:440px;margin:0;color:var(--ink-muted);font-weight:400}
+</style></head>
+<body><div class="nimbus-cover">
+<!-- Blocks: sky 448x152, haze 400x64, sky-strong 96x40, ink 360x40; each size follows space-4 (16px) and space-2 (8px) multiples. -->
+<!-- Arrangement: all colored blocks start after x=512, keeping display/name and tagline on surface unobstructed. -->
+<!-- Pattern: haze half-round cloud bands; the README asks for a calm sky built from wide fields and soft capsules. -->
+<!-- Scales: space-2/space-4/space-8 set pitch and gaps; radius-lg=24px, cloud discs use space-4 and pills use half their short side. -->
+<svg viewBox="0 0 960 288" aria-hidden="true">
+  <rect class="sky block" x="512" y="-24" width="448" height="152"></rect>
+  <rect class="haze block" x="584" y="144" width="400" height="64"></rect>
+  <circle class="haze cloud-disc" cx="616" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="648" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="680" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="712" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="744" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="776" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="808" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="840" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="872" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="904" cy="144" r="16"></circle>
+  <circle class="haze cloud-disc" cx="936" cy="144" r="16"></circle>
+  <rect class="deep" x="512" y="224" width="96" height="40" rx="20"></rect>
+  <rect class="ink" x="624" y="224" width="360" height="40" rx="20"></rect>
+</svg>
+<h1 class="nimbus-cover-name display">Nimbus</h1>
+<p class="nimbus-cover-tagline label">天气，轻声说。</p>
+</div></body></html>

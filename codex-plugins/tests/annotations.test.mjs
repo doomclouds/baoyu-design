@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { adaptAnnotations } from '../adapt-annotations.mjs';
+import { createFixture } from './fixtures.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const browserSource = await fs.readFile(new URL('../source/scripts/browser-annotations.js', import.meta.url), 'utf8');
@@ -30,6 +31,38 @@ test.before(async () => {
   serverModule = await import(pathToFileURL(path.join(pluginRoot, 'skills/codex-slides/scripts/codex-annotation-server.mjs')));
 });
 test.after(async () => { await fs.rm(temporary, {recursive: true, force: true}); });
+
+test('real reply CLI checks the captured user revision inside its comment transaction', async () => {
+  for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
+    const fixture = await createFixture(kind, temporary);
+    const filename = path.join(fixture.root, 'comments.json');
+    const at = '2026-10-31T00:00:00.000Z';
+    const thread = {id: 'c_revision', anchor: fixture.comment.anchor, label: fixture.comment.label, detail: fixture.comment.detail,
+      status: 'open', createdAt: at, updatedAt: at,
+      messages: [{id: 'm_revision', author: {kind: 'user', name: 'test'}, text: 'Request A', at}]};
+    const doc = {version: 1, threads: [thread]};
+    await fs.writeFile(filename, JSON.stringify(doc));
+    const expected = createHash('sha256').update(JSON.stringify([{text: 'Request A', at}])).digest('hex');
+    assert.equal(serverModule.userRevisionHash(thread), expected);
+    const cli = path.join(pluginRoot, 'skills', fixture.skill, 'scripts/artifact.mjs');
+    const guardedEnv = {...process.env, CODEX_DESIGN_EXPECTED_USER_REVISION: expected};
+    await execFileAsync(process.execPath, [cli, 'comment-reply', fixture.root, thread.id, 'Reply A'], {env: guardedEnv, windowsHide: true});
+    const newer = JSON.parse(await fs.readFile(filename, 'utf8'));
+    newer.threads[0].messages[0].text = 'Request B';
+    newer.threads[0].messages[0].editedAt = '2026-10-31T00:00:01.000Z';
+    await fs.writeFile(filename, JSON.stringify(newer));
+    const before = await fs.readFile(filename, 'utf8');
+    await assert.rejects(execFileAsync(process.execPath, [cli, 'comment-reply', fixture.root, thread.id, 'Stale reply A'], {env: guardedEnv, windowsHide: true}), error => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /COMMENT_REVISION_CHANGED/);
+      return true;
+    });
+    assert.equal(await fs.readFile(filename, 'utf8'), before, 'a stale reply must preserve the newer request byte for byte');
+    await execFileAsync(process.execPath, [cli, 'comment-reply', fixture.root, thread.id, 'Manual reply B'], {
+      env: {...process.env, CODEX_DESIGN_EXPECTED_USER_REVISION: ''}, windowsHide: true,
+    });
+  }
+});
 
 async function write(root, relative, data) {
   const file = path.join(root, relative);
@@ -184,88 +217,194 @@ class Element {
   addEventListener(name, fn) { this.listeners.set(name, fn); }
   removeEventListener(name) { this.listeners.delete(name); }
   getBoundingClientRect() { return this.rect; }
-  matches(selector) { return selector.split(',').some(part => { const s = part.trim(); if (s.startsWith('.')) return this.getAttribute('class')?.split(' ').includes(s.slice(1)); const attrs = [...s.matchAll(/\[([^\]=]+)(?:="([^"]*)")?\]/g)]; return attrs.length > 0 && attrs.every(([,key,value]) => value === undefined ? this.attrs.has(key) : this.getAttribute(key) === value); }); }
+  matches(selector) { return selector.split(',').some(part => { const s = part.trim(); if (s.startsWith('.')) return this.getAttribute('class')?.split(' ').includes(s.slice(1)); if (/^#[\w-]+$/.test(s)) return (this.id || this.getAttribute('id')) === s.slice(1); const attrs = [...s.matchAll(/\[([^\]=]+)(?:="([^"]*)")?\]/g)]; return attrs.length > 0 && attrs.every(([,key,value]) => value === undefined ? this.attrs.has(key) : this.getAttribute(key) === value); }); }
   closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
   querySelectorAll(selector) { return this.children.flatMap(child => [...(child.matches(selector) ? [child] : []), ...child.querySelectorAll(selector)]); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-async function browser({skill = 'codex-design', api = true, frame = false, initialAttributes = {}} = {}) {
+async function browser({skill = 'codex-design', api = true, frame = false, initialAttributes = {}, contextOverride = {}, setupDOM} = {}) {
   const document = {readyState: 'complete', currentScript: {src: 'http://127.0.0.1:1234/design/grant/__codex/annotations.js'}, listeners: new Map(), addEventListener(name, fn) { this.listeners.set(name, fn); }, removeEventListener(name) { this.listeners.delete(name); }, createElement(tag) { return new Element(tag, this); }};
   document.body = new Element('body', document);
   const root = document.createElement('div'); root.id = 'root'; document.body.append(root);
-  document.getElementById = id => id === 'root' ? root : null;
+  document.getElementById = id => id === 'root' ? root : document.body.querySelectorAll('[id]').find(element => element.getAttribute('id') === id) || null;
   document.querySelectorAll = selector => document.body.querySelectorAll(selector);
   document.querySelector = selector => document.querySelectorAll(selector)[0] || null;
-  const target = document.createElement('article');
+  let target = document.createElement('article');
   const id = skill === 'codex-slides' ? 'cover' : 'Main.dc.html';
   target.setAttribute(skill === 'codex-slides' ? 'data-slide-id' : 'data-mega-artboard', id);
   for (const [key, value] of Object.entries(initialAttributes)) target.setAttribute(key, value);
   root.append(target);
+  if (setupDOM) target = setupDOM({document, root, defaultTarget: target});
   const requests = [];
   if (api) document.oai = {annotation: {request(element, options) { requests.push({element, options}); return {accepted: true}; }}};
   const window = {addEventListener() {}}; window.top = frame ? {} : window;
   const context = {skill, projectRoot: 'C:/work/real-project', title: 'Real project', indexFile: 'project/canvas.json', objects: [{id, file: skill === 'codex-slides' ? 'project/slides/cover.html' : 'project/Main.dc.html', name: 'Main', ...(skill === 'codex-slides' ? {page: 1} : {}), keys: [id]}]};
+  Object.assign(context, contextOverride);
   const observed = [];
   vm.runInNewContext(browserSource, {window, document, URL, TextEncoder, innerHeight: 900, innerWidth: 1400, MutationObserver: class {observe(_target, options) { observed.push(options); } disconnect() {}}, requestAnimationFrame: fn => fn(), setInterval: () => 1, clearInterval() {}, fetch: async url => {assert.equal(String(url), 'http://127.0.0.1:1234/design/grant/__codex/annotation-context'); return {ok: true, json: async () => context}; }});
   await new Promise(resolve => setImmediate(resolve));
   return {window, document, root, target, requests, context, observed};
 }
 
-test('ordinary browsers and iframe documents receive no controls or native API calls', async () => {
+function nodesUnder(element) { return [element, ...element.children.flatMap(nodesUnder)]; }
+function nativeMetadata(element) { const value = element.getAttribute('oai-annotation-metadata'); return value === null ? null : JSON.parse(value); }
+function assertNoAddedUI(document, requests) {
+  assert.equal(document.body.children.length, 1, 'only the existing editor root may remain');
+  assert.equal(nodesUnder(document.body).filter(element => ['ASIDE', 'BUTTON', 'SELECT', 'OPTION'].includes(element.tagName)).length, 0);
+  assert.equal(document.listeners.has('pointerdown'), false, 'the adapter must not intercept page selection');
+  assert.equal(requests.length, 0, 'only the browser toolbar initiates native annotations');
+}
+
+test('ordinary browsers and iframe documents remain completely unchanged', async () => {
   for (const options of [{api: false}, {frame: true}]) {
     const result = await browser(options);
-    assert.equal(result.document.body.children.length, 1);
+    assertNoAddedUI(result.document, result.requests);
+    assert.equal(result.root.getAttribute('oai-annotation-container'), null);
+    assert.equal(nativeMetadata(result.target), null);
     assert.equal(result.window.__baoyuCodexAnnotations, undefined);
   }
 });
 
-test('native request targets a top-document proxy with accurate bounded flat metadata', async () => {
+test('native toolbar receives bounded top-document metadata without any filename controls', async () => {
   for (const skill of ['codex-design', 'codex-slides']) {
     const {window, document, root, target, requests, context} = await browser({skill});
-    const iframe = document.createElement('iframe'); target.append(iframe);
-    document.listeners.get('pointerdown')({target});
-    const panel = document.body.children[1];
-    panel.children[1].listeners.get('click')();
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].element, target);
-    const data = requests[0].options.metadata;
+    const iframe = document.createElement('iframe');
+    Object.defineProperty(iframe, 'contentDocument', {get() { assert.fail('the adapter must not enter iframe documents'); }});
+    target.append(iframe);
+    await window.__baoyuCodexAnnotations.refresh();
+    const data = nativeMetadata(target);
     assert.equal(data.objectId, context.objects[0].id);
     assert.equal(data.file, context.objects[0].file);
     assert.equal(data.skill, skill);
     assert.ok(Object.keys(data).length <= 6);
     assert.ok(Object.values(data).every(value => ['number', 'string', 'boolean'].includes(typeof value) || value === null));
     assert.ok(Buffer.byteLength(JSON.stringify(data)) <= 2048);
-    assert.match(panel.children[2].textContent, /填写意见并发送/);
+    assert.equal(nativeMetadata(iframe), null, 'the top-level artboard is the proxy');
+    assertNoAddedUI(document, requests);
     window.__baoyuCodexAnnotations.dispose();
-    assert.equal(target.getAttribute('oai-annotation-metadata'), null);
+    assert.equal(nativeMetadata(target), null);
     assert.equal(root.getAttribute('oai-annotation-container'), null);
   }
+  assert.doesNotMatch(browserSource, /\.request\s*\(/);
+  assert.doesNotMatch(browserSource, /createElement\s*\(/);
 });
 
-test('requests re-resolve changed identities and reject stale or invisible proxies', async () => {
-  const {document, target, requests} = await browser();
-  document.listeners.get('pointerdown')({target});
-  target.setAttribute('data-mega-artboard', 'new-page.dc.html');
-  const button = document.body.children[1].children[1];
-  button.listeners.get('click')();
-  assert.equal(requests.length, 0);
-  assert.match(document.body.children[1].children[2].textContent, /重新选择/);
-});
-
-test('reused DOM proxies lose stale native metadata and can be mapped again', async () => {
+test('reused DOM proxies lose stale native metadata and restore original attributes', async () => {
   const original = '{"owner":"editor"}';
-  const {window, target, observed} = await browser({initialAttributes: {'oai-annotatable': 'Original editor object', 'oai-annotation-metadata': original}});
-  assert.equal(JSON.parse(target.getAttribute('oai-annotation-metadata')).file, 'project/Main.dc.html');
+  const {window, document, target, requests, observed} = await browser({initialAttributes: {'oai-annotatable': 'Original editor object', 'oai-annotation-metadata': original}});
+  assert.equal(nativeMetadata(target).file, 'project/Main.dc.html');
   target.setAttribute('data-mega-artboard', 'unknown.dc.html');
   await window.__baoyuCodexAnnotations.refresh();
   assert.equal(target.getAttribute('oai-annotation-metadata'), original);
   assert.equal(target.getAttribute('oai-annotatable'), 'Original editor object');
   target.setAttribute('data-mega-artboard', 'Main.dc.html');
   await window.__baoyuCodexAnnotations.refresh();
-  assert.equal(JSON.parse(target.getAttribute('oai-annotation-metadata')).file, 'project/Main.dc.html');
+  assert.equal(nativeMetadata(target).file, 'project/Main.dc.html');
   target.removeAttribute('data-mega-artboard');
   await window.__baoyuCodexAnnotations.refresh();
   assert.equal(target.getAttribute('oai-annotation-metadata'), original);
   for (const field of ['data-path', 'data-comment-target', 'data-node-path', 'data-slide-surface', 'class']) assert.ok(observed[0].attributeFilter.includes(field));
+  assertNoAddedUI(document, requests);
   window.__baoyuCodexAnnotations.dispose();
+});
+
+test('the captured dashboard dash-root exposes source metadata without filename UI', async () => {
+  const {document, target, requests} = await browser({skill: 'codex-dashboard', contextOverride: {title: 'Monthly revenue', indexFile: 'db/dash/meta.json', objects: [{id: 'index.html', file: 'db/files/index.html.json', name: 'index.html', keys: ['index.html']}]}, setupDOM({document, root, defaultTarget}) {
+    defaultTarget.remove();
+    const content = document.createElement('div'); content.setAttribute('id', 'dash-root'); root.append(content);
+    const heading = document.createElement('h1'); heading.textContent = 'Monthly revenue'; content.append(heading);
+    return content;
+  }});
+  assert.equal(nativeMetadata(target).file, 'db/files/index.html.json');
+  assert.equal(target.getAttribute('oai-annotatable'), 'Monthly revenue');
+  assert.equal(target.children[0].textContent, 'Monthly revenue');
+  assertNoAddedUI(document, requests);
+});
+
+// These shapes were captured read-only by the primary agent from the actual
+// IAB design-system editor. These fake-DOM regressions exercise that captured
+// markup; the desktop acceptance run remains a separate check.
+test('captured design-system token/style/cover markers preserve source and element identities', async () => {
+  const objects = [
+    {id: 'tokens.json', file: 'project/tokens.json', name: 'tokens.json', keys: ['tokens.json', 'guidance:tokens.json']},
+    {id: 'components/Cover/preview.html', file: 'project/components/Cover/preview.html', name: 'components/Cover/preview.html', keys: ['components/Cover/preview.html']},
+  ];
+  for (const [tag, id, attributes, file] of [
+    ['div', 'token-ink', {'data-testid': 'ds-color-ink', 'data-comment-target': ''}, 'project/tokens.json'],
+    ['section', 'tset-Text', {'data-card-key': 'type:Text'}, 'project/tokens.json'],
+    ['div', 'style-body', {'data-comment-target': ''}, 'project/tokens.json'],
+    ['div', 'token-space-4', {'data-comment-target': ''}, 'project/tokens.json'],
+    ['h1', 'page-colors', {}, 'project/tokens.json'],
+    ['div', 'ds-cover', {'data-comment-target': '', 'data-testid': 'ds-cover'}, 'project/components/Cover/preview.html'],
+  ]) {
+    const {document, target, requests} = await browser({skill: 'codex-design-system', contextOverride: {indexFile: 'project/design-system.json', objects}, setupDOM({document, root, defaultTarget}) {
+      defaultTarget.remove();
+      const node = document.createElement(tag); node.setAttribute('data-id', id);
+      for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+      root.append(node); return node;
+    }});
+    assert.equal(nativeMetadata(target).objectId, id);
+    assert.equal(nativeMetadata(target).file, file);
+    assertNoAddedUI(document, requests);
+  }
+});
+
+test('captured IAB README editor markup maps to the actual README file in fake DOM', async () => {
+  const {document, target, requests} = await browser({skill: 'codex-design-system', contextOverride: {indexFile: 'project/design-system.json', objects: [{id: 'README.md', file: 'project/README.md', name: 'README.md', keys: ['README.md', 'guidance:README.md']}]}, setupDOM({document, root, defaultTarget}) {
+    defaultTarget.remove();
+    const article = document.createElement('article'); article.setAttribute('data-testid', 'ds-overview'); root.append(article);
+    const readme = document.createElement('div');
+    for (const [name, value] of Object.entries({class: 'ds-readme ds-readme-editable', 'data-testid': 'ds-readme-rendered', contenteditable: 'true', role: 'textbox', 'aria-label': 'README'})) readme.setAttribute(name, value);
+    article.append(readme); return readme;
+  }});
+  assert.equal(nativeMetadata(target).file, 'project/README.md');
+  assert.equal(nativeMetadata(target).objectId, 'ds-readme-rendered');
+  assertNoAddedUI(document, requests);
+});
+
+test('captured IAB file-browser text previews carry metadata independently of their navigation row', async () => {
+  const {document, target, requests} = await browser({skill: 'codex-design-system', contextOverride: {indexFile: 'project/design-system.json', objects: [{id: 'tokens.json', file: 'project/tokens.json', name: 'tokens.json', keys: ['tokens.json']}]}, setupDOM({document, root, defaultTarget}) {
+    defaultTarget.remove();
+    const browser = document.createElement('div'); browser.setAttribute('data-testid', 'files-browser'); root.append(browser);
+    const tree = document.createElement('div');
+    for (const [key, value] of Object.entries({role: 'tree', 'aria-label': 'Files', 'data-testid': 'files-browser-list', 'aria-activedescendant': '_r_47_-file-tokens'})) tree.setAttribute(key, value);
+    browser.append(tree);
+    const row = document.createElement('div');
+    for (const [key, value] of Object.entries({role: 'treeitem', 'aria-selected': 'true', 'data-testid': 'files-browser-row', 'data-path': 'tokens.json'})) row.setAttribute(key, value);
+    row.rect = {left: 0, right: 100, top: -100, bottom: -10, width: 100, height: 90}; tree.append(row);
+    const preview = document.createElement('div'); preview.setAttribute('data-testid', 'files-browser-preview'); browser.append(preview);
+    const card = document.createElement('div'); card.setAttribute('data-testid', 'files-browser-card'); preview.append(card);
+    const label = document.createElement('div'); label.setAttribute('id', '_r_4e_'); label.textContent = 'tokens.json'; card.append(label);
+    const pre = document.createElement('pre');
+    for (const [key, value] of Object.entries({'data-testid': 'files-browser-text', role: 'group', 'aria-labelledby': '_r_4e_', tabindex: '0'})) pre.setAttribute(key, value);
+    card.append(pre); return pre;
+  }});
+  assert.equal(nativeMetadata(target).file, 'project/tokens.json');
+  assert.equal(nativeMetadata(target).objectId, 'file:tokens.json');
+  assertNoAddedUI(document, requests);
+});
+
+test('captured file-preview labels clear stale identity while another file loads', async () => {
+  let selectedRow, label;
+  const {window, document, target, requests, observed} = await browser({skill: 'codex-design-system', contextOverride: {indexFile: 'project/design-system.json', objects: ['tokens.json', 'README.md'].map(name => ({id: name, file: 'project/' + name, name, keys: [name]}))}, setupDOM({document, root, defaultTarget}) {
+    defaultTarget.remove();
+    const fileBrowser = document.createElement('div'); fileBrowser.setAttribute('data-testid', 'files-browser'); root.append(fileBrowser);
+    selectedRow = document.createElement('div');
+    for (const [key, value] of Object.entries({'data-testid': 'files-browser-row', 'aria-selected': 'true', 'data-path': 'tokens.json'})) selectedRow.setAttribute(key, value);
+    fileBrowser.append(selectedRow);
+    label = document.createElement('div'); label.setAttribute('id', '_r_4e_'); label.textContent = 'tokens.json'; fileBrowser.append(label);
+    const pre = document.createElement('pre'); pre.setAttribute('data-testid', 'files-browser-text'); pre.setAttribute('aria-labelledby', '_r_4e_'); fileBrowser.append(pre); return pre;
+  }});
+  assert.equal(nativeMetadata(target).file, 'project/tokens.json');
+  selectedRow.setAttribute('data-path', 'README.md');
+  await window.__baoyuCodexAnnotations.refresh();
+  assert.equal(nativeMetadata(target), null, 'an asynchronously stale preview must lose its old source metadata');
+  label.textContent = 'README.md';
+  await window.__baoyuCodexAnnotations.refresh();
+  assert.equal(nativeMetadata(target).file, 'project/README.md');
+  assert.equal(nativeMetadata(target).objectId, 'file:README.md');
+  assert.equal(observed[0].characterData, true);
+  for (const field of ['aria-selected', 'aria-labelledby', 'data-testid']) assert.ok(observed[0].attributeFilter.includes(field));
+  assertNoAddedUI(document, requests);
 });

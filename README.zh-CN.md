@@ -80,12 +80,14 @@ node skills/claude-slides/scripts/artifact.mjs list                             
 
 `codex design` 将上面的五个技能、完整本地编辑器，以及 Codex 批注和编辑器评论联动打包在一起。
 
+可编辑的完整示例见 [`codex-plugins/examples/`](codex-plugins/examples/README.md)：五页幻灯片、Bean Club 双画板、Nimbus 设计系统和年度 X 示例数据看板。
+
 ```bash
 codex plugin marketplace add doomclouds/baoyu-design --ref codex/plugin
 codex plugin add codex-design@codex-design-marketplace
 ```
 
-安装和使用说明见 [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md)。在 Codex 内置浏览器中可使用原生批注；编辑器自己的 **Send to agent** 将评论交给打开它的 Codex 会话。原生批注由用户确认发送。
+安装和使用说明见 [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md)。在 Codex 内置浏览器中可使用原生批注，由用户确认后发送到当前聊天；编辑器自己的 **Send to agent** 则把评论交给该项目的独立设计 worker，并在编辑器中回写回复。
 
 插件从本仓库的 `skills/` 在本机生成，不使用 GitHub 流水线：`npm run build:codex-plugin` 构建，`npm run check:codex-plugin` 检查产物与源码一致，`npm run test:codex-plugin` 运行插件测试。GitHub 分支直接提供已构建的插件文件。
 

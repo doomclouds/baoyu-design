@@ -1,0 +1,5 @@
+<!-- @dsCard group="Controls" height=172 subtitle="选中状态驱动预报摘要" -->
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Nimbus Forecast Switch</title></head><body style="margin:0">
+<div id="demo"></div><script>(function(){const h=React.createElement;function Demo(){const[value,setValue]=React.useState('today');const summaries={today:'今天 18° · 小雨渐歇，午后适合散步。',tomorrow:'明天 20° · 多云，早晚记得加一件外套。',week:'未来七天 15–23° · 周末放晴，留一点时间给户外。'};return h('div',{className:'nb-demo'},h(Nimbus.ForecastSwitch,{value:value,onChange:setValue}),h('p',{className:'nb-forecast-caption body','aria-live':'polite'},summaries[value]));}ReactDOM.createRoot(document.getElementById('demo')).render(h(Demo));})();</script>
+</body></html>

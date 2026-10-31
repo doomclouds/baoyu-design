@@ -1,0 +1,16 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-31T12:44:49Z"},
+  "title": "Bean Club · a better daily ritual",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 780, "title": "Landing · your daily ritual", "expand": "fill", "is_interactive": true},
+    "Signup.dc.html": {"x": 1520, "y": 0, "w": 390, "h": 844, "title": "Mobile · join the club", "is_interactive": true}
+  },
+  "order": ["Main.dc.html", "Signup.dc.html"],
+  "notes": {
+    "collection-title": {"x": 0, "y": -300, "text": "Bean Club: a better daily ritual", "kind": "title1", "maxW": 1910}
+  },
+  "designSystems": []
+}

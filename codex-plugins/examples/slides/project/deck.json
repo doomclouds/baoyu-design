@@ -1,0 +1,27 @@
+{
+  "v": 4,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-31T12:41:00Z"
+  },
+  "lists": "css",
+  "title": "把复杂的事讲清楚 · Clear ideas, considered design",
+  "order": ["clear-ideas", "three-moves", "thoughtful-process", "give-it-room", "start-here"],
+  "cover": "clear-ideas",
+  "sections": {
+    "opening": {
+      "description": "把清晰的表达当作一次有意识的设计。",
+      "start": "clear-ideas"
+    },
+    "principles": {
+      "description": "用中心、关系与呼吸感组织复杂内容。",
+      "start": "three-moves"
+    },
+    "practice": {
+      "description": "从材料走向判断，再落实为一次具体练习。",
+      "start": "thoughtful-process"
+    }
+  },
+  "faces": {},
+  "designSystems": []
+}

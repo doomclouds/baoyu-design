@@ -1,0 +1,51 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-31T12:43:22.123Z"
+  },
+  "title": "Nimbus",
+  "namespace": "Nimbus",
+  "libraries": [
+    {
+      "name": "react",
+      "version": "18"
+    },
+    {
+      "name": "react-dom",
+      "version": "18"
+    }
+  ],
+  "sections": {},
+  "groups": [
+    "Logos"
+  ],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "m",
+      "order": [
+        "nimbus-mark.svg"
+      ],
+      "files": {
+        "nimbus-mark.svg": {
+          "name": "nimbus-mark.svg",
+          "blob": "efd32463615fc9ebac56c4e9073ba54c",
+          "size": 227,
+          "type": "image/svg+xml"
+        }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {
+    "sections": []
+  },
+  "lastChange": {
+    "by": "Codex",
+    "via": "Codex",
+    "at": "2026-10-31T12:43:22.123Z",
+    "note": "Nimbus 天气品牌的可编辑设计系统展示。"
+  }
+}

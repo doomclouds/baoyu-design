@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Bean Club — good coffee, your kind of everyday</title>
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+  <helmet>
+    <style>body{margin:0}a{color:#24251F}a:hover{color:#B64B20}</style>
+  </helmet>
+  <div style="width:100%;min-height:780px;box-sizing:border-box;background:#FAF7EF;color:#24251F;font-family:'Trebuchet MS','Segoe UI',sans-serif">
+    <div style="max-width:1440px;box-sizing:border-box;padding:36px 72px 32px;margin:0 auto;display:flex;flex-direction:column;gap:40px">
+      <header style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:24px;min-height:48px">
+        <a href="Main.dc.html" aria-label="Bean Club home" style="display:flex;align-items:center;gap:10px;min-height:44px;text-decoration:none;color:#24251F">
+          <svg width="27" height="30" viewBox="0 0 27 30" fill="none" aria-hidden="true">
+            <path d="M5 11H19V20C19 24 16.5 26 12 26C7.5 26 5 24 5 20V11Z" stroke="{{accent}}" sc-camel-stroke-width="1.8"></path>
+            <path d="M19 13H21C25 13 25 20 21 20H19M8 3V7M12 1V6M16 3V7" stroke="{{accent}}" sc-camel-stroke-width="1.8" sc-camel-stroke-linecap="round"></path>
+          </svg>
+          <span style="font-size:23px;font-weight:700;letter-spacing:-.9px">bean club</span>
+        </a>
+        <nav aria-label="Main navigation" style="display:flex;align-items:center;flex-wrap:wrap;gap:28px">
+          <button type="button" onClick="{{toggleDetails}}" aria-expanded="{{showDetails}}" style="font:inherit;font-size:14px;min-height:44px;padding:0;border:0;background:transparent;color:#24251F;cursor:pointer">How it works</button>
+          <a href="Signup.dc.html" style="display:flex;align-items:center;min-height:44px;font-size:14px;text-decoration:none">Find your brew</a>
+          <a href="Signup.dc.html" style="display:flex;align-items:center;min-height:44px;font-size:14px;text-decoration:none;color:{{accent}}">Join the club ↗</a>
+        </nav>
+      </header>
+      <main style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(480px,100%),1fr));align-items:center;gap:64px">
+        <div style="display:flex;flex-direction:column;align-items:flex-start;gap:24px;min-width:0">
+          <p style="display:flex;align-items:center;gap:10px;margin:0;font-size:12px;font-weight:700;letter-spacing:1.8px;line-height:1.5;color:{{accent}}">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{accent}}"></span>
+            A LITTLE RITUAL. A LOT TO LOOK FORWARD TO.
+          </p>
+          <sc-if value="{{everydayHeadline}}" hint-placeholder-val="{{true}}">
+            <h1 style="margin:0;font-size:58px;font-weight:700;line-height:1.06;letter-spacing:-2.6px;text-wrap:pretty">Good coffee.<br>Your kind of<br>everyday.</h1>
+          </sc-if>
+          <sc-if value="{{slowHeadline}}" hint-placeholder-val="{{false}}">
+            <h1 style="margin:0;font-size:58px;font-weight:700;line-height:1.06;letter-spacing:-2.6px;text-wrap:pretty">A slower start.<br>A better<br>morning.</h1>
+          </sc-if>
+          <p style="max-width:500px;margin:0;font-size:17px;line-height:1.65;color:#56574F">Freshly roasted coffee, matched to your brew.<br>Choose your beans, set your rhythm, and make<br>room for a better morning.</p>
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px">
+            <a href="Signup.dc.html" style="display:flex;align-items:center;justify-content:center;min-height:50px;box-sizing:border-box;padding:0 24px;background:{{accent}};border:1px solid {{accent}};border-radius:6px;color:#FAF7EF;text-decoration:none;font-size:15px;font-weight:700">Join bean club</a>
+            <button type="button" onClick="{{toggleDetails}}" aria-expanded="{{showDetails}}" style="min-height:50px;padding:0 24px;border:1px solid #D8D6CD;border-radius:6px;background:#FFFDFA;color:#24251F;font:inherit;font-size:15px;cursor:pointer">How it works</button>
+          </div>
+          <p style="margin:0;font-size:13px;line-height:1.5;color:#66675D">Your brew. Your schedule. Room to change your mind.</p>
+          <sc-if value="{{showDetails}}" hint-placeholder-val="{{false}}">
+            <div style="width:100%;box-sizing:border-box;padding:20px 0 0;border-top:1px solid #D8D6CD;display:flex;flex-direction:column;gap:10px">
+              <h2 style="margin:0;font-size:18px;font-weight:700;line-height:1.3">A good routine, in three easy choices.</h2>
+              <p style="margin:0;font-size:15px;line-height:1.65;color:#56574F">Choose whole bean, filter or espresso. Pick a delivery rhythm. Save your preferences and make it your own.</p>
+            </div>
+          </sc-if>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+          <img src="/_blob/12b1f25521da11b659ab756968655520" alt="An original repeating arrangement of sculptural blue coffee beans, with softly lit curved grooves." style="display:block;width:100%;height:516px;object-fit:cover;border-radius:8px">
+          <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:1.8px;line-height:1.6;color:#56574F">A FRESH PERSPECTIVE ON YOUR DAILY CUP.</p>
+        </div>
+      </main>
+      <footer style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;border-top:1px solid #DEDCD2;padding:18px 0 0">
+        <p style="margin:0;font-size:12px;line-height:1.5;color:#66675D">Coffee, thoughtfully put together.</p>
+        <p style="margin:0;font-size:12px;line-height:1.5;color:#66675D">Brew well. Stay curious.</p>
+      </footer>
+    </div>
+  </div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#B64B20","options":["#B64B20","#8F4D35","#245F8D"],"section":"Brand"},"headlineVariant":{"editor":"enum","default":"Everyday","options":["Everyday","Slow mornings"],"section":"Direction"},"$preview":{"width":1440,"height":780}}'>
+class Component extends DCLogic {
+  state = { showDetails: false };
+  renderVals() {
+    const variant = this.props.headlineVariant ?? 'Everyday';
+    return {
+      accent: this.props.accent ?? '#B64B20',
+      everydayHeadline: variant === 'Everyday',
+      slowHeadline: variant === 'Slow mornings',
+      showDetails: this.state.showDetails,
+      toggleDetails: () => this.setState({ showDetails: !this.state.showDetails })
+    };
+  }
+}
+</script>
+</body>
+</html>

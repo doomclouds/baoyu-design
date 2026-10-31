@@ -24,10 +24,12 @@ async function markdownFiles(root) {
 
 test('portable and compatibility manifests expose the same local Codex plugin', async () => {
   const portable = await readJson(path.join(pluginRoot, 'plugin.json'));
+  const sourceManifest = await readJson(path.join(buildRoot, 'source/plugin.json'));
   const compatibility = await readJson(path.join(pluginRoot, '.codex-plugin/plugin.json'));
   const marketplace = await readJson(path.join(buildRoot, '..', '.agents/plugins/marketplace.json'));
   assert.equal(portable.name, 'codex-design');
-  assert.equal(portable.version, '0.1.0');
+  assert.equal(sourceManifest.version, '0.2.0');
+  assert.equal(portable.version, sourceManifest.version);
   assert.equal(compatibility.name, portable.name);
   assert.equal(compatibility.version, portable.version);
   assert.equal(compatibility.skills, './skills/');
@@ -81,13 +83,27 @@ test('all five generated skills use Codex routing, validation, and supported ent
     assert.ok(!text.includes('\r\n'));
     if (editors.includes(name)) {
       assert.match(text, /codex-artifact\.mjs/);
-      assert.match(text, /向 Codex 批注/);
-      assert.match(text, /NO_CODEX_THREAD/);
+      assert.match(text, /browser toolbar's \*\*批注\*\*/);
+      assert.match(text, /Parent native-agent controller/);
+      assert.match(text, /worker-status <root>/);
+      assert.match(text, /worker-register <root> --name <task>/);
+      assert.match(text, /worker-next <root> --timeout 60/);
+      assert.match(text, /worker-complete <root> <jobId> -/);
+      assert.match(text, /own actual .*CODEX_THREAD_ID/);
+      assert.match(text, /On .*timedOut.*call worker-next again/);
+      assert.match(text, /On .*closed.*end this listener turn/);
+      assert.match(text, /Do not create an agent for every comment/);
+      assert.match(text, /does not wake a native agent, call an external queue, or start a model\/HTTP daemon/);
+      assert.match(text, /cannot interrupt a native agent/);
+      assert.match(text, /must not wait for its own worker-status entry/);
+      assert.doesNotMatch(text, /independent local design worker|codex app-server|ephemeral|stdin.*RPC/i);
+      assert.doesNotMatch(text, /向 Codex 批注/);
       const wrapper = await readFile(path.join(pluginRoot, 'skills', name, 'scripts/codex-artifact.mjs'), 'utf8');
       assert.match(wrapper, /runArtifactCommand/);
       await readFile(path.join(pluginRoot, 'skills', name, 'scripts/artifact.mjs'));
     } else {
       assert.doesNotMatch(text, /built-in\s+`?check|codex-artifact/i);
+      assert.doesNotMatch(text, /annotation panel|Send to agent|worker-status/i);
       assert.match(text, /scripts\/validate_palette\.js/);
       assert.match(text, /Render the actual chart/);
       await readFile(path.join(pluginRoot, 'skills', name, 'scripts/validate_palette.js'));

@@ -1,0 +1,15 @@
+{
+  "title": "Sample · X 账号每日表现",
+  "description": "2025-11-01 至 2026-10-31 的 365 条确定性合成日记录，seed 0xC0DE2026。曝光含长期趋势、周周期和预设事件峰值；互动及增长由公开写明的生成公式产生。仅演示，不是用户或任何真实账号的数据。",
+  "source": {
+    "kind": "file",
+    "url": "/_blob/fd7dc5b29faffb7779c2bf65edac1a8a",
+    "name": "x-account-daily.csv",
+    "format": "csv"
+  },
+  "fixed": true,
+  "updated": {
+    "at": "2026-10-31T12:52:12.505Z",
+    "by": "Codex · synthetic showcase"
+  }
+}

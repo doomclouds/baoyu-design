@@ -80,12 +80,14 @@ A dashboard is written through the same script (`write-db`, `read-db`, `upload`,
 
 `codex design` bundles all five skills above, the complete local editors, and Codex annotation and editor-comment integration.
 
+See [`codex-plugins/examples/`](codex-plugins/examples/README.md) for editable showcases: a five-slide deck, the Bean Club canvas, the Nimbus design system, and a year of sample X analytics.
+
 ```bash
 codex plugin marketplace add doomclouds/baoyu-design --ref codex/plugin
 codex plugin add codex-design@codex-design-marketplace
 ```
 
-See [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md) for setup and usage. Native annotations work in Codex's built-in browser; the editors' **Send to agent** sends a comment to the Codex chat that opened the editor. Native annotations are submitted by the user.
+See [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md) for setup and usage. Native annotations are submitted by the user to the current chat. The editors' **Send to agent** sends comments to a dedicated design worker for that project, which writes its replies back into the editor.
 
 Build and test locally, without GitHub workflows: `npm run build:codex-plugin` builds the package, `npm run check:codex-plugin` checks that committed output matches the sources, and `npm run test:codex-plugin` runs the plugin tests. The GitHub branch includes the built plugin for installation.
 
