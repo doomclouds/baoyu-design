@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>codex design · 图标</title>
+  <style>
+    :root{color-scheme:light;--paper:#f6f3ed;--ink:#282720;--muted:#706c63;--line:#ded8ce;--accent:#d96839}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    main{max-width:1080px;margin:auto;padding:54px 42px 60px}header{display:flex;justify-content:space-between;align-items:baseline;gap:24px;border-bottom:1px solid var(--line);padding-bottom:22px}
+    h1{font-size:27px;letter-spacing:-.8px;margin:0;font-weight:600}header span{font-size:12px;letter-spacing:2px;color:var(--muted)}
+    .intro{display:flex;align-items:center;gap:34px;padding:46px 0 40px}.hero{width:128px;height:128px;flex:none}.intro h2{font-size:27px;letter-spacing:-.5px;margin:0 0 10px;font-weight:500}.intro p{font-size:14px;line-height:1.8;margin:0;max-width:560px;color:var(--muted)}
+    .tests{display:grid;grid-template-columns:1fr 1fr;gap:20px}.sample{min-width:0;padding:30px 30px 26px;background:#fff;border:1px solid #e7e2d8}.sample.dark{background:#23241f;border-color:#23241f;color:#f1ebe1}.sample h3{font-size:13px;font-weight:500;margin:0 0 28px}.sizes{display:flex;align-items:baseline;justify-content:space-between;gap:20px;min-height:104px}.size{display:flex;flex-direction:column;align-items:center;gap:16px;font-size:11px;color:#77766e}.dark .size{color:#b3b2a8}.size img{display:block;flex:none}.chip{display:flex;align-items:center;gap:12px;font-size:13px;border-top:1px solid #e7e2d8;margin-top:28px;padding-top:22px}.dark .chip{border-color:#44463e}.chip img{width:24px;height:24px}
+    footer{margin-top:30px;display:flex;gap:24px;flex-wrap:wrap;color:var(--muted);font-size:12px;line-height:1.8}footer span{display:flex;align-items:center;gap:8px}.swatch{width:12px;height:12px;background:var(--accent)}.swatch.ink{background:var(--ink)}.swatch.paper{background:#f1ebe1;border:1px solid #ded6c9}
+    @media(max-width:680px){main{padding:30px 20px}.intro{align-items:flex-start;gap:24px}.hero{width:80px;height:80px}.intro h2{font-size:23px}.tests{grid-template-columns:1fr}.sample{padding:26px}header span{display:none}}
+  </style>
+</head>
+<body>
+  <!-- Context: a Codex plugin for local editable design artifacts. One final direction, using the existing SVG asset pipeline. -->
+  <!-- Reasoning: a single open canvas frame and a lifted vermilion selection corner. No feature collage, lettering, sparkle, gradient, or borrowed brand mark. -->
+  <main>
+    <header><h1>codex design</h1><span>ICON · 01</span></header>
+    <section class="intro">
+      <img class="hero" src="../source/assets/icon.svg" alt="codex design 图标">
+      <div><h2>正在成形的画布</h2><p>一个开放画框，一处朱橙选择角。暖纸与深墨构成主体，让“选择、构建、设计”成为同一个简单动作。</p></div>
+    </section>
+    <section class="tests" aria-label="实际尺寸与背景检查">
+      <article class="sample"><h3>浅色背景 · 实际像素</h3><div class="sizes">
+        <div class="size"><img src="../source/assets/icon.svg" width="16" height="16" alt="16像素图标"><span>16 px</span></div>
+        <div class="size"><img src="../source/assets/icon.svg" width="32" height="32" alt="32像素图标"><span>32 px</span></div>
+        <div class="size"><img src="../source/assets/icon.svg" width="64" height="64" alt="64像素图标"><span>64 px</span></div>
+        <div class="size"><img src="../source/assets/icon.svg" width="96" height="96" alt="96像素图标"><span>96 px</span></div>
+      </div><div class="chip"><img src="../source/assets/icon.svg" alt="">codex design</div></article>
+      <article class="sample dark"><h3>深色背景 · 实际像素</h3><div class="sizes">
+        <div class="size"><img src="../source/assets/icon.svg" width="16" height="16" alt="16像素图标"><span>16 px</span></div>
+        <div class="size"><img src="../source/assets/icon.svg" width="32" height="32" alt="32像素图标"><span>32 px</span></div>
+        <div class="size"><img src="../source/assets/icon.svg" width="64" height="64" alt="64像素图标"><span>64 px</span></div>
+        <div class="size"><img src="../source/assets/icon.svg" width="96" height="96" alt="96像素图标"><span>96 px</span></div>
+      </div><div class="chip"><img src="../source/assets/icon.svg" alt="">codex design</div></article>
+    </section>
+    <footer><span><i class="swatch paper"></i>暖纸 #F1EBE1</span><span><i class="swatch ink"></i>深墨 #282720</span><span><i class="swatch"></i>朱橙 #D96839</span></footer>
+  </main>
+</body>
+</html>

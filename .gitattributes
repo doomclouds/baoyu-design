@@ -1,0 +1,5 @@
+# Keep the generated plugin byte-for-byte identical when installed from GitHub.
+/codex-plugins/** text eol=lf
+/codex-plugins/**/*.png -text
+/codex-plugins/codex-design/** -text
+/.agents/plugins/marketplace.json text eol=lf

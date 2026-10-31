@@ -3,6 +3,9 @@
   "version": "2.4.1",
   "private": true,
   "scripts": {
-    "test": "node --test 'archive/baoyu-design/agents/tests/*.test.mjs'"
+    "test": "node --test 'archive/baoyu-design/agents/tests/*.test.mjs'",
+    "build:codex-plugin": "node codex-plugins/build.mjs",
+    "check:codex-plugin": "node codex-plugins/build.mjs --check",
+    "test:codex-plugin": "node --test codex-plugins/tests/*.test.mjs"
   }
 }

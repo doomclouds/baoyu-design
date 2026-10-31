@@ -1,0 +1,89 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+export async function renameWithRetry(source, destination, {platform = process.platform, rename = fs.rename, pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)), delays = [10, 20, 40, 80, 160, 250, 400, 600, 800]} = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { await rename(source, destination); return; }
+    catch (error) {
+      if (platform !== 'win32' || !['EACCES', 'EPERM', 'EBUSY'].includes(error.code) || attempt >= delays.length) throw error;
+      await pause(delays[attempt]);
+    }
+  }
+}
+
+export function sameCommentRevision(current, captured) {
+  const revision = thread => JSON.stringify((thread.messages || []).filter(message => (message.from || message.author?.kind) === 'user').map(message => ({id: message.id, text: message.text, at: message.at, editedAt: message.editedAt})));
+  return current?.status === 'open' && current.agent?.status === 'pending' && current.agent.sentAt === captured.agent?.sentAt && revision(current) === revision(captured);
+}
+
+const indexNames = { 'codex-slides': 'deck.json', 'codex-design': 'canvas.json', 'codex-design-system': 'design-system.json' };
+const editorKinds = { 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard' };
+const safe = value => typeof value === 'string' && value.length <= 220 && !value.startsWith('/') && !value.includes('\\') && value.split('/').every(p => p && p !== '.' && p !== '..' && !p.startsWith('.'));
+async function readJson(file) { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } }
+async function exists(root, relative) {
+  if (!safe(relative)) return false;
+  try { const base = await fs.realpath(root); const file = path.join(base, ...relative.split('/')); return await fs.realpath(file) === file && (await fs.lstat(file)).isFile(); } catch { return false; }
+}
+async function files(root, relative = '', result = []) {
+  if (result.length >= 1024) return result;
+  let entries; try { entries = await fs.readdir(path.join(root, relative), {withFileTypes: true}); } catch { return result; }
+  for (const entry of entries) {
+    const name = relative ? relative + '/' + entry.name : entry.name;
+    if (!safe(name) || entry.isSymbolicLink() || entry.name === 'node_modules' || entry.name === '_blobs') continue;
+    if (entry.isDirectory()) await files(root, name, result);
+    else if (entry.isFile()) result.push(name);
+    if (result.length >= 1024) break;
+  }
+  return result;
+}
+
+export async function annotationContext(root, skill) {
+  const project = path.resolve(root);
+  if (skill === 'codex-dashboard') {
+    const names = await files(path.join(root, 'db/files'));
+    const objects = [];
+    for (const name of names.filter(name => name.endsWith('.json'))) {
+      const doc = await readJson(path.join(root, 'db/files', name));
+      if (typeof doc?.text !== 'string') continue;
+      const id = name.slice(0, -5);
+      objects.push({id, file: 'db/files/' + name, name: id, keys: [id]});
+    }
+    const meta = await readJson(path.join(root, 'db/dash/meta.json'));
+    return {skill, projectRoot: project, title: meta?.title || path.basename(root), indexFile: 'db/dash/meta.json', objects};
+  }
+  const indexName = indexNames[skill];
+  const directory = path.join(root, 'project');
+  const index = await readJson(path.join(directory, indexName));
+  const objects = [];
+  if (skill === 'codex-slides') {
+    const ids = Array.isArray(index?.order) ? index.order : [];
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || !await exists(directory, 'slides/' + id + '.html')) continue;
+      objects.push({id, file: 'project/slides/' + id + '.html', name: 'Slide ' + (i + 1) + ' · ' + id, page: i + 1, keys: [id]});
+    }
+  } else if (skill === 'codex-design') {
+    const boards = index?.boards && typeof index.boards === 'object' ? index.boards : {};
+    const order = [...new Set([...(Array.isArray(index?.order) ? index.order : []), ...Object.keys(boards)])];
+    for (const id of order) {
+      if (!Object.hasOwn(boards, id) || !await exists(directory, id)) continue;
+      const board = boards[id];
+      objects.push({id, file: 'project/' + id, name: typeof board.title === 'string' ? board.title : id, ...(typeof board.page === 'string' ? {page: board.page} : {}), keys: [id]});
+    }
+  } else {
+    for (const name of await files(directory)) objects.push({id: name, file: 'project/' + name, name, keys: [name, 'guidance:' + name]});
+  }
+  return {skill, projectRoot: project, title: typeof index?.title === 'string' ? index.title : path.basename(root), indexFile: 'project/' + indexName, objects};
+}
+
+export async function serveCodexAnnotation(request, response, rest, root, skill, moduleUrl) {
+  const route = rest.replace(/^\//, '');
+  if (route !== '__codex/annotations.js' && route !== '__codex/annotation-context' && route !== '__codex/editor-session') return false;
+  if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405, {Allow: 'GET, HEAD'}).end(); return true; }
+  let body, type;
+  if (route.endsWith('.js')) { body = await fs.readFile(new URL('./browser-annotations.js', moduleUrl)); type = 'text/javascript; charset=utf-8'; }
+  else { body = Buffer.from(JSON.stringify(route.endsWith('/editor-session') ? {root: path.resolve(root), kind: editorKinds[skill], pid: process.pid} : await annotationContext(root, skill))); type = 'application/json; charset=utf-8'; }
+  response.writeHead(200, {'Content-Type': type, 'Content-Length': body.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'});
+  response.end(request.method === 'HEAD' ? undefined : body);
+  return true;
+}

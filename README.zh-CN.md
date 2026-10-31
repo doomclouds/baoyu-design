@@ -76,6 +76,19 @@ node skills/claude-slides/scripts/artifact.mjs list                             
 
 ---
 
+## Codex 插件：codex design
+
+`codex design` 将上面的五个技能、完整本地编辑器，以及 Codex 批注和编辑器评论联动打包在一起。
+
+```bash
+codex plugin marketplace add doomclouds/baoyu-design --ref codex/plugin
+codex plugin add codex-design@codex-design-marketplace
+```
+
+安装和使用说明见 [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md)。在 Codex 内置浏览器中可使用原生批注；编辑器自己的 **Send to agent** 将评论交给打开它的 Codex 会话。原生批注由用户确认发送。
+
+插件从本仓库的 `skills/` 在本机生成，不使用 GitHub 流水线：`npm run build:codex-plugin` 构建，`npm run check:codex-plugin` 检查产物与源码一致，`npm run test:codex-plugin` 运行插件测试。GitHub 分支直接提供已构建的插件文件。
+
 ## DeepSeek Harness 插件
 
 四个编辑器技能也做成了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，发布在 npm 上。每个插件带着本仓库发布的那份技能，连同预先构建好的编辑器，让 Claude Design 这几个编辑器跑在你的 DeepSeek Agent 上。

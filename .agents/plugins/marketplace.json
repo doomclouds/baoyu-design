@@ -1,0 +1,20 @@
+{
+  "name": "codex-design-marketplace",
+  "interface": {
+    "displayName": "codex design"
+  },
+  "plugins": [
+    {
+      "name": "codex-design",
+      "source": {
+        "source": "local",
+        "path": "./codex-plugins/codex-design"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
