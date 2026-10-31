@@ -80,6 +80,8 @@ A dashboard is written through the same script (`write-db`, `read-db`, `upload`,
 
 `codex design` bundles all five skills above, the complete local editors, and Codex annotation and editor-comment integration.
 
+Version 0.3 adds a local MCP-backed library with category navigation, a permanent library tab, unique artwork tabs, real cover previews, and Chinese/English editor UI. Artwork is stored in `~/.codex/CodexDesignLibrary`. Per-artwork native chat and the import/export/history UI are planned for later updates; existing editor comments and skill workflows remain available.
+
 See [`codex-plugins/examples/`](codex-plugins/examples/README.md) for editable showcases: a five-slide deck, the Bean Club canvas, the Nimbus design system, and a year of sample X analytics.
 
 ```bash

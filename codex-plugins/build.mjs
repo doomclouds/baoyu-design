@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adaptSkills } from './adapt-skills.mjs';
 import { adaptAnnotations } from './adapt-annotations.mjs';
+import { buildPluginAssets } from './assets.mjs';
 
 const buildRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(buildRoot);
@@ -109,7 +110,8 @@ try {
   }
   const sourceRoot = path.join(buildRoot, 'source');
   await filesUnder(sourceRoot);
-  await cp(sourceRoot, stagingRoot, { recursive: true, force: true });
+  await cp(sourceRoot, stagingRoot, { recursive: true, force: true, filter: source =>
+    !['server/spike.mjs', 'server/spike.html'].includes(path.relative(sourceRoot, source).split(path.sep).join('/')) });
   await cp(path.join(repoRoot, 'NOTICE.md'), path.join(stagingRoot, 'NOTICE.md'));
   const noticePath = path.join(stagingRoot, 'NOTICE.md');
   const notice = await readFile(noticePath, 'utf8');
@@ -119,6 +121,7 @@ try {
   await normalizeText(stagingRoot);
   await adaptSkills(stagingRoot);
   await adaptAnnotations(stagingRoot);
+  await buildPluginAssets(stagingRoot);
   const next = await digestFiles(stagingRoot);
   await writeFile(path.join(stagingRoot, markerName), `${JSON.stringify({ generator, version: 1, ...next }, null, 2)}\n`);
   const unchanged = previous !== null && JSON.stringify(previous) === JSON.stringify(next);

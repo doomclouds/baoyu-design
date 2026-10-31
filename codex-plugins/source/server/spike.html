@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>codex design · 宿主验证</title>
+<style>html,body{margin:0;min-height:100%;background:#f7f6f2;color:#292a28;font:14px/1.65 system-ui,sans-serif}main{max-width:840px;margin:auto;padding:40px}h1{margin:0 0 12px;font-size:28px;font-weight:600}p{color:#62645e}pre{white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #dcded6;padding:20px;border-radius:12px;background:#fff}small{color:#74766f}</style></head>
+<body><main><h1>codex design</h1><p>原生入口与文件容器验证。此页面不会创建聊天、发送消息或启动模型。</p><pre id="state">MCP UI resource 已加载，等待宿主初始化。</pre><small>请观察宿主是否提供独立对话浮层和项目选择。页面本身不绘制这些控件。</small></main>
+<script>
+// Minimal MCP Apps initialization for this dependency-free discovery page only.
+// The production UI uses the official App + OpenAIExtensions browser SDKs.
+const state = document.getElementById('state');
+let host = null, input = null, result = null;
+function render(){state.textContent=JSON.stringify({host,toolInput:input,toolResult:result},null,2);}
+window.addEventListener('message',event=>{
+  if(event.source!==window.parent||!event.data||event.data.jsonrpc!=='2.0')return;
+  const message=event.data;
+  if(message.id===1){host=message.error?{error:message.error}:{hostInfo:message.result?.hostInfo,hostCapabilities:message.result?.hostCapabilities,hostContextKeys:Object.keys(message.result?.hostContext??{})};window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*');render();}
+  else if(message.method==='ui/notifications/tool-input'){input=message.params?.arguments;render();}
+  else if(message.method==='ui/notifications/tool-result'){result=message.params?.structuredContent;render();}
+  else if(message.method==='ping'&&message.id!==undefined)window.parent.postMessage({jsonrpc:'2.0',id:message.id,result:{}},'*');
+});
+window.parent.postMessage({jsonrpc:'2.0',id:1,method:'ui/initialize',params:{protocolVersion:'2026-01-26',appInfo:{name:'codex-design-container-probe',version:'0.3.0-spike'},appCapabilities:{}}},'*');
+</script></body></html>

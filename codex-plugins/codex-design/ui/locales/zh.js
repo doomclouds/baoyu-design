@@ -1,0 +1,18 @@
+export default {
+  editorLanguagePending: '重新打开编辑器后将应用新语言。', reopenEditorLanguage: '重新打开编辑器', editorLanguageConfirm: '请先确认编辑器已保存修改。重新打开会加载编辑器，未保存的修改可能丢失。', editorLanguageSaved: '我已确认修改已保存。', thumbnailContentReference: '内容参考预览，未运行动态图表。',
+  appName: 'Codex Design', library: '作品库', create: '创建', all: '全部', slides: '幻灯片', design: '设计', 'design-system': '设计系统', dashboard: '数据看板', recent: '最近', trash: '回收站', favorites: '收藏', settings: '设置',
+  libraryNavigation: '设计作品库', workspaceTabs: '已打开的作品', recentDesigns: '最近的作品', openDesign: '打开{{title}}', closeDesign: '关闭{{title}}', favoriteDesign: '收藏{{title}}', unfavoriteDesign: '取消收藏{{title}}', moreActions: '{{title}}的操作',
+  search: '搜索作品', searchKind: '搜索{{kind}}', count: '{{count}} 个作品', count_other: '{{count}} 个作品', name: '名称', project: '关联项目', lastEdited: '上次编辑', noProject: '未关联项目',
+  sort: '排序作品', sortUpdated: '上次编辑', sortCreated: '创建时间', sortName: '名称顺序', gridView: '网格视图', listView: '列表视图', newestFirst: '最新在前',
+  loadingLibrary: '正在加载作品…', libraryUnavailable: '作品库尚未连接', bridgeUnavailable: '请从已连接的工作区打开 Codex Design，查看你的作品。', retry: '重试',
+  emptyTitle: '给下一个想法，留个位置。', emptyBody: '创建一件作品，把内容、编辑器和编辑对话留在一起。', emptyFavorites: '喜欢的作品，就放这里。', emptyFavoritesBody: '收藏一件作品，下次更快找到它。', emptySearch: '没有找到匹配的作品', emptySearchBody: '换个名称试试，或清除搜索。', clearSearch: '清除搜索', emptyTrash: '回收站是空的', emptyTrashBody: '移入回收站的作品可以在这里恢复。',
+  newDesign: '新建作品', newKind: '新建{{kind}}', titleLabel: '名称', titlePlaceholder: '为作品起个名字', kindLabel: '作品类型', createDesign: '创建作品', cancel: '取消', rename: '重命名', copy: '创建副本', trashAction: '移入回收站', restore: '恢复',
+  renameTitle: '重命名作品', renameSubmit: '保存名称', copyTitle: '创建副本', copySubmit: '创建副本', copyName: '{{title}} — 副本', trashTitle: '将这件作品移入回收站？', trashBody: '“{{title}}”将从作品库中移出，你可以在回收站中恢复它。', restoreTitle: '恢复作品', created: '作品已创建', renamed: '名称已更新', copied: '副本已创建', trashed: '已移入回收站', restored: '作品已恢复', favoriteSaved: '收藏已更新',
+  missing: '未找到作品文件', invalid: '需要检查', missingBody: '找不到这件作品的文件。恢复文件位置后即可打开。', invalidBody: '这件作品需要检查后才能打开编辑器。',
+  loadingEditor: '正在打开作品…', editorUnavailable: '暂时无法打开编辑器', openEditorAgain: '重新打开', editorFrame: '{{title}}编辑器', editorHeading: '作品编辑器', editorExternal: '在新窗口打开编辑器', savedByEditor: '修改由编辑器自动保存', closeKeepsRunning: '关闭此标签页不会停止正在进行的 AI 工作。',
+  boundConversation: '编辑对话', minimizeConversation: '收起编辑对话', expandConversation: '展开编辑对话', conversationFor: '{{title}}的编辑对话', conversationUnavailable: '编辑对话暂不可用', conversationUnavailableBody: '当前环境尚未提供这件作品的绑定编辑对话。', conversationUnbound: '这件作品尚未绑定编辑对话。', conversationLoading: '正在加载对话…', noMessages: '这件作品的编辑对话已就绪。', continueDesign: '继续讨论这件作品…', send: '发送消息', sending: '正在发送…', thinking: '正在处理这件作品…', conversationFailed: '上次请求需要检查。', conversationIdle: '仅绑定这件作品', conversationReference: '其他聊天可以引用这件作品，修改留在此标签页。', noSendCapability: '当前环境不支持向绑定编辑对话发送消息。',
+  language: '语言', languageSystem: '跟随系统', languageEnglish: 'English', languageChinese: '简体中文', languageHelp: '只切换界面语言，作品内容和对话保留原来的语言。', done: '完成',
+  justNow: '刚刚', unknownDate: '—', actionFailed: '暂时无法完成此操作。', unsupported: '当前环境尚不支持此操作。', refresh: '刷新作品库', dismiss: '关闭提示', closeDialog: '关闭对话框',
+  slidesDescription: '演示文稿与叙事', designDescription: '画布与交互原型', systemDescription: '样式、组件与使用规范', dashboardDescription: '数据与它背后的故事',
+  reorderLeft: '标签页左移', reorderRight: '标签页右移', tabKeyboardHelp: '使用方向键切换标签页；按住 Alt+Shift 和方向键调整作品顺序。', libraryEmptyFooter: '你的作品，都在这里。', restoredTabMissing: '这件作品已不在作品库中。',
+};

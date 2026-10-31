@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "packages": {
+    "@cfworker/json-schema@4.1.4": {
+      "file": "cfworker-json-schema-4.1.4.txt",
+      "license": "MIT",
+      "gitHead": "e45acacf25e083ac1b4b09bdd940d27c33bffcc5",
+      "source": "https://github.com/cfworker/cfworker/blob/e45acacf25e083ac1b4b09bdd940d27c33bffcc5/LICENSE.md",
+      "npmIntegrity": "sha512-20rPE8EX0dSg6JGOVe31HpqsLYZTDSlcFJZA5mpZqQxcZ71vh/SXCMX+UuHO1mMcZBDKeb752z+3L8IWa+0Svg==",
+      "sha256": "0ecbb9659f1468cecfc2f675f30158f8910ab40fa7e7ed6e26665525da17d258"
+    }
+  }
+}

@@ -6,6 +6,8 @@
     "test": "node --test 'archive/baoyu-design/agents/tests/*.test.mjs'",
     "build:codex-plugin": "node codex-plugins/build.mjs",
     "check:codex-plugin": "node codex-plugins/build.mjs --check",
-    "test:codex-plugin": "node --test codex-plugins/tests/*.test.mjs"
+    "test:codex-plugin": "node --test codex-plugins/tests/*.test.mjs",
+    "verify:codex-plugin": "node codex-plugins/verify-installed.mjs",
+    "verify:codex-plugin-portable": "node codex-plugins/verify-portable.mjs"
   }
 }

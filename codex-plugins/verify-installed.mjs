@@ -7,7 +7,7 @@ import { resolveCodexRunner } from './source/scripts/bridge-core.mjs';
 
 const cwd = path.resolve(process.argv[2] || process.cwd());
 const { version } = JSON.parse(await readFile(new URL('./source/plugin.json', import.meta.url), 'utf8'));
-const runner = resolveCodexRunner();
+const runner = resolveCodexRunner({ codexPath: process.env.CODEX_APP_RUNTIME_CLI_PATH || undefined });
 const child = spawn(runner.command, [...runner.args, 'app-server', '--stdio'], {
   stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: false,
 });
@@ -63,8 +63,16 @@ try {
   if (pluginRoots.length !== 1) throw new Error('Codex resolved these plugin skills from different installed packages.');
   const installed = JSON.parse(await readFile(path.join(pluginRoots[0], 'plugin.json'), 'utf8'));
   if (installed.name !== 'codex-design' || installed.version !== version) throw new Error(`Expected installed codex-design ${version}, found ${installed.name} ${installed.version}.`);
+  const status = await rpc('mcpServerStatus/list', { limit: 100 });
+  const libraryServer = status.data?.find(server => server.pluginId === 'codex-design@codex-design-marketplace');
+  if (!libraryServer || libraryServer.toolsError) throw new Error(`The installed library MCP did not load: ${JSON.stringify(libraryServer?.toolsError ?? 'missing plugin server')}`);
+  const libraryTools = Object.values(libraryServer.tools || {});
+  const globalEntry = libraryTools.find(tool => tool.name === 'DesignLibrary');
+  if (!globalEntry?._meta?.['openai/ui']?.entrypoints?.some(entry => entry.type === 'global')) throw new Error('Codex did not discover the global library entrypoint.');
+  if (globalEntry._meta.ui.resourceUri !== 'ui://codex-design/library') throw new Error('The installed library UI resource URI is incorrect.');
   console.log(JSON.stringify({ verified: true, pluginVersion: installed.version, pluginRoot: pluginRoots[0], codex: initialized.userAgent ?? null, cwd,
-    skills: skills.map(({ name, path: skillPath, enabled, scope }) => ({ name, path: skillPath, enabled, scope })), errors }, null, 2));
+    skills: skills.map(({ name, path: skillPath, enabled, scope }) => ({ name, path: skillPath, enabled, scope })),
+    mcp: { name: libraryServer.name, pluginId: libraryServer.pluginId, tools: libraryTools.map(tool => tool.name), globalEntrypoint: true, toolsError: libraryServer.toolsError ?? null }, errors }, null, 2));
 } finally {
   for (const call of pending.values()) clearTimeout(call.timer);
   lines.close();

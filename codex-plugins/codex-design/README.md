@@ -1,6 +1,8 @@
 # codex design
 
-Codex 桌面版的本地设计插件。包含 baoyu-design 的五个现役技能、四种本地编辑器，以及 Codex 运行入口。显示名为 **codex design**，插件标识为 `codex-design`。
+Codex 桌面版的本地设计插件。**0.3 基础版**提供全局作品库、中英文界面、四种可编辑作品和五个设计技能。显示名为 **codex design**，插件标识为 `codex-design`。
+
+作品库按幻灯片、设计画布、设计系统和仪表盘分类，在作品 Tab 中打开原有编辑器。浏览、切换 Tab、新建空白作品和手工编辑都不启动模型。每件作品独立绑定原生编辑聊天的功能暂未启用；库界面隐藏不可用的大聊天面板，已有技能和评论 worker 工作流继续保留。
 
 | 技能 | 产物 |
 |---|---|
@@ -10,15 +12,15 @@ Codex 桌面版的本地设计插件。包含 baoyu-design 的五个现役技能
 | `codex-dashboard` | CSV/TSV/JSON 数据驱动的看板和 Sources 数据溯源 |
 | `codex-dataviz` | 图表设计指南及配色校验器 |
 
-五个技能统一使用 `codex-` 前缀，保持与已有产物文件格式兼容。插件不需要 DeepSeek Harness，也不需要 DeepSeek 或 Anthropic API key。所有编辑器都在本机 `127.0.0.1` 运行，产物保存在你选择的工作项目中。
+五个技能统一使用 `codex-` 前缀，保持与已有产物文件格式兼容。插件不需要 DeepSeek Harness，也不需要 DeepSeek 或 Anthropic API key。作品库默认保存在全局 `~/.codex/CodexDesignLibrary`，按四种类型存放，不随当前聊天项目切换。技能 CLI 仍可处理你指定的项目目录。四种编辑器都在本机 `127.0.0.1` 运行。
 
 ## 环境
 
 - 支持本地插件的 Codex 桌面版。
-- PATH 中可用的 **Node.js 22 或更新版本**。编辑器已预构建，无需 `npm install`。
+- PATH 中可用的 **Node.js 22 或更新版本**。GitHub 分发包已预构建并包含所需运行时代码，安装插件后无需运行 `npm install`。
 - 评论设计 worker 使用 Codex 平台的原生子代理工具，由当前聊天选择、复用或恢复。原生批注使用支持相应能力的 Codex 内置浏览器。
 
-`requires_local_executor` 已启用；这是需要本地执行器的桌面插件。它不提供远程 MCP 服务，不包含空 MCP 配置。
+`requires_local_executor` 已启用；这是需要本地执行器的桌面插件。插件包含本地 **stdio MCP 服务**，由 Codex 以 `node ${PLUGIN_ROOT}/server/index.mjs` 启动，工作目录为 `${PLUGIN_ROOT}`。发布包不依赖维护者的用户名、源码目录或临时目录，也不启动独立模型 daemon。
 
 ## 安装
 
@@ -29,11 +31,25 @@ codex plugin marketplace add doomclouds/baoyu-design --ref codex/plugin
 codex plugin add codex-design@codex-design-marketplace
 ```
 
-然后重启桌面应用，在插件目录核对 **codex design** 已安装并启用，再新建聊天。命令安装成功与当前聊天实际加载是两个检查步骤。
+在插件目录核对 **codex design** 已安装并启用，再打开它的全局工作区入口。新增或更新 MCP 入口后，Codex 可能需要重新加载插件或重新打开桌面应用；旧聊天也可能仍使用旧缓存。命令安装成功、MCP 已加载与当前窗口实际显示入口是不同检查步骤。
 
 marketplace 位于 `.agents/plugins/marketplace.json`；`source.path` 是相对于仓库根目录的 `./codex-plugins/codex-design`，不是相对于 `.agents/plugins/` 的路径。
 
 ## 使用
+
+### 全局作品库
+
+从 Codex 的全局导航或插件页打开 **codex design**。左侧选择分类，右侧浏览作品；新建、搜索、收藏、重命名、复制、移入回收站和恢复均保存在本机。打开作品会复用该作品唯一的 Tab；关闭 Tab 不删除作品，库的 Tab 状态会保留。
+
+作品在四种原有编辑器中编辑，评论仍位于编辑器原有位置。库中的浏览和编辑不会自动创建、恢复或绑定聊天。需要 AI 设计时，先在 Codex 聊天中使用下方技能；需要处理编辑器评论时，使用后文的原生 worker 流程。0.3 不提供库内的独立聊天发送、项目聊天选择器或聊天历史面板。
+
+导入、导出及内容恢复点只包含可编辑作品和必要素材。聊天、评论、聊天绑定、任务队列、执行历史及运行端口不会随导出包转移；复制和导入得到新作品身份。其他聊天可通过作品资源引用只读查看，修改源作品仍应回到其作品 Tab 或指定的本地目录。
+
+这些内容包与恢复点接口已提供；0.3 基础版暂不提供导入、导出和历史恢复的界面入口，后续小版本继续补齐。
+
+作品库和四种编辑器的控件、菜单、对话框、状态及错误使用 i18next 提供中英文界面：系统语言为中文时使用中文，其余使用英文。作品内容、用户评论、聊天内容、技能提示词和 CLI/JSON 协议不自动翻译。
+
+### 在聊天中使用技能
 
 在工作项目里让 Codex 使用插件，例如：
 
@@ -42,7 +58,7 @@ marketplace 位于 `.agents/plugins/marketplace.json`；`source.path` 是相对�
 - “用 codex design，为这个组件库整理一套设计系统。”
 - “用 codex design，把这个 CSV 做成带来源溯源的仪表盘。”
 
-Codex 会按技能创建本地文件并给出编辑器链接。用户在编辑器中的修改与 Codex 修改同一份文件。技能的实际 CLI 入口是 `skills/<skill>/scripts/codex-artifact.mjs`；上游 `artifact.mjs` 保留为运行时实现。
+Codex 会按技能在指定目录创建本地文件并给出编辑器链接。用户在编辑器中的修改与 Codex 修改同一份文件。项目目录中的作品不会因为安装 0.3 就自动搬进全局库；需要进入全局库时使用内容导入。技能的实际 CLI 入口是 `skills/<skill>/scripts/codex-artifact.mjs`；上游 `artifact.mjs` 保留为运行时实现。
 
 ```powershell
 node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" open "<project>/designs/q3-review"
@@ -51,6 +67,8 @@ node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" stop "<
 ```
 
 ## 原生批注和设计 worker
+
+这部分是已有的编辑器评论工作流，独立于尚未启用的“一作品一原生编辑聊天”功能。库 MCP 不替代主聊天选择、恢复或创建原生子代理。
 
 两种入口分别处理：
 
@@ -91,16 +109,25 @@ node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" worker-
 本目录是生成包。维护源在仓库根的 `skills/` 和 `codex-plugins/source/`；不要手工修改生成文件。
 
 ```powershell
-node codex-plugins/build.mjs
-node codex-plugins/build.mjs --check
+npm ci --prefix codex-plugins
+npm run build:codex-plugin
+npm run check:codex-plugin
 npm run test:codex-plugin
 ```
 
-构建顺序：复制五个根技能 → 复制插件 source → 复制根 NOTICE → 适配 Codex 技能 → 适配原生批注。根 `skills/` 是唯一技能上游，DeepSeek Harness 包不参与构建。构建与测试在本机执行；GitHub 用于源码和插件分发，生成包随仓库提交，以便直接安装。
+这些命令在仓库根目录执行；`npm ci` 只供维护者构建和测试源码使用。构建复制五个根技能、插件 source 和根 NOTICE，完成技能与原生批注适配，再打包 MCP 服务、作品库 UI 和编辑器本地化资源。根 `skills/` 是唯一技能上游，DeepSeek Harness 包不参与构建。构建与测试在本机执行，不使用 GitHub 流水线；GitHub 用于源码和插件分发，生成包随仓库提交，以便直接安装。
+
+AGP 的 `mcp.json` 必须带顶层 `$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"`；缺少时 Codex 会忽略该 MCP 配置。`${PLUGIN_ROOT}` 由宿主解析为实际安装目录，不应替换成维护者机器上的绝对路径。
 
 `.generated-manifest.json` 记录生成文件的 SHA256。再次构建时，已有输出含未知文件或被手工修改会报错，避免覆盖用户内容。先把这些改动保存到 source 或移到其他目录，再重新构建。`--check` 只检查生成结果是否与源一致，不替换已生成包。
 
 更新来源目录后重新构建，再通过桌面应用刷新或重新安装插件并开启新聊天。Codex 从安装缓存加载插件，修改仓库源文件不代表当前聊天已经加载了更新。
+
+## 已验证与待验证
+
+本机 Codex Desktop runtime 已通过安装探针验证：本地插件的 stdio 服务可以启动，宿主 catalog 能发现全局 `DesignLibrary` 和文件 `DesignFile` 入口及 UI 资源。缺少 AGP MCP schema 的失败原因也已在实际加载日志中确认。这证明入口可从本地 MCP 发现，不代表当前打开的桌面窗口已经刷新或完成原生 UI 渲染验收。
+
+源码包含作品库、MCP 服务、四种编辑器本地化和既有评论运行时的本地检查。每次更新仍需执行构建、生成一致性检查和测试，并在实际安装版本中核对作品打开、编辑与评论流程。独立绑定聊天、库内发送消息及宿主原生项目选择桥尚未启用；不会用共享聊天或独立后台模型会话代替。
 
 ## 能力边界与许可
 
