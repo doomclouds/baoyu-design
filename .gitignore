@@ -147,3 +147,19 @@ vite.config.ts.timestamp-*
 .claude/settings.local.json
 
 designs/
+
+# Local code intelligence and extracted host sources
+/.codegraph/
+/codex-plugins/research/host-*/
+
+# One-off local probes and browser acceptance artifacts
+/codex-plugins/research/create-acceptance-library.mjs
+/codex-plugins/research/mcp-extension-spike.md
+/codex-plugins/research/native-catalog.mjs
+/codex-plugins/research/native-sandbox-acceptance.mjs
+/codex-plugins/research/native-sandbox-layout-QA.md
+/codex-plugins/research/native-sandbox-layout.mjs
+/codex-plugins/research/native-zh-values-*.json
+/codex-plugins/research/slides-pdf-baseline.mjs
+/codex-plugins/research/slides-pdf-hook-evidence-*.json
+/codex-plugins/research/ui-menu-qa.mjs
