@@ -1,5 +1,12 @@
 # Native Codex Design shell integration proposal
 
+> Historical investigation: the user later replaced the whole-row-removal
+> target with a visible, named, nonclosable native home tab plus a subtle
+> separator/compact plugin chrome. The native shared-middle-sidebar request is
+> explicitly deferred. Current implementation and runtime evidence are recorded
+> in [ACCEPTANCE-0.5.1.md](../ACCEPTANCE-0.5.1.md). Do not treat the older removal
+> proposal below as the selected product direction or a completed host patch.
+
 ## Status and scope
 
 This is a reviewable proposal, not an executed fix. The user's target is a

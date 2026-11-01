@@ -7,6 +7,7 @@ import { readJson, alive } from '../scripts/bridge-core.mjs';
 import { verifyEditorInstance } from '../scripts/artifact-command.mjs';
 import { createArtifactThumbnail } from '../library/thumbnail.mjs';
 import { createEditRequestStore } from '../library/edit-requests.mjs';
+import { createExportStore } from '../library/export-store.mjs';
 import { readJson as safeJson } from '../library/safety.mjs';
 import { createEditorTransport, editorRequestUrl, isValidBase64 } from './editor-transport.mjs';
 import { createNativeComments } from './native-comments.mjs';
@@ -93,6 +94,7 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
   };
   const transport = createEditorTransport({ editorFor });
   const requests = createEditRequestStore({ store });
+  const exports = createExportStore({ store });
   const nativeComments = createNativeComments({ requests, transport, editorFor });
   const modelRequest = async requestId => {
     const value = await requests.requestForModel(idOf(requestId));
@@ -149,6 +151,9 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
       if (action === 'conversation.send') throw failure(UNSUPPORTED_CHAT_CODE, 'The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.');
       if (!ACTIONS.includes(action)) throw failure('UNKNOWN_ACTION', 'Unsupported library action.');
       switch (action) {
+        case 'export.locations': return await exports.locations();
+        case 'export.listDirectory': return await exports.listDirectory(payload);
+        case 'export.save': return await exports.save(payload);
         case 'library.list': return await store.list({ kind: payload.kind === undefined ? undefined : kindOf(payload.kind), query: typeof payload.query === 'string' ? payload.query.slice(0, 200) : '', favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
         case 'library.get': return await store.get(idOf(payload.id));
         case 'thumbnail.get': return await createArtifactThumbnail(store, idOf(payload.id));

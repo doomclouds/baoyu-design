@@ -801,7 +801,7 @@ var init_library = __esm({
         const root = await this._artifactPath(record3);
         const files = await collectContent(root, record3.kind, this.limits);
         const native4 = validateFiles(record3.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native4.title, files: files.map(({ path: path11, encoding, data }) => ({ path: path11, encoding, data })) };
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native4.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -1737,18 +1737,18 @@ var init_edit_request_dispatch = __esm({
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail3 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
-  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail3();
+  const fail4 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail4();
   try {
     const url3 = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url3.protocol) || url3.username || url3.password) throw fail3();
+    if (!["http:", "https:"].includes(url3.protocol) || url3.username || url3.password) throw fail4();
     const response = await fetch(url3, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
-    if (!response.ok) throw fail3();
+    if (!response.ok) throw fail4();
     const session = await response.json();
-    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail3();
+    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail4();
     return session;
   } catch {
-    throw fail3();
+    throw fail4();
   }
 }
 var init_artifact_command = __esm({
@@ -2638,10 +2638,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path11) {
-  if (!path11)
+function getElementAtPath(obj, path12) {
+  if (!path12)
     return obj;
-  return path11.reduce((acc, key) => acc?.[key], obj);
+  return path12.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -2981,11 +2981,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path11, issues) {
+function prefixIssues(path12, issues) {
   return issues.map((iss) => {
     var _a5;
     (_a5 = iss).path ?? (_a5.path = []);
-    iss.path.unshift(path11);
+    iss.path.unshift(path12);
     return iss;
   });
 }
@@ -3447,16 +3447,16 @@ function flattenError(error113, mapper = (issue3) => issue3.message) {
 }
 function formatError(error113, mapper = (issue3) => issue3.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error114, path11 = []) => {
+  const processError = (error114, path12 = []) => {
     for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path11, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path12, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else {
-        const fullpath = [...path11, ...issue3.path];
+        const fullpath = [...path12, ...issue3.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue3));
         } else {
@@ -3495,17 +3495,17 @@ function formatError(error113, mapper = (issue3) => issue3.message) {
 }
 function treeifyError(error113, mapper = (issue3) => issue3.message) {
   const result = { errors: [] };
-  const processError = (error114, path11 = []) => {
+  const processError = (error114, path12 = []) => {
     var _a5;
     for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path11, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path12, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else {
-        const fullpath = [...path11, ...issue3.path];
+        const fullpath = [...path12, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -3544,8 +3544,8 @@ function treeifyError(error113, mapper = (issue3) => issue3.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path11 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path11) {
+  const path12 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path12) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -20683,13 +20683,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path11 = ref.slice(1).split("/").filter(Boolean);
-  if (path11.length === 0) {
+  const path12 = ref.slice(1).split("/").filter(Boolean);
+  if (path12.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path11[0] === defsKey) {
-    const key = path11[1] === void 0 ? void 0 : decodeJSONPointerSegment(path11[1]);
+  if (path12[0] === defsKey) {
+    const key = path12[1] === void 0 ? void 0 : decodeJSONPointerSegment(path12[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -25117,9 +25117,9 @@ var rev2026Codec = {
     });
     const parsed = buildSchemas2026().RequestMetaEnvelopeSchema.safeParse(meta5);
     if (!parsed.success) for (const issue3 of parsed.error.issues) {
-      const path11 = issue3.path.map(String);
-      const key = path11.length > 0 ? path11.join(".") : "_meta";
-      if (path11.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
+      const path12 = issue3.path.map(String);
+      const key = path12.length > 0 ? path12.join(".") : "_meta";
+      if (path12.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
       issues.push({
         key,
         problem: issue3.message
@@ -25446,17 +25446,17 @@ function scanXMcpHeaderDeclarations(inputSchema) {
   const declarations = [];
   const seenLower = /* @__PURE__ */ new Map();
   let numberFault;
-  const visit2 = (node2, path11, reachable) => {
+  const visit2 = (node2, path12, reachable) => {
     if (node2 === null || typeof node2 !== "object") return void 0;
     const schema = node2;
     if (X_MCP_HEADER_KEY in schema) {
-      if (!reachable || path11.length === 0) return `${pathName(path11)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
+      if (!reachable || path12.length === 0) return `${pathName(path12)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
       const raw = schema[X_MCP_HEADER_KEY];
-      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path11)}: x-mcp-header MUST be a non-empty string`;
-      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path11)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
+      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path12)}: x-mcp-header MUST be a non-empty string`;
+      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path12)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
       const type = typeof schema.type === "string" ? schema.type : void 0;
       if (type === void 0 || !PERMITTED_X_MCP_HEADER_TYPES.has(type)) {
-        const fault$1 = `${pathName(path11)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
+        const fault$1 = `${pathName(path12)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
         if (type !== "number") return fault$1;
         numberFault ??= fault$1;
       }
@@ -25465,14 +25465,14 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (prior !== void 0) return `x-mcp-header '${raw}' is not case-insensitively unique (also declared as '${prior}')`;
       seenLower.set(lower, raw);
       declarations.push({
-        path: path11,
+        path: path12,
         headerName: raw,
         type
       });
     }
     const properties = schema.properties;
     if (properties !== null && typeof properties === "object") for (const [key, child] of Object.entries(properties)) {
-      const fault$1 = visit2(child, [...path11, key], reachable);
+      const fault$1 = visit2(child, [...path12, key], reachable);
       if (fault$1 !== void 0) return fault$1;
     }
     for (const k of NON_REACHABLE_SUBSCHEMA_KEYWORDS) {
@@ -25480,7 +25480,7 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (sub === void 0) continue;
       const branches = Array.isArray(sub) ? sub : sub !== null && typeof sub === "object" && OBJECT_VALUED_SUBSCHEMA_KEYWORDS.has(k) ? Object.values(sub) : [sub];
       for (const branch of branches) {
-        const fault$1 = visit2(branch, [...path11, `<${k}>`], false);
+        const fault$1 = visit2(branch, [...path12, `<${k}>`], false);
         if (fault$1 !== void 0) return fault$1;
       }
     }
@@ -25525,8 +25525,8 @@ var OBJECT_VALUED_SUBSCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
   "$defs",
   "definitions"
 ]);
-function pathName(path11) {
-  return path11.length === 0 ? "<root>" : path11.join(".");
+function pathName(path12) {
+  return path12.length === 0 ? "<root>" : path12.join(".");
 }
 var HEADER_MISMATCH_ERROR_CODE = -32020;
 var INBOUND_VALIDATION_LADDER = [
@@ -25818,7 +25818,7 @@ var PROPERTY_KEYS_BY_TYPE = {
   array: shapeKeys([UntitledMultiSelectEnumSchemaSchema, TitledMultiSelectEnumSchemaSchema])
 };
 var SUPPORTED_STRING_FORMATS = new Set(StringSchemaSchema.shape.format.unwrap().options);
-function walkProperty(node2, path11, vendor, unsupported) {
+function walkProperty(node2, path12, vendor, unsupported) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -25826,8 +25826,8 @@ function walkProperty(node2, path11, vendor, unsupported) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path11}.${key}`);
-  } else unsupported.push(`${path11}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path12}.${key}`);
+  } else unsupported.push(`${path12}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
@@ -25844,11 +25844,11 @@ function describeUnsupportedProperties(pruned, fallback) {
   const offenders = Object.entries(pruned.properties).filter(([, node2]) => !parseSchema(PrimitiveSchemaDefinitionSchema, node2).success).map(([name]) => `properties.${name}`);
   return offenders.length > 0 ? offenders.join(", ") : fallback;
 }
-function findDroppedConstraintPaths(original, parsed, path11 = "") {
-  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path11}[${index}]`));
+function findDroppedConstraintPaths(original, parsed, path12 = "") {
+  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path12}[${index}]`));
   if (!isJsonObject(original) || !isJsonObject(parsed)) return [];
   return Object.entries(original).flatMap(([key, value]) => {
-    const childPath = path11 ? `${path11}.${key}` : key;
+    const childPath = path12 ? `${path12}.${key}` : key;
     if (!Object.prototype.hasOwnProperty.call(parsed, key)) return isAnnotationOnlyJsonSchemaKeyword(key) ? [] : [childPath];
     return findDroppedConstraintPaths(value, parsed[key], childPath);
   });
@@ -27735,9 +27735,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
       return `${varKind} ${this.name}${rhs};` + _n;
     }
-    optimizeNames(names, constants2) {
+    optimizeNames(names, constants3) {
       if (!names[this.name.str]) return;
-      if (this.rhs) this.rhs = optimizeExpr(this.rhs, names, constants2);
+      if (this.rhs) this.rhs = optimizeExpr(this.rhs, names, constants3);
       return this;
     }
     get names() {
@@ -27754,9 +27754,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
     render({ _n }) {
       return `${this.lhs} = ${this.rhs};` + _n;
     }
-    optimizeNames(names, constants2) {
+    optimizeNames(names, constants3) {
       if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects) return;
-      this.rhs = optimizeExpr(this.rhs, names, constants2);
+      this.rhs = optimizeExpr(this.rhs, names, constants3);
       return this;
     }
     get names() {
@@ -27815,8 +27815,8 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
     optimizeNodes() {
       return `${this.code}` ? this : void 0;
     }
-    optimizeNames(names, constants2) {
-      this.code = optimizeExpr(this.code, names, constants2);
+    optimizeNames(names, constants3) {
+      this.code = optimizeExpr(this.code, names, constants3);
       return this;
     }
     get names() {
@@ -27842,12 +27842,12 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       }
       return nodes.length > 0 ? this : void 0;
     }
-    optimizeNames(names, constants2) {
+    optimizeNames(names, constants3) {
       const { nodes } = this;
       let i = nodes.length;
       while (i--) {
         const n = nodes[i];
-        if (n.optimizeNames(names, constants2)) continue;
+        if (n.optimizeNames(names, constants3)) continue;
         subtractNames(names, n.names);
         nodes.splice(i, 1);
       }
@@ -27894,11 +27894,11 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       if (cond === false || !this.nodes.length) return void 0;
       return this;
     }
-    optimizeNames(names, constants2) {
+    optimizeNames(names, constants3) {
       var _a5;
-      this.else = (_a5 = this.else) === null || _a5 === void 0 ? void 0 : _a5.optimizeNames(names, constants2);
-      if (!(super.optimizeNames(names, constants2) || this.else)) return;
-      this.condition = optimizeExpr(this.condition, names, constants2);
+      this.else = (_a5 = this.else) === null || _a5 === void 0 ? void 0 : _a5.optimizeNames(names, constants3);
+      if (!(super.optimizeNames(names, constants3) || this.else)) return;
+      this.condition = optimizeExpr(this.condition, names, constants3);
       return this;
     }
     get names() {
@@ -27920,9 +27920,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
     render(opts) {
       return `for(${this.iteration})` + super.render(opts);
     }
-    optimizeNames(names, constants2) {
-      if (!super.optimizeNames(names, constants2)) return;
-      this.iteration = optimizeExpr(this.iteration, names, constants2);
+    optimizeNames(names, constants3) {
+      if (!super.optimizeNames(names, constants3)) return;
+      this.iteration = optimizeExpr(this.iteration, names, constants3);
       return this;
     }
     get names() {
@@ -27957,9 +27957,9 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
     render(opts) {
       return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
     }
-    optimizeNames(names, constants2) {
-      if (!super.optimizeNames(names, constants2)) return;
-      this.iterable = optimizeExpr(this.iterable, names, constants2);
+    optimizeNames(names, constants3) {
+      if (!super.optimizeNames(names, constants3)) return;
+      this.iterable = optimizeExpr(this.iterable, names, constants3);
       return this;
     }
     get names() {
@@ -27998,11 +27998,11 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       (_b = this.finally) === null || _b === void 0 || _b.optimizeNodes();
       return this;
     }
-    optimizeNames(names, constants2) {
+    optimizeNames(names, constants3) {
       var _a5, _b;
-      super.optimizeNames(names, constants2);
-      (_a5 = this.catch) === null || _a5 === void 0 || _a5.optimizeNames(names, constants2);
-      (_b = this.finally) === null || _b === void 0 || _b.optimizeNames(names, constants2);
+      super.optimizeNames(names, constants3);
+      (_a5 = this.catch) === null || _a5 === void 0 || _a5.optimizeNames(names, constants3);
+      (_b = this.finally) === null || _b === void 0 || _b.optimizeNames(names, constants3);
       return this;
     }
     get names() {
@@ -28251,7 +28251,7 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
   function addExprNames(names, from) {
     return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
   }
-  function optimizeExpr(expr, names, constants2) {
+  function optimizeExpr(expr, names, constants3) {
     if (expr instanceof code_1.Name) return replaceName(expr);
     if (!canOptimize(expr)) return expr;
     return new code_1._Code(expr._items.reduce((items, c) => {
@@ -28261,13 +28261,13 @@ var require_codegen = /* @__PURE__ */ __commonJSMin(((exports) => {
       return items;
     }, []));
     function replaceName(n) {
-      const c = constants2[n.str];
+      const c = constants3[n.str];
       if (c === void 0 || names[n.str] !== 1) return n;
       delete names[n.str];
       return c;
     }
     function canOptimize(e) {
-      return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
+      return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants3[c.str] !== void 0);
     }
   }
   function subtractNames(names, from) {
@@ -30191,8 +30191,8 @@ var require_utils = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     for (let i = 0; i < str.length; i++) if (str[i] === token) ind++;
     return ind;
   }
-  function removeDotSegments(path11) {
-    let input2 = path11;
+  function removeDotSegments(path12) {
+    let input2 = path12;
     const output2 = [];
     let nextSlash = -1;
     let len = 0;
@@ -30530,8 +30530,8 @@ var require_schemes = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     }
     if (wsComponent.resourceName) {
       const queryIndex = wsComponent.resourceName.indexOf("?");
-      const path11 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-      wsComponent.path = path11 && path11 !== "/" ? path11 : void 0;
+      const path12 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+      wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
       wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
       wsComponent.resourceName = void 0;
     }
@@ -34634,11 +34634,11 @@ var require_dist = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     if (!f) throw new Error(`Unknown format "${name}"`);
     return f;
   };
-  function addFormats2(ajv, list, fs7, exportName) {
+  function addFormats2(ajv, list, fs8, exportName) {
     var _a5;
     var _b;
     (_a5 = (_b = ajv.opts.code).formats) !== null && _a5 !== void 0 || (_b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`);
-    for (const f of list) ajv.addFormat(f, fs7[f]);
+    for (const f of list) ajv.addFormat(f, fs8[f]);
   }
   module.exports = exports = formatsPlugin;
   Object.defineProperty(exports, "__esModule", { value: true });
@@ -37096,7 +37096,7 @@ function toError(value) {
 
 // source/server/register.mjs
 import { readFile as readFile2 } from "node:fs/promises";
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 
 // node_modules/@modelcontextprotocol/server/dist/index.mjs
 var DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024;
@@ -37867,10 +37867,10 @@ function mergeDefs2(...defs) {
 function cloneDef2(schema) {
   return mergeDefs2(schema._zod.def);
 }
-function getElementAtPath2(obj, path11) {
-  if (!path11)
+function getElementAtPath2(obj, path12) {
+  if (!path12)
     return obj;
-  return path11.reduce((acc, key) => acc?.[key], obj);
+  return path12.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject2(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -38279,11 +38279,11 @@ function explicitlyAborted2(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues2(path11, issues) {
+function prefixIssues2(path12, issues) {
   return issues.map((iss) => {
     var _a5;
     (_a5 = iss).path ?? (_a5.path = []);
-    iss.path.unshift(path11);
+    iss.path.unshift(path12);
     return iss;
   });
 }
@@ -38430,16 +38430,16 @@ function flattenError2(error113, mapper = (issue3) => issue3.message) {
 }
 function formatError2(error113, mapper = (issue3) => issue3.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error114, path11 = []) => {
+  const processError = (error114, path12 = []) => {
     for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path11, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path12, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else {
-        const fullpath = [...path11, ...issue3.path];
+        const fullpath = [...path12, ...issue3.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue3));
         } else {
@@ -38466,17 +38466,17 @@ function formatError2(error113, mapper = (issue3) => issue3.message) {
 }
 function treeifyError2(error113, mapper = (issue3) => issue3.message) {
   const result = { errors: [] };
-  const processError = (error114, path11 = []) => {
+  const processError = (error114, path12 = []) => {
     var _a5, _b;
     for (const issue3 of error114.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
-        issue3.errors.map((issues) => processError({ issues }, [...path11, ...issue3.path]));
+        issue3.errors.map((issues) => processError({ issues }, [...path12, ...issue3.path]));
       } else if (issue3.code === "invalid_key") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else if (issue3.code === "invalid_element") {
-        processError({ issues: issue3.issues }, [...path11, ...issue3.path]);
+        processError({ issues: issue3.issues }, [...path12, ...issue3.path]);
       } else {
-        const fullpath = [...path11, ...issue3.path];
+        const fullpath = [...path12, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -38508,8 +38508,8 @@ function treeifyError2(error113, mapper = (issue3) => issue3.message) {
 }
 function toDotPath2(_path) {
   const segs = [];
-  const path11 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path11) {
+  const path12 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path12) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -51201,13 +51201,13 @@ function resolveRef2(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path11 = ref.slice(1).split("/").filter(Boolean);
-  if (path11.length === 0) {
+  const path12 = ref.slice(1).split("/").filter(Boolean);
+  if (path12.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path11[0] === defsKey) {
-    const key = path11[1];
+  if (path12[0] === defsKey) {
+    const key = path12[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -53174,9 +53174,9 @@ init_worker_client();
 init_bridge_core();
 init_artifact_command();
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import path10 from "node:path";
+import path11 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // source/library/thumbnail.mjs
@@ -53373,6 +53373,31 @@ function defaultsOf(html) {
   }
   return values;
 }
+function hasRootBackground(html) {
+  for (const style of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)) {
+    const css = style[1];
+    let selectorStart = 0;
+    for (let cursor = 0; cursor < css.length; cursor++) {
+      if (css[cursor] === "}") {
+        selectorStart = cursor + 1;
+        continue;
+      }
+      if (css[cursor] !== "{") continue;
+      const close = css.indexOf("}", cursor + 1), nested = css.indexOf("{", cursor + 1);
+      if (close < 0) break;
+      if (nested >= 0 && nested < close) {
+        selectorStart = cursor + 1;
+        continue;
+      }
+      const selectors = css.slice(selectorStart, cursor), declarations = css.slice(cursor + 1, close);
+      cursor = close;
+      selectorStart = close + 1;
+      if (!/(?:^|;)\s*background(?:-color)?\s*:/i.test(declarations)) continue;
+      if (selectors.split(",").some((selector) => /(?:^|[\s>+~])(?:html|body|:root)(?:\.[\w-]+|#[\w-]+|\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?)*$/i.test(selector.trim()))) return true;
+    }
+  }
+  return false;
+}
 function tokenCss(tokens) {
   const declarations = [], values = /* @__PURE__ */ new Map(), theme = tokens.color?.themes?.[0]?.id || "light";
   for (const family of Object.values(tokens)) if (Array.isArray(family?.tokens)) {
@@ -53531,17 +53556,310 @@ async function createArtifactThumbnail(store, id, options = {}) {
   if (context.dynamic && record3.kind !== "dashboard") context.note("Interactive code was not executed; the cover uses static markup and literal preview defaults.");
   const revision = hash3.digest("hex");
   const csp = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
-  const srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + escape3(csp) + '"><meta name="referrer" content="no-referrer"><title>' + escape3(record3.title) + "</title><style>" + extraCss + normalizer + '</style></head><body><svg class="codex-cover-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + " " + height + '" preserveAspectRatio="xMidYMid meet"><foreignObject width="' + width + '" height="' + height + '"><div xmlns="http://www.w3.org/1999/xhtml" class="codex-cover-surface" style="width:' + width + "px;height:" + height + 'px;overflow:hidden">' + clean + "</div></foreignObject></svg><style>html,body{margin:0!important;width:100%;height:100%;overflow:hidden!important}body>.codex-cover-svg{display:block;width:100vw;height:100vh}.codex-cover-surface *{animation:none!important;transition:none!important;pointer-events:none!important}</style></body></html>";
+  const canvasBackground = hasRootBackground(clean) ? "transparent" : "#fff";
+  const srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + escape3(csp) + '"><meta name="referrer" content="no-referrer"><title>' + escape3(record3.title) + "</title><style>html,body{background:transparent}" + extraCss + normalizer + '</style></head><body><svg class="codex-cover-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + " " + height + '" preserveAspectRatio="xMidYMid meet"><foreignObject width="' + width + '" height="' + height + '"><div xmlns="http://www.w3.org/1999/xhtml" class="codex-cover-surface" style="width:' + width + "px;height:" + height + "px;overflow:hidden;background:" + canvasBackground + '">' + clean + "</div></foreignObject></svg><style>html,body{margin:0!important;width:100%;height:100%;overflow:hidden!important}body>.codex-cover-svg{display:block;width:100vw;height:100vh}.codex-cover-surface *{animation:none!important;transition:none!important;pointer-events:none!important}</style></body></html>";
   if (Buffer.byteLength(srcdoc) > limits.maxDocumentBytes) throw new LibraryError("THUMBNAIL_LIMIT", "The static cover exceeds its output limit.");
   return { artifactId: record3.id, id: record3.id, kind: record3.kind, title: record3.title, revision, cacheKey: record3.id + ":" + revision, srcdoc, previewWidth: width, previewHeight: height, fidelity, sourceFile, notes };
 }
 
 // source/server/service.mjs
 init_edit_requests();
+
+// source/library/export-store.mjs
+init_safety();
+import fs6 from "node:fs/promises";
+import { constants as constants2 } from "node:fs";
+import os2 from "node:os";
+import path9 from "node:path";
+import { createHash as createHash6, randomUUID as randomUUID5 } from "node:crypto";
+var MAX_BYTES = 128 * 1024 * 1024;
+var PAGE_SIZE = 200;
+var MAX_ENTRIES = 2e4;
+var TOKEN_MS = 30 * 60 * 1e3;
+var preferenceFile = "_state/export-location.json";
+var sha2 = (value) => createHash6("sha256").update(value).digest("hex");
+var fail = (code, message) => new LibraryError(code, message);
+var samePath2 = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+var fingerprint = (stat) => ["dev", "ino", "size", "mode", "mtimeNs", "ctimeNs", "birthtimeNs"].map((key) => String(stat[key])).join(":");
+function absoluteDirectory(value) {
+  if (typeof value !== "string" || !value || value.length > 32e3 || /[\u0000-\u001f\u007f]/.test(value) || !path9.isAbsolute(value)) {
+    throw fail("EXPORT_INVALID_DIRECTORY", "Choose an existing absolute folder path.");
+  }
+  return path9.resolve(value);
+}
+function exportInput(input2) {
+  if (!input2 || typeof input2 !== "object" || Array.isArray(input2) || typeof input2.requestId !== "string" || !UUID2.test(input2.requestId)) {
+    throw fail("EXPORT_INVALID_REQUEST", "A unique export request ID is required.");
+  }
+  const filename = input2.filename;
+  if (typeof filename !== "string" || !filename || filename.length > 240 || process.platform !== "win32" && Buffer.byteLength(filename) > 240 || filename === "." || filename === ".." || /[\u0000-\u001f\u007f<>:"/\\|?*]/.test(filename) || filename.trim() !== filename || /[. ]$/.test(filename) || /^(?:con|conin\$|conout\$|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(filename)) {
+    throw fail("EXPORT_INVALID_FILENAME", "Use a safe filename without path separators or reserved characters.");
+  }
+  if (typeof input2.mimeType !== "string" || input2.mimeType.length > 200 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(input2.mimeType)) {
+    throw fail("EXPORT_INVALID_CONTENT", "The export file type is invalid.");
+  }
+  const hasText = Object.hasOwn(input2, "text"), hasBase64 = Object.hasOwn(input2, "base64");
+  if (hasText === hasBase64) throw fail("EXPORT_INVALID_CONTENT", "Provide exactly one text or base64 export payload.");
+  let bytes;
+  if (hasText) {
+    if (typeof input2.text !== "string" || input2.text.length > MAX_BYTES || Buffer.byteLength(input2.text) > MAX_BYTES) {
+      throw fail("EXPORT_LIMIT_EXCEEDED", "The export exceeds the 128 MiB save limit.");
+    }
+    bytes = Buffer.from(input2.text, "utf8");
+  } else {
+    if (typeof input2.base64 !== "string" || input2.base64.length > Math.ceil(MAX_BYTES / 3) * 4 || input2.base64.length % 4 || /[^A-Za-z0-9+/=]/.test(input2.base64)) {
+      throw fail("EXPORT_INVALID_CONTENT", "The export payload is not bounded, valid base64.");
+    }
+    const padding = input2.base64.endsWith("==") ? 2 : input2.base64.endsWith("=") ? 1 : 0;
+    const firstPadding = input2.base64.indexOf("=");
+    if (firstPadding !== -1 && firstPadding !== input2.base64.length - padding) throw fail("EXPORT_INVALID_CONTENT", "The export padding is invalid.");
+    bytes = Buffer.from(input2.base64, "base64");
+    if (bytes.length > MAX_BYTES || bytes.toString("base64") !== input2.base64) throw fail("EXPORT_INVALID_CONTENT", "The export payload is not canonical base64.");
+  }
+  if (input2.overwriteToken !== void 0 && (typeof input2.overwriteToken !== "string" || !UUID2.test(input2.overwriteToken))) {
+    throw fail("EXPORT_INVALID_CONFIRMATION", "An explicit overwrite confirmation token is required.");
+  }
+  return {
+    requestId: input2.requestId.toLowerCase(),
+    filename,
+    mimeType: input2.mimeType,
+    bytes,
+    directory: absoluteDirectory(input2.directory),
+    overwriteToken: input2.overwriteToken
+  };
+}
+function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6, now: now3 = Date.now, beforeCommit } = {}) {
+  if (!store || typeof store.initialize !== "function" || typeof store._checkRoot !== "function") throw new TypeError("A LibraryStore is required.");
+  const io = fsImpl;
+  const ready = async () => {
+    await store.initialize();
+    await store._checkRoot();
+  };
+  const statOrNull2 = async (file3) => {
+    try {
+      return await io.lstat(file3, { bigint: true });
+    } catch (error113) {
+      if (error113.code === "ENOENT") return null;
+      throw error113;
+    }
+  };
+  const directoryInfo = async (input2) => {
+    const requested = absoluteDirectory(input2), canonical = await io.realpath(requested);
+    const stat = await io.lstat(canonical, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail("EXPORT_INVALID_DIRECTORY", "The selected location is not a real folder.");
+    return { requested, canonical, identity: `${stat.dev}:${stat.ino}`, stat };
+  };
+  const assertDirectory = async (info) => {
+    const current = await directoryInfo(info.requested);
+    if (!samePath2(current.canonical, info.canonical) || current.identity !== info.identity) {
+      throw fail("EXPORT_DIRECTORY_CHANGED", "The selected folder moved or changed. Choose it again before saving.");
+    }
+  };
+  const targetInfo = async (target) => {
+    const stat = await statOrNull2(target);
+    if (!stat) return null;
+    if (stat.isSymbolicLink() || !stat.isFile()) throw fail("EXPORT_UNSAFE_TARGET", "The destination must be a regular file, not a link or folder.");
+    return { fingerprint: fingerprint(stat), size: Number(stat.size), modifiedAt: new Date(Number(stat.mtimeMs)).toISOString() };
+  };
+  const matchesPayload = async (target, request, contentHash) => {
+    const info = await targetInfo(target);
+    if (!info || info.size !== request.bytes.length) return false;
+    const handle = await io.open(target, constants2.O_RDONLY | (constants2.O_NOFOLLOW || 0));
+    try {
+      const opened = await handle.stat({ bigint: true });
+      if (!opened.isFile() || fingerprint(opened) !== info.fingerprint) return false;
+      const hash3 = createHash6("sha256").update(request.mimeType + "\0");
+      const buffer = Buffer.alloc(64 * 1024);
+      for (let position = 0; position < info.size; ) {
+        const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, info.size - position), position);
+        if (!bytesRead) return false;
+        hash3.update(buffer.subarray(0, bytesRead));
+        position += bytesRead;
+      }
+      return hash3.digest("hex") === contentHash && fingerprint(await handle.stat({ bigint: true })) === info.fingerprint;
+    } finally {
+      await handle.close();
+    }
+  };
+  const receiptPath = (id) => `_state/export-receipts/${id}.json`;
+  const collision = async (request, target, contentHash, existing) => {
+    const receipt = {
+      version: 1,
+      requestId: request.requestId,
+      status: "confirmation",
+      target,
+      contentHash,
+      existingFingerprint: existing.fingerprint,
+      overwriteToken: randomUUID5(),
+      expiresAt: now3() + TOKEN_MS
+    };
+    await atomicJson2(store.root, receiptPath(request.requestId), receipt);
+    return {
+      saved: false,
+      exists: true,
+      path: target,
+      overwriteToken: receipt.overwriteToken,
+      existing: { size: existing.size, modifiedAt: existing.modifiedAt }
+    };
+  };
+  const api = {
+    async locations() {
+      await ready();
+      const candidates = [
+        ["home", "Home", homeDirectory],
+        ["desktop", "Desktop", path9.join(homeDirectory, "Desktop")],
+        ["documents", "Documents", path9.join(homeDirectory, "Documents")],
+        ["downloads", "Downloads", path9.join(homeDirectory, "Downloads")]
+      ];
+      const locations = [];
+      for (const [id, label, candidate] of candidates) {
+        try {
+          const folder = await directoryInfo(candidate);
+          if (!locations.some((item) => samePath2(item.path, folder.canonical))) locations.push({ id, label, path: folder.canonical });
+        } catch (error113) {
+          if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EXPORT_INVALID_DIRECTORY"].includes(error113.code)) throw error113;
+        }
+      }
+      let defaultDirectory = locations.find((item) => item.id === "downloads")?.path ?? locations[0]?.path ?? null;
+      let preference;
+      try {
+        preference = await readJson2(store.root, preferenceFile, null);
+      } catch (error113) {
+        if (error113.code !== "INVALID_STATE") throw error113;
+      }
+      if (preference?.version === 1 && typeof preference.directory === "string") {
+        try {
+          defaultDirectory = (await directoryInfo(preference.directory)).canonical;
+        } catch {
+        }
+      }
+      return { locations, defaultDirectory };
+    },
+    async listDirectory({ path: selected, cursor } = {}) {
+      await ready();
+      const folder = await directoryInfo(selected), key = sha2(folder.canonical), revision = `${folder.stat.ino}:${folder.stat.mtimeNs}`;
+      let offset = 0;
+      if (cursor !== void 0) {
+        let value;
+        try {
+          if (typeof cursor !== "string" || cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error("cursor");
+          value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+        } catch {
+          throw fail("EXPORT_INVALID_CURSOR", "The folder page cursor is invalid.");
+        }
+        if (value.key !== key || value.revision !== revision || !Number.isSafeInteger(value.offset) || value.offset < 0 || value.offset > MAX_ENTRIES) {
+          throw fail("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
+        }
+        offset = value.offset;
+      }
+      const entries = [];
+      let count = 0;
+      const directory = await io.opendir(folder.canonical);
+      for await (const entry2 of directory) {
+        if (++count > MAX_ENTRIES) throw fail("EXPORT_DIRECTORY_TOO_LARGE", "This folder contains too many items. Enter a more specific folder path.");
+        if (entry2.isDirectory() && !entry2.isSymbolicLink()) entries.push({ name: entry2.name, path: path9.join(folder.canonical, entry2.name) });
+      }
+      entries.sort((a, b) => a.name.localeCompare(b.name, "en"));
+      await assertDirectory(folder);
+      if ((await directoryInfo(folder.requested)).stat.mtimeNs !== folder.stat.mtimeNs) throw fail("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
+      const parentPath = path9.dirname(folder.canonical);
+      return {
+        path: folder.canonical,
+        parent: parentPath === folder.canonical ? null : parentPath,
+        entries: entries.slice(offset, offset + PAGE_SIZE),
+        ...offset + PAGE_SIZE < entries.length ? { nextCursor: Buffer.from(JSON.stringify({ key, revision, offset: offset + PAGE_SIZE })).toString("base64url") } : {}
+      };
+    },
+    async save(input2) {
+      const request = exportInput(input2);
+      await ready();
+      return locked(store.root, async () => {
+        const folder = await directoryInfo(request.directory), target = path9.join(folder.canonical, request.filename);
+        const contentHash = createHash6("sha256").update(request.mimeType + "\0").update(request.bytes).digest("hex");
+        const previous = await readJson2(store.root, receiptPath(request.requestId), null);
+        if (previous && (previous.version !== 1 || previous.requestId !== request.requestId || !["confirmation", "committing", "saved"].includes(previous.status) || typeof previous.target !== "string" || !path9.isAbsolute(previous.target) || !/^[a-f0-9]{64}$/.test(previous.contentHash ?? "") || previous.status === "confirmation" && (!UUID2.test(previous.overwriteToken ?? "") || !Number.isSafeInteger(previous.expiresAt) || typeof previous.existingFingerprint !== "string" || previous.existingFingerprint.length > 1e3))) {
+          throw fail("EXPORT_INVALID_STATE", "The previous export receipt cannot be verified.");
+        }
+        if (previous && (!samePath2(previous.target, target) || previous.contentHash !== contentHash)) {
+          throw fail("EXPORT_REQUEST_CONFLICT", "This export ID already belongs to different content or a different destination.");
+        }
+        if (previous?.status === "saved") {
+          if (previous.result?.saved !== true || previous.result.path !== target || previous.result.filename !== request.filename || previous.result.bytes !== request.bytes.length) {
+            throw fail("EXPORT_INVALID_STATE", "The saved export receipt cannot be verified.");
+          }
+          if (!await matchesPayload(target, request, contentHash)) throw fail("EXPORT_RESULT_CHANGED", "This export was saved earlier, but the destination has since changed. Start a new export before choosing whether to replace it.");
+          return { ...previous.result, duplicate: true };
+        }
+        if (previous?.status === "committing" && await matchesPayload(target, request, contentHash)) {
+          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
+          await atomicJson2(store.root, receiptPath(request.requestId), { ...previous, status: "saved", result, savedAt: new Date(now3()).toISOString() });
+          await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
+          });
+          return { ...result, duplicate: true };
+        }
+        let existing = await targetInfo(target);
+        if (existing) {
+          if (!request.overwriteToken || previous?.status !== "confirmation" || previous.overwriteToken !== request.overwriteToken || previous.expiresAt < now3() || previous.existingFingerprint !== existing.fingerprint) {
+            return collision(request, target, contentHash, existing);
+          }
+        }
+        const temporary = path9.join(folder.canonical, `.codex-export-${randomUUID5()}.tmp`);
+        let handle;
+        try {
+          handle = await io.open(temporary, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL | (constants2.O_NOFOLLOW || 0), 384);
+          await handle.writeFile(request.bytes);
+          await handle.sync();
+          await handle.close();
+          handle = null;
+          if (beforeCommit) await beforeCommit({ path: target, temporary, replacing: Boolean(existing) });
+          await assertDirectory(folder);
+          const latest = await targetInfo(target);
+          if (existing && (!latest || latest.fingerprint !== existing.fingerprint)) {
+            if (latest) return collision(request, target, contentHash, latest);
+            throw fail("EXPORT_TARGET_CHANGED", "The file changed before replacement. Choose the destination again.");
+          }
+          if (!existing && latest) return collision(request, target, contentHash, latest);
+          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "committing", target, contentHash });
+          if (existing) await io.rename(temporary, target);
+          else {
+            try {
+              await io.link(temporary, target);
+            } catch (error113) {
+              if (["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"].includes(error113.code)) await io.copyFile(temporary, target, constants2.COPYFILE_EXCL);
+              else if (error113.code === "EEXIST") {
+                const appeared = await targetInfo(target);
+                if (appeared) return collision(request, target, contentHash, appeared);
+                throw error113;
+              } else throw error113;
+            }
+          }
+          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
+          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "saved", target, contentHash, result, savedAt: new Date(now3()).toISOString() });
+          await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
+          });
+          return result;
+        } finally {
+          await handle?.close().catch(() => {
+          });
+          try {
+            await assertDirectory(folder);
+            await io.unlink(temporary).catch((error113) => {
+              if (error113.code !== "ENOENT") throw error113;
+            });
+          } catch {
+          }
+        }
+      });
+    }
+  };
+  return api;
+}
+
+// source/server/service.mjs
 init_safety();
 
 // source/server/editor-transport.mjs
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 
 // source/scripts/base64.mjs
 function isValidBase643(value) {
@@ -53551,7 +53869,7 @@ function isValidBase643(value) {
 }
 
 // source/server/editor-transport.mjs
-var fail = (code, message) => Object.assign(new Error(message), { code });
+var fail2 = (code, message) => Object.assign(new Error(message), { code });
 var METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
 var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]);
 var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control"];
@@ -53559,35 +53877,35 @@ var MAX_BODY = 32 * 1024 * 1024;
 var MAX_RESPONSE = 64 * 1024 * 1024;
 function validateEditorRequest(request = {}) {
   const method = String(request.method || "GET").toUpperCase();
-  if (!METHODS.has(method)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
+  if (!METHODS.has(method)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
   const headers = new Headers();
-  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
+  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
   for (const [name, value] of Object.entries(request.headers || {})) {
-    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
     headers.set(name, value);
   }
   let body;
   if (request.body !== void 0) {
-    if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase643(request.body)) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase643(request.body)) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
     body = Buffer.from(request.body, "base64");
-    if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
   }
   return { method, headers, body };
 }
 function editorRequestUrl(base, relative) {
   const root = new URL(base);
-  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
-  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
-  const path11 = relative.split(/[?#]/, 1)[0];
+  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail2("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
+  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail2("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
+  const path12 = relative.split(/[?#]/, 1)[0];
   let decoded;
   try {
-    decoded = decodeURIComponent(path11);
+    decoded = decodeURIComponent(path12);
   } catch {
-    throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
+    throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
   }
-  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
   const target = new URL(relative, root);
-  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
   return target;
 }
 async function limitedBody(response, limit) {
@@ -53596,7 +53914,7 @@ async function limitedBody(response, limit) {
   let size = 0;
   for await (const chunk of response.body) {
     size += chunk.byteLength;
-    if (size > limit) throw fail("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
+    if (size > limit) throw fail2("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, size);
@@ -53642,7 +53960,7 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
     try {
       for await (const chunk of stream.response.body) {
         buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
-        if (buffer.length > 4 * 1024 * 1024) throw fail("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
+        if (buffer.length > 4 * 1024 * 1024) throw fail2("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
         let end;
         while ((end = buffer.indexOf("\n\n")) >= 0) {
           record3(buffer.slice(0, end));
@@ -53665,14 +53983,14 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       const response = await fetcher(url3, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
       if (response.headers.get("content-type")?.includes("text/event-stream")) {
         await response.body?.cancel();
-        throw fail("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
+        throw fail2("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
       }
       const bytes = await limitedBody(response, MAX_RESPONSE);
       return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
     },
-    async openEvents(id, path11) {
-      const { url: url3 } = await get(id, path11);
-      if (!/(?:^|\/)events$/.test(url3.pathname)) throw fail("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
+    async openEvents(id, path12) {
+      const { url: url3 } = await get(id, path12);
+      if (!/(?:^|\/)events$/.test(url3.pathname)) throw fail2("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
       const abort = new AbortController();
       let response;
       const startup = setTimeout(() => abort.abort(), 1e4);
@@ -53683,9 +54001,9 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       }
       if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
         abort.abort();
-        throw fail("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
+        throw fail2("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
       }
-      const stream = { id: randomUUID5(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
+      const stream = { id: randomUUID6(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
       streams.set(stream.id, stream);
       touch(stream);
       void pump(stream);
@@ -53693,8 +54011,8 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
     },
     async pollEvents(id, subscriptionId, cursor = 0) {
       const stream = streams.get(subscriptionId);
-      if (!stream || stream.artifactId !== id || stream.closed) throw fail("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
-      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
+      if (!stream || stream.artifactId !== id || stream.closed) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
       touch(stream);
       if (!stream.ended && stream.cursor <= cursor) await new Promise((resolve) => {
         const wake = () => {
@@ -53719,15 +54037,15 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
 }
 
 // source/server/native-comments.mjs
-import { createHash as createHash6, randomUUID as randomUUID6 } from "node:crypto";
-var fail2 = (code, message) => Object.assign(new Error(message), { code });
+import { createHash as createHash7, randomUUID as randomUUID7 } from "node:crypto";
+var fail3 = (code, message) => Object.assign(new Error(message), { code });
 var encode5 = (value) => Buffer.from(JSON.stringify(value)).toString("base64");
 var jsonResult = (value, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Accepted", headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, body: encode5(value) });
 var parseResult = (result) => {
   try {
     return JSON.parse(Buffer.from(result.body, "base64").toString("utf8"));
   } catch {
-    throw fail2("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
+    throw fail3("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
   }
 };
 function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, idleMs = 12e4 } = {}) {
@@ -53736,8 +54054,8 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     const editor = await editorFor(id);
     const url3 = editorRequestUrl(editor.url, relative);
     const base = new URL(editor.url);
-    const path11 = decodeURIComponent(url3.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
-    return { editor, path: path11, url: url3 };
+    const path12 = decodeURIComponent(url3.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
+    return { editor, path: path12, url: url3 };
   };
   const project = async (id, snapshot2) => {
     const value = await requests.project(id, snapshot2);
@@ -53752,7 +54070,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
   };
   const snapshot = async (id) => {
     const result = await transport.request(id, { path: "__comments", method: "GET" });
-    if (result.status < 200 || result.status >= 300) throw fail2("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
+    if (result.status < 200 || result.status >= 300) throw fail3("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
     return project(id, parseResult(result));
   };
   const prepared = async (id, threadId, response) => {
@@ -53766,7 +54084,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     }
     return { ...response, body: encode5(body), nativeDraft: {
       requestId: request.id,
-      attemptId: randomUUID6(),
+      attemptId: randomUUID7(),
       savedCommentId: threadId,
       artifactId: id,
       uri: request.requestUri,
@@ -53785,35 +54103,35 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
   };
   return {
     async request(id, request) {
-      const { path: path11 } = await route(id, request.path);
+      const { path: path12 } = await route(id, request.path);
       const { method, body } = validateEditorRequest(request);
-      if (path11 === "__comments" && ["GET", "HEAD"].includes(method)) {
+      if (path12 === "__comments" && ["GET", "HEAD"].includes(method)) {
         const result = jsonResult(await snapshot(id));
         return method === "HEAD" ? { ...result, body: "" } : result;
       }
-      const send = /^__comments\/([^/]+)\/send$/.exec(path11);
+      const send = /^__comments\/([^/]+)\/send$/.exec(path12);
       if (send && method === "POST") {
         const current = await snapshot(id);
         const matches = current.threads.filter((item) => item.id === send[1]);
         if (!matches.length && send[1].length >= 3) matches.push(...current.threads.filter((item) => item.id.startsWith(send[1])));
-        if (matches.length !== 1) throw fail2(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
+        if (matches.length !== 1) throw fail3(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
         const thread = matches[0];
         return prepared(id, thread.id, jsonResult({ thread }));
       }
-      const mutation = path11 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path11) && ["POST", "PATCH"].includes(method);
-      const adHoc = path11 === "__comments/agent/requests" && method === "POST";
+      const mutation = path12 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path12) && ["POST", "PATCH"].includes(method);
+      const adHoc = path12 === "__comments/agent/requests" && method === "POST";
       if ((mutation || adHoc) && body) {
-        if (body.length > 256 * 1024) throw fail2("INVALID_COMMENT", "The comment exceeds its transfer limit.");
+        if (body.length > 256 * 1024) throw fail3("INVALID_COMMENT", "The comment exceeds its transfer limit.");
         let input2;
         try {
           input2 = JSON.parse(body.toString("utf8"));
         } catch {
-          throw fail2("INVALID_COMMENT", "The comment request is not valid JSON.");
+          throw fail3("INVALID_COMMENT", "The comment request is not valid JSON.");
         }
-        if (!input2 || typeof input2 !== "object" || Array.isArray(input2)) throw fail2("INVALID_COMMENT", "Expected a comment object.");
+        if (!input2 || typeof input2 !== "object" || Array.isArray(input2)) throw fail3("INVALID_COMMENT", "Expected a comment object.");
         if (input2.send === true || adHoc) {
           const normal = adHoc ? {
-            anchor: "request:" + randomUUID6(),
+            anchor: "request:" + randomUUID7(),
             label: input2.label || "Artwork request",
             text: input2.text,
             ...input2.selection ? { detail: input2.selection } : {},
@@ -53822,16 +54140,16 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
           const result = await transport.request(id, { ...request, path: adHoc ? "__comments" : request.path, body: encode5(normal) });
           if (result.status < 200 || result.status >= 300) return result;
           const saved = parseResult(result);
-          if (!saved.thread?.id) throw fail2("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
+          if (!saved.thread?.id) throw fail3("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
           return prepared(id, saved.thread.id, adHoc ? { ...result, body: encode5({ ...saved, request: { id: saved.thread.id } }) } : result);
         }
       }
       return transport.request(id, request);
     },
-    async openEvents(id, path11) {
-      const found = await route(id, path11);
-      if (found.path !== "__comments/events") return transport.openEvents(id, path11);
-      const stream = { id: randomUUID6(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
+    async openEvents(id, path12) {
+      const found = await route(id, path12);
+      if (found.path !== "__comments/events") return transport.openEvents(id, path12);
+      const stream = { id: randomUUID7(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
       streams.set(stream.id, stream);
       touch(stream);
       return { subscriptionId: stream.id, cursor: 0 };
@@ -53839,16 +54157,16 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     async pollEvents(id, subscriptionId, cursor = 0) {
       const stream = streams.get(subscriptionId);
       if (!stream) return transport.pollEvents(id, subscriptionId, cursor);
-      if (stream.artifactId !== id) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
-      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail2("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
+      if (stream.artifactId !== id) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail3("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
       touch(stream);
       const delay = Math.max(0, pollMs - (Date.now() - stream.lastPoll));
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       if (!streams.has(subscriptionId)) return { events: [], cursor: stream.cursor, ended: true };
       const value = await snapshot(id);
-      const data = JSON.stringify(value), fingerprint = createHash6("sha256").update(data).digest("hex");
-      if (fingerprint !== stream.fingerprint) {
-        stream.fingerprint = fingerprint;
+      const data = JSON.stringify(value), fingerprint2 = createHash7("sha256").update(data).digest("hex");
+      if (fingerprint2 !== stream.fingerprint) {
+        stream.fingerprint = fingerprint2;
         stream.events.push({ cursor: ++stream.cursor, event: "comments", data });
         if (stream.events.length > 128) stream.events.shift();
       }
@@ -53858,7 +54176,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     async closeEvents(id, subscriptionId) {
       const stream = streams.get(subscriptionId);
       if (!stream) return transport.closeEvents(id, subscriptionId);
-      if (stream.artifactId !== id) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (stream.artifactId !== id) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
       close(stream);
       return { closed: true };
     },
@@ -53869,7 +54187,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
 }
 
 // source/server/editor-document.mjs
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 
 // source/scripts/editor-runtime-adapter.mjs
 function repairEditorRuntime(source) {
@@ -54427,7 +54745,7 @@ ${scriptText(body)}
 <script>${scriptText(bootstrap)}</script>`);
   const outputBytes = Buffer.byteLength(html);
   if (outputBytes > maxBytes) throw error112("EDITOR_DOCUMENT_TOO_LARGE", "The assembled native editor exceeds its content limit.");
-  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash7("sha256").update(html).digest("hex"), virtualBase: virtual.href };
+  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash8("sha256").update(html).digest("hex"), virtualBase: virtual.href };
 }
 
 // source/scripts/editor-native-transport.js
@@ -54498,6 +54816,7 @@ function installNativeEditorTransport(configuration, target) {
     if (temporary) target.document.documentElement?.setAttribute("data-codex-ui-storage", "memory");
   }
   const pending = /* @__PURE__ */ new Map();
+  let disposed = false;
   const pendingWrites = /* @__PURE__ */ new Set();
   const sources = /* @__PURE__ */ new Set();
   const assetCache = /* @__PURE__ */ new Map();
@@ -54505,13 +54824,13 @@ function installNativeEditorTransport(configuration, target) {
   const assetIds = /* @__PURE__ */ new Set();
   let assetBytes = 0;
   if (target.crypto && typeof target.crypto.randomUUID !== "function" && typeof target.crypto.getRandomValues === "function") {
-    const randomUUID7 = () => {
+    const randomUUID8 = () => {
       const bytes = target.crypto.getRandomValues(new Uint8Array(16));
       bytes[6] = bytes[6] & 15 | 64;
       bytes[8] = bytes[8] & 63 | 128;
       return Array.from(bytes, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
     };
-    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID7, configurable: true });
+    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID8, configurable: true });
   }
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
@@ -54528,11 +54847,16 @@ function installNativeEditorTransport(configuration, target) {
   };
   const base64ToBytes = (text) => Uint8Array.from(target.atob(text), (character) => character.charCodeAt(0));
   const rpc = (action, payload = {}, signal) => new Promise((resolve, reject) => {
+    if (disposed) {
+      reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
+      return;
+    }
     if (signal?.aborted) {
       reject(signal.reason || new DOMException("Aborted", "AbortError"));
       return;
     }
     const requestId2 = String(++sequence);
+    let timer;
     const cleanup = () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
@@ -54542,7 +54866,7 @@ function installNativeEditorTransport(configuration, target) {
       cleanup();
       reject(signal.reason || new DOMException("Aborted", "AbortError"));
     };
-    const timer = setTimeout(() => {
+    if (action !== "editor.download") timer = setTimeout(() => {
       cleanup();
       reject(Object.assign(new Error("The artwork editor connection timed out."), { code: "EDITOR_TRANSPORT_TIMEOUT" }));
     }, 45e3);
@@ -54592,6 +54916,216 @@ function installNativeEditorTransport(configuration, target) {
       host = wrap(value);
     } });
   }
+  const hostTheme = (() => {
+    const document2 = target.document;
+    const root = document2?.documentElement;
+    const originalTheme = root?.getAttribute?.("data-theme");
+    let variables = {}, fonts, mode, signature;
+    let tokens = {};
+    const owned = /* @__PURE__ */ new Map();
+    const content = "[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]";
+    const commentHosts = "[data-baoyu-comments], [data-baoyu-comments-seat]";
+    const observed = /* @__PURE__ */ new WeakSet();
+    const observeScope = (scope) => {
+      if (!observer || observed.has(scope)) return;
+      observer.observe(scope, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "data-font", "data-density"] });
+      observed.add(scope);
+    };
+    const scopes = () => {
+      const result = /* @__PURE__ */ new Set([document2]);
+      for (const scope of result) for (const host of scope.querySelectorAll?.(commentHosts) || []) {
+        if (host.closest?.(content)) continue;
+        const shadow = host.shadowRoot;
+        if (shadow) {
+          result.add(shadow);
+          observeScope(shadow);
+        }
+      }
+      return result;
+    };
+    const eligible = (element) => element && (element === root || element.matches?.(".cds-root")) && !element.closest?.(content);
+    const restore = (element, state) => {
+      for (const [name, original] of state.original) {
+        if (original.value) element.style.setProperty(name, original.value, original.priority);
+        else element.style.removeProperty(name);
+      }
+    };
+    const refresh = () => {
+      if (!root || disposed) return;
+      const candidates = new Set([root].filter(eligible));
+      for (const scope of scopes()) for (const element of scope.querySelectorAll?.(".cds-root") || []) if (eligible(element)) candidates.add(element);
+      for (const [element, state] of owned) if (!candidates.has(element)) {
+        restore(element, state);
+        owned.delete(element);
+      }
+      for (const element of candidates) {
+        if (!element.style) continue;
+        let state = owned.get(element);
+        if (!state) {
+          state = { original: /* @__PURE__ */ new Map(), applied: /* @__PURE__ */ new Map() };
+          owned.set(element, state);
+        }
+        for (const name of /* @__PURE__ */ new Set([...state.applied.keys(), ...Object.keys(tokens)])) {
+          const value = tokens[name];
+          const current = element.style.getPropertyValue(name), priority = element.style.getPropertyPriority?.(name) || "";
+          if (!state.original.has(name) || state.applied.has(name) && (current !== state.applied.get(name) || priority !== "important")) {
+            state.original.set(name, { value: current, priority });
+          }
+          if (value === void 0) {
+            const original = state.original.get(name);
+            if (original.value) element.style.setProperty(name, original.value, original.priority);
+            else element.style.removeProperty(name);
+            state.original.delete(name);
+            state.applied.delete(name);
+          } else {
+            if (current !== value || priority !== "important") element.style.setProperty(name, value, "important");
+            state.applied.set(name, value);
+          }
+        }
+      }
+    };
+    const resolveTokens = () => {
+      const result = {};
+      if (!root || !document2.createElement || !target.getComputedStyle) return result;
+      const probe = document2.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      for (const [name, value] of Object.entries(variables)) probe.style.setProperty(name, value);
+      for (const [name, value] of Object.entries({ position: "fixed", visibility: "hidden", "pointer-events": "none", width: "0px", height: "0px", overflow: "hidden" })) probe.style.setProperty(name, value);
+      (document2.body || root).appendChild(probe);
+      const read = (name, property) => {
+        const value = variables[name];
+        if (typeof value !== "string" || !value.trim()) return;
+        const supported = target.CSS?.supports;
+        if (supported && !supported(property, value)) return;
+        const resolved = target.getComputedStyle(probe).getPropertyValue(name).trim();
+        if (!resolved) return;
+        if (property === "line-height" && /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/.test(resolved)) return resolved;
+        probe.style.removeProperty(property);
+        probe.style.setProperty(property, value);
+        const computed = target.getComputedStyle(probe).getPropertyValue(property).trim();
+        if (computed) return computed;
+      };
+      const map3 = (source, property, destinations) => {
+        const value = read(source, property);
+        if (value !== void 0) for (const destination of destinations) result[destination] = value;
+        return value;
+      };
+      try {
+        map3("--font-sans", "font-family", ["--cds-font-sans", "--cds-font-sans-display"]);
+        map3("--font-mono", "font-family", ["--cds-font-mono-ui"]);
+        const size = read("--font-text-md-size", "font-size");
+        const px = size && /^([0-9]+(?:\.[0-9]+)?)px$/.exec(size);
+        if (px && Number(px[1]) >= 8 && Number(px[1]) <= 48) {
+          probe.style.setProperty("font-size", "1rem");
+          const rem = /^([0-9]+(?:\.[0-9]+)?)px$/.exec(target.getComputedStyle(probe).getPropertyValue("font-size").trim());
+          if (rem && Number(rem[1]) > 0) {
+            result["--cds-rem-scale"] = String(Number(px[1]) / (Number(rem[1]) * 0.875));
+            result["--cds-font-size-body"] = size;
+          }
+        }
+        if (size) probe.style.setProperty("font-size", size);
+        map3("--font-text-md-line-height", "line-height", ["--cds-leading-body"]);
+        for (const [source, role] of [["normal", "regular"], ["medium", "medium"], ["semibold", "semibold"], ["bold", "bold"]]) {
+          const weight = map3("--font-weight-" + source, "font-weight", ["--cds-font-weight-" + role]);
+          if (weight && /^[0-9]+(?:\.[0-9]+)?$/.test(weight)) result["--cds-font-wght-" + role] = '"wght" ' + weight;
+        }
+        for (const [source, destinations] of [
+          ["--color-background-primary", ["--cds-surface-0", "--cds-page-bg", "--t-bg"]],
+          ["--color-background-secondary", ["--cds-surface-1", "--cds-surface-panel", "--cds-surface-popover", "--t-panel"]],
+          ["--color-background-tertiary", ["--cds-surface-2", "--cds-surface-3", "--cds-fill-button-layer", "--cds-fill-button-ghost-hover"]],
+          ["--color-background-disabled", ["--cds-fill-disabled"]],
+          ["--color-text-primary", ["--cds-text-primary", "--t-fg"]],
+          ["--color-text-secondary", ["--cds-text-secondary", "--t-fg-secondary"]],
+          ["--color-text-tertiary", ["--cds-text-muted", "--t-fg-muted"]],
+          ["--color-text-inverse", ["--cds-on-accent"]],
+          ["--color-text-info", ["--cds-fill-accent", "--cds-fill-accent-hover", "--t-app-accent", "--t-blue-text"]],
+          ["--color-text-danger", ["--cds-text-danger", "--cds-fill-danger", "--cds-fill-danger-hover", "--t-bad"]],
+          ["--color-text-success", ["--cds-fill-success", "--cds-fill-success-hover", "--t-ok"]],
+          ["--color-text-warning", ["--cds-fill-warning", "--cds-fill-warning-hover", "--t-warn"]],
+          ["--color-border-primary", ["--cds-border-strong", "--cds-border-stronger", "--t-border-strong"]],
+          ["--color-border-secondary", ["--cds-border", "--t-border"]]
+        ]) map3(source, "color", destinations);
+        const focus = read("--color-ring-primary", "color");
+        if (focus) for (const name of ["--cds-focus-shadow", "--cds-shadow-drop-ring"]) result[name] = "0 0 0 2px " + focus;
+        const dangerFocus = read("--color-ring-danger", "color");
+        if (dangerFocus) for (const name of ["--cds-focus-shadow-danger", "--cds-shadow-drop-ring-danger"]) result[name] = "0 0 0 2px " + dangerFocus;
+        map3("--border-radius-xs", "border-radius", ["--cds-radius--xs"]);
+        map3("--border-radius-sm", "border-radius", ["--cds-radius--sm", "--cds-checkbox-radius"]);
+        map3("--border-radius-md", "border-radius", ["--cds-radius"]);
+        map3("--border-radius-lg", "border-radius", ["--cds-radius--lg", "--cds-panel-radius"]);
+        map3("--shadow-sm", "box-shadow", ["--cds-shadow-sm"]);
+        map3("--shadow-md", "box-shadow", ["--cds-shadow-md", "--cds-shadow-popover"]);
+        map3("--shadow-lg", "box-shadow", ["--cds-shadow-lg", "--cds-panel-shadow"]);
+      } finally {
+        probe.remove();
+      }
+      return result;
+    };
+    const hasChrome = (node2) => node2?.matches?.(".cds-root") || node2?.matches?.(commentHosts) || node2?.querySelector?.(".cds-root, " + commentHosts);
+    const changed = (records) => {
+      const relevant = records.some((record3) => !record3.target?.closest?.(content) && (record3.type === "attributes" ? eligible(record3.target) || record3.target?.matches?.(commentHosts) : [...record3.addedNodes || [], ...record3.removedNodes || []].some(hasChrome)));
+      if (relevant) refresh();
+    };
+    const observer = root && typeof target.MutationObserver === "function" ? new target.MutationObserver(changed) : null;
+    if (root) observeScope(root);
+    const elementPrototype = target.Element?.prototype;
+    const originalAttachShadow = elementPrototype?.attachShadow;
+    let attachShadow;
+    if (typeof originalAttachShadow === "function") {
+      attachShadow = function(options) {
+        const shadow = originalAttachShadow.call(this, options);
+        if (!disposed && options?.mode === "open" && this.matches?.(commentHosts) && !this.closest?.(content)) {
+          observeScope(shadow);
+          refresh();
+        }
+        return shadow;
+      };
+      elementPrototype.attachShadow = attachShadow;
+    }
+    return {
+      update(context, snapshot) {
+        if (!root || !context || typeof context !== "object" || disposed) return;
+        if (Object.hasOwn(context, "theme") || snapshot) mode = ["dark", "light"].includes(context.theme) ? context.theme : void 0;
+        if (mode) root.setAttribute("data-theme", mode);
+        else if (originalTheme) root.setAttribute("data-theme", originalTheme);
+        else root.removeAttribute?.("data-theme");
+        if (snapshot) variables = {};
+        if (context.styles?.variables === null) variables = {};
+        else if (context.styles?.variables && typeof context.styles.variables === "object") {
+          for (const [name, value] of Object.entries(context.styles.variables).slice(0, 512)) {
+            if (!/^--[a-zA-Z0-9_-]+$/.test(name)) continue;
+            if (typeof value === "string" && value.trim() && value.length <= 8192) variables[name] = value;
+            else delete variables[name];
+          }
+        }
+        if (snapshot || context.styles?.css && Object.hasOwn(context.styles.css, "fonts")) fonts = typeof context.styles?.css?.fonts === "string" ? context.styles.css.fonts : void 0;
+        let fontStyle = document2.getElementById?.("codex-native-host-fonts");
+        if (fonts) {
+          if (!fontStyle) {
+            fontStyle = document2.createElement("style");
+            fontStyle.id = "codex-native-host-fonts";
+            document2.head.appendChild(fontStyle);
+          }
+          if (fontStyle.textContent !== fonts) fontStyle.textContent = fonts;
+        } else fontStyle?.remove();
+        const next = JSON.stringify([variables, mode]);
+        if (next !== signature) {
+          tokens = resolveTokens();
+          signature = next;
+        }
+        refresh();
+      },
+      dispose() {
+        observer?.disconnect();
+        if (attachShadow && elementPrototype.attachShadow === attachShadow) elementPrototype.attachShadow = originalAttachShadow;
+        for (const [element, state] of owned) restore(element, state);
+        owned.clear();
+        document2?.getElementById?.("codex-native-host-fonts")?.remove();
+        if (originalTheme) root?.setAttribute("data-theme", originalTheme);
+        else root?.removeAttribute?.("data-theme");
+      }
+    };
+  })();
   target.addEventListener("message", (event) => {
     const message = event.data;
     if (event.source !== target.parent || message?.channel !== channel) return;
@@ -54625,27 +55159,7 @@ function installNativeEditorTransport(configuration, target) {
       return;
     }
     if (message.type === "codex-design:host-context-changed") {
-      const root = target.document?.documentElement;
-      const context = message.context;
-      if (!root || !context || typeof context !== "object") return;
-      if (context.theme === "dark" || context.theme === "light") root.setAttribute("data-theme", context.theme);
-      const variables = context.styles?.variables || {};
-      if (typeof variables["--font-sans"] === "string") {
-        root.style.setProperty("--cds-font-sans", variables["--font-sans"]);
-        root.style.setProperty("--cds-font-sans-display", variables["--font-sans"]);
-      }
-      if (typeof variables["--font-mono"] === "string") root.style.setProperty("--cds-font-mono-ui", variables["--font-mono"]);
-      const size = Number.parseFloat(variables["--font-text-md-size"]);
-      if (Number.isFinite(size) && size >= 10 && size <= 32) root.style.setProperty("--cds-rem-scale", String(size / 16));
-      if (typeof context.styles?.css?.fonts === "string") {
-        let style = target.document.getElementById("codex-native-host-fonts");
-        if (!style) {
-          style = target.document.createElement("style");
-          style.id = "codex-native-host-fonts";
-          target.document.head.appendChild(style);
-        }
-        style.textContent = context.styles.css.fonts;
-      }
+      hostTheme.update(message.context, message.hostContextIsSnapshot === true);
       return;
     }
     if (message.type !== "codex-design:editor-response") return;
@@ -54701,15 +55215,15 @@ function installNativeEditorTransport(configuration, target) {
   };
   target.fetch = async (input2, init) => {
     const url3 = typeof input2 === "string" || input2 instanceof URL ? new URL(String(input2), base).href : input2.url;
-    const path11 = relative(url3);
-    if (path11 === null) return originalFetch(input2, init);
+    const path12 = relative(url3);
+    if (path12 === null) return originalFetch(input2, init);
     const request = input2 instanceof Request ? new Request(input2, init) : new Request(url3, init);
     const headers = {};
     for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
     let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
-    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path11.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
+    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path12.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
     const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
-    const responseTask = rpc("editor.request", { request: { path: path11, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
+    const responseTask = rpc("editor.request", { request: { path: path12, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
     const writing = !["GET", "HEAD"].includes(request.method);
     if (writing) pendingWrites.add(responseTask);
     let response;
@@ -54831,7 +55345,7 @@ function installNativeEditorTransport(configuration, target) {
         for (const vendor of configuration.previewVendors || []) {
           const relative2 = "artifact-type/vendor/" + vendor.file;
           const url3 = new URL(relative2, base);
-          for (const path11 of [url3.href, url3.pathname, "/" + relative2, relative2]) preview = preview.split(path11).join(vendor.url);
+          for (const path12 of [url3.href, url3.pathname, "/" + relative2, relative2]) preview = preview.split(path12).join(vendor.url);
         }
         const runtime = "<script data-codex-native-preview-transport>(" + installPreviewTransport.toString() + ")();</script>";
         srcdoc.set.call(this, /<head\b[^>]*>/i.test(preview) ? preview.replace(/<head\b[^>]*>/i, (head) => head + runtime) : runtime + preview);
@@ -54925,6 +55439,9 @@ function installNativeEditorTransport(configuration, target) {
   }
   target.addEventListener("unload", () => {
     for (const source of sources) source.close();
+    disposed = true;
+    hostTheme.dispose();
+    for (const call of [...pending.values()]) call.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
   });
   target.addEventListener("error", (event) => {
     if (!event.message) return;
@@ -54951,17 +55468,17 @@ init_worker_client();
 // source/server/editor-lifecycle.mjs
 init_bridge_core();
 import { spawn } from "node:child_process";
-import fs6 from "node:fs";
-import path9 from "node:path";
+import fs7 from "node:fs";
+import path10 from "node:path";
 var failure2 = (code, message) => Object.assign(new Error(message), { code });
 async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 15e3 } = {}) {
-  const stateFile = path9.join(record3.path, ".artifact-server.json");
-  if (!fs6.existsSync(stateFile)) return { stopped: false };
+  const stateFile = path10.join(record3.path, ".artifact-server.json");
+  if (!fs7.existsSync(stateFile)) return { stopped: false };
   const state = readJson(stateFile);
   if (!state || state.kind !== record3.kind || !samePath(state.root, record3.path)) {
     throw failure2("EDITOR_IDENTITY_UNVERIFIED", "The selected artwork editor record is invalid. Its process and files were preserved.");
   }
-  const cli = path9.join(pluginRoot, "skills", `codex-${record3.kind}`, "scripts", "codex-artifact.mjs");
+  const cli = path10.join(pluginRoot, "skills", `codex-${record3.kind}`, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, "stop", record3.path], {
       cwd: pluginRoot,
@@ -55045,7 +55562,10 @@ var ACTIONS = Object.freeze([
   "editor.events.poll",
   "editor.events.close",
   "request.draftAdded",
-  "request.draftFailed"
+  "request.draftFailed",
+  "export.locations",
+  "export.listDirectory",
+  "export.save"
 ]);
 var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 var referenceUri = (id) => `codex-design://artifacts/${encodeURIComponent(id)}/reference`;
@@ -55067,7 +55587,7 @@ function kindOf(value) {
   return value;
 }
 function relativeOf(value) {
-  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path10.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure3("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
+  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path11.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure3("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
   return value;
 }
 var capabilityState = () => ({
@@ -55078,10 +55598,10 @@ var capabilityState = () => ({
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
 async function openLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
-  const current = readJson(path10.join(record3.path, ".artifact-server.json"));
+  const current = readJson(path11.join(record3.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record3.path, record3.kind);
-    const binding = readJson(path10.join(record3.path, ".codex-design-bridge.json"));
+    const binding = readJson(path11.join(record3.path, ".codex-design-bridge.json"));
     return {
       url: current.url,
       artifactId: record3.id,
@@ -55092,7 +55612,7 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
     };
   }
   const skill = `codex-${record3.kind}`;
-  const cli = path10.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
+  const cli = path11.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [cli, "open-service", record3.path, "--delivery", "native"], {
       cwd: record3.path,
@@ -55173,6 +55693,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
   };
   const transport = createEditorTransport({ editorFor });
   const requests = createEditRequestStore({ store });
+  const exports = createExportStore({ store });
   const nativeComments = createNativeComments({ requests, transport, editorFor });
   const modelRequest = async (requestId2) => {
     const value = await requests.requestForModel(idOf(requestId2));
@@ -55180,11 +55701,11 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
     const comments = await readJson2(value.artifactRoot, "comments.json", { version: 1, threads: [] });
     const projected = await requests.project(value.artifactId, { threads: comments.threads });
     const reported = projected.threads.find((thread) => thread.agent?.nativeRequest?.requestId === value.id)?.agent.nativeRequest;
-    const cli = path10.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
+    const cli = path11.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
     return {
       ...value,
       ...reported ? { status: reported.status, phase: reported.phase } : {},
-      skillFile: path10.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
+      skillFile: path11.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
       dispatchCommand: { executable: process.execPath, args: [cli, "request-dispatch", value.artifactRoot, value.id] },
       workerStatus: { executable: process.execPath, args: [cli, "worker-status", value.artifactRoot] },
       executionPolicy: "Dispatch only requests attached to the user message you actually received. Run the dispatch command in your own native parent environment. Inspect the real native worker before choosing reuse, resume or a new child; only the registered native child runs worker-register/worker-next/worker-complete. Never invent thread IDs, start an independent model process, or replay legacy unconfirmed jobs."
@@ -55245,6 +55766,12 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
       if (action === "conversation.send") throw failure3(UNSUPPORTED_CHAT_CODE, "The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.");
       if (!ACTIONS.includes(action)) throw failure3("UNKNOWN_ACTION", "Unsupported library action.");
       switch (action) {
+        case "export.locations":
+          return await exports.locations();
+        case "export.listDirectory":
+          return await exports.listDirectory(payload);
+        case "export.save":
+          return await exports.save(payload);
         case "library.list":
           return await store.list({ kind: payload.kind === void 0 ? void 0 : kindOf(payload.kind), query: typeof payload.query === "string" ? payload.query.slice(0, 200) : "", favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
         case "library.get":
@@ -55330,8 +55857,8 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
               ["react.production.min.js", "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"],
               ["react-dom.production.min.js", "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"]
             ].map(async ([file3, expected]) => {
-              const bytes = await readFile(path10.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file3));
-              if (bytes.length > 256 * 1024 || createHash8("sha256").update(bytes).digest("hex") !== expected) throw failure3("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
+              const bytes = await readFile(path11.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file3));
+              if (bytes.length > 256 * 1024 || createHash9("sha256").update(bytes).digest("hex") !== expected) throw failure3("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
               return { file: file3, url: "data:text/javascript;base64," + bytes.toString("base64") };
             }));
           }
@@ -55343,10 +55870,10 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
             const relative = url3.pathname.slice(root.pathname.length);
             editorRequestUrl(root.href, relative + url3.search);
             let asset;
-            if (!relative) asset = path10.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
-            else if (relative === "__codex/annotations.js") asset = path10.join(pluginRoot, "scripts/browser-annotations.js");
+            if (!relative) asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
+            else if (relative === "__codex/annotations.js") asset = path11.join(pluginRoot, "scripts/browser-annotations.js");
             else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
-              asset = path10.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
+              asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
             } else throw failure3("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
             const bytes = await readFile(asset);
             return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
@@ -55361,7 +55888,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
           if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase643(payload.base64)) throw failure3("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");
           const bytes = Buffer.from(payload.base64, "base64");
           if (bytes.length > 32 * 1024 * 1024) throw failure3("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
-          return { base64: createHash8("sha256").update(bytes).digest("base64") };
+          return { base64: createHash9("sha256").update(bytes).digest("base64") };
         }
         case "editor.events.open":
           return await nativeComments.openEvents(idOf(payload.id), payload.path);
@@ -55422,7 +55949,7 @@ async function createDesignServer({
   version: version3 = PLUGIN_UI_VERSION
 } = {}) {
   if (html === void 0) html = await readFile2(htmlPath, "utf8");
-  const htmlSHA256 = resourceDiagnostics ? createHash9("sha256").update(html, "utf8").digest("hex") : null;
+  const htmlSHA256 = resourceDiagnostics ? createHash10("sha256").update(html, "utf8").digest("hex") : null;
   if (icons === void 0) {
     const icon = await readFile2(new URL("../assets/icon.png", import.meta.url));
     icons = [{ src: `data:image/png;base64,${icon.toString("base64")}`, mimeType: "image/png", sizes: ["512x512"] }];

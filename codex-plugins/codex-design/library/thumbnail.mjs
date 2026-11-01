@@ -121,6 +121,25 @@ function defaultsOf(html) {
   }
   return values;
 }
+function hasRootBackground(html) {
+  // An authored document background already supplies the artwork canvas.
+  // Preserve it rather than covering it with the ordinary white fallback.
+  for (const style of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)) {
+    const css = style[1]; let selectorStart = 0;
+    for (let cursor = 0; cursor < css.length; cursor++) {
+      if (css[cursor] === '}') { selectorStart = cursor + 1; continue; }
+      if (css[cursor] !== '{') continue;
+      const close = css.indexOf('}', cursor + 1), nested = css.indexOf('{', cursor + 1);
+      if (close < 0) break;
+      if (nested >= 0 && nested < close) { selectorStart = cursor + 1; continue; }
+      const selectors = css.slice(selectorStart, cursor), declarations = css.slice(cursor + 1, close);
+      cursor = close; selectorStart = close + 1;
+      if (!/(?:^|;)\s*background(?:-color)?\s*:/i.test(declarations)) continue;
+      if (selectors.split(',').some(selector => /(?:^|[\s>+~])(?:html|body|:root)(?:\.[\w-]+|#[\w-]+|\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?)*$/i.test(selector.trim()))) return true;
+    }
+  }
+  return false;
+}
 function tokenCss(tokens) {
   const declarations = [], values = new Map(), theme = tokens.color?.themes?.[0]?.id || 'light';
   for (const family of Object.values(tokens)) if (Array.isArray(family?.tokens)) for (const token of family.tokens) if (/^[A-Za-z_][\w-]*$/.test(token.name || '')) values.set(token.name, typeof token.value === 'object' && token.value ? token.value[theme] ?? Object.values(token.value)[0] : token.value);
@@ -220,7 +239,10 @@ export async function createArtifactThumbnail(store, id, options = {}) {
   if (context.dynamic && record.kind !== 'dashboard') context.note('Interactive code was not executed; the cover uses static markup and literal preview defaults.');
   const revision = hash.digest('hex');
   const csp = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
-  const srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + escape(csp) + '"><meta name="referrer" content="no-referrer"><title>' + escape(record.title) + '</title><style>' + extraCss + normalizer + '</style></head><body><svg class="codex-cover-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="xMidYMid meet"><foreignObject width="' + width + '" height="' + height + '"><div xmlns="http://www.w3.org/1999/xhtml" class="codex-cover-surface" style="width:' + width + 'px;height:' + height + 'px;overflow:hidden">' + clean + '</div></foreignObject></svg><style>html,body{margin:0!important;width:100%;height:100%;overflow:hidden!important}body>.codex-cover-svg{display:block;width:100vw;height:100vh}.codex-cover-surface *{animation:none!important;transition:none!important;pointer-events:none!important}</style></body></html>';
+  // Letterboxing belongs to the library surface, while an unspecified artwork
+  // canvas keeps its ordinary white background inside the original viewBox.
+  const canvasBackground = hasRootBackground(clean) ? 'transparent' : '#fff';
+  const srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + escape(csp) + '"><meta name="referrer" content="no-referrer"><title>' + escape(record.title) + '</title><style>html,body{background:transparent}' + extraCss + normalizer + '</style></head><body><svg class="codex-cover-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="xMidYMid meet"><foreignObject width="' + width + '" height="' + height + '"><div xmlns="http://www.w3.org/1999/xhtml" class="codex-cover-surface" style="width:' + width + 'px;height:' + height + 'px;overflow:hidden;background:' + canvasBackground + '">' + clean + '</div></foreignObject></svg><style>html,body{margin:0!important;width:100%;height:100%;overflow:hidden!important}body>.codex-cover-svg{display:block;width:100vw;height:100vh}.codex-cover-surface *{animation:none!important;transition:none!important;pointer-events:none!important}</style></body></html>';
   if (Buffer.byteLength(srcdoc) > limits.maxDocumentBytes) throw new LibraryError('THUMBNAIL_LIMIT', 'The static cover exceeds its output limit.');
   return { artifactId: record.id, id: record.id, kind: record.kind, title: record.title, revision, cacheKey: record.id + ':' + revision, srcdoc, previewWidth: width, previewHeight: height, fidelity, sourceFile, notes };
 }

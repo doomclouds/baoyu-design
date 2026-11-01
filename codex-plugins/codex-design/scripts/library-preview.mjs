@@ -796,7 +796,7 @@ var init_library = __esm({
         const root = await this._artifactPath(record);
         const files = await collectContent(root, record.kind, this.limits);
         const native4 = validateFiles(record.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native4.title, files: files.map(({ path: path13, encoding, data }) => ({ path: path13, encoding, data })) };
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native4.title, files: files.map(({ path: path14, encoding, data }) => ({ path: path14, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -1732,18 +1732,18 @@ var init_edit_request_dispatch = __esm({
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail3 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
-  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail3();
+  const fail4 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail4();
   try {
     const url = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail3();
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail4();
     const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
-    if (!response.ok) throw fail3();
+    if (!response.ok) throw fail4();
     const session = await response.json();
-    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail3();
+    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail4();
     return session;
   } catch {
-    throw fail3();
+    throw fail4();
   }
 }
 var init_artifact_command = __esm({
@@ -1762,8 +1762,8 @@ var init_artifact_command = __esm({
 // source/scripts/library-preview.mjs
 init_library();
 init_safety();
-import fs8 from "node:fs";
-import path12 from "node:path";
+import fs9 from "node:fs";
+import path13 from "node:path";
 import { spawn as spawn3 } from "node:child_process";
 import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
 
@@ -1772,18 +1772,18 @@ init_library();
 init_safety();
 init_worker_client();
 import http from "node:http";
-import fs7 from "node:fs/promises";
-import path11 from "node:path";
-import { randomBytes, randomUUID as randomUUID7 } from "node:crypto";
+import fs8 from "node:fs/promises";
+import path12 from "node:path";
+import { randomBytes, randomUUID as randomUUID8 } from "node:crypto";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // source/server/service.mjs
 init_bridge_core();
 init_artifact_command();
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import path10 from "node:path";
+import path11 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // source/library/thumbnail.mjs
@@ -1980,6 +1980,31 @@ function defaultsOf(html) {
   }
   return values;
 }
+function hasRootBackground(html) {
+  for (const style of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)) {
+    const css = style[1];
+    let selectorStart = 0;
+    for (let cursor = 0; cursor < css.length; cursor++) {
+      if (css[cursor] === "}") {
+        selectorStart = cursor + 1;
+        continue;
+      }
+      if (css[cursor] !== "{") continue;
+      const close = css.indexOf("}", cursor + 1), nested = css.indexOf("{", cursor + 1);
+      if (close < 0) break;
+      if (nested >= 0 && nested < close) {
+        selectorStart = cursor + 1;
+        continue;
+      }
+      const selectors = css.slice(selectorStart, cursor), declarations = css.slice(cursor + 1, close);
+      cursor = close;
+      selectorStart = close + 1;
+      if (!/(?:^|;)\s*background(?:-color)?\s*:/i.test(declarations)) continue;
+      if (selectors.split(",").some((selector) => /(?:^|[\s>+~])(?:html|body|:root)(?:\.[\w-]+|#[\w-]+|\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?)*$/i.test(selector.trim()))) return true;
+    }
+  }
+  return false;
+}
 function tokenCss(tokens) {
   const declarations = [], values = /* @__PURE__ */ new Map(), theme = tokens.color?.themes?.[0]?.id || "light";
   for (const family of Object.values(tokens)) if (Array.isArray(family?.tokens)) {
@@ -2138,17 +2163,310 @@ async function createArtifactThumbnail(store, id, options = {}) {
   if (context.dynamic && record.kind !== "dashboard") context.note("Interactive code was not executed; the cover uses static markup and literal preview defaults.");
   const revision = hash.digest("hex");
   const csp = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
-  const srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + escape2(csp) + '"><meta name="referrer" content="no-referrer"><title>' + escape2(record.title) + "</title><style>" + extraCss + normalizer + '</style></head><body><svg class="codex-cover-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + " " + height + '" preserveAspectRatio="xMidYMid meet"><foreignObject width="' + width + '" height="' + height + '"><div xmlns="http://www.w3.org/1999/xhtml" class="codex-cover-surface" style="width:' + width + "px;height:" + height + 'px;overflow:hidden">' + clean + "</div></foreignObject></svg><style>html,body{margin:0!important;width:100%;height:100%;overflow:hidden!important}body>.codex-cover-svg{display:block;width:100vw;height:100vh}.codex-cover-surface *{animation:none!important;transition:none!important;pointer-events:none!important}</style></body></html>";
+  const canvasBackground = hasRootBackground(clean) ? "transparent" : "#fff";
+  const srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + escape2(csp) + '"><meta name="referrer" content="no-referrer"><title>' + escape2(record.title) + "</title><style>html,body{background:transparent}" + extraCss + normalizer + '</style></head><body><svg class="codex-cover-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + " " + height + '" preserveAspectRatio="xMidYMid meet"><foreignObject width="' + width + '" height="' + height + '"><div xmlns="http://www.w3.org/1999/xhtml" class="codex-cover-surface" style="width:' + width + "px;height:" + height + "px;overflow:hidden;background:" + canvasBackground + '">' + clean + "</div></foreignObject></svg><style>html,body{margin:0!important;width:100%;height:100%;overflow:hidden!important}body>.codex-cover-svg{display:block;width:100vw;height:100vh}.codex-cover-surface *{animation:none!important;transition:none!important;pointer-events:none!important}</style></body></html>";
   if (Buffer.byteLength(srcdoc) > limits.maxDocumentBytes) throw new LibraryError("THUMBNAIL_LIMIT", "The static cover exceeds its output limit.");
   return { artifactId: record.id, id: record.id, kind: record.kind, title: record.title, revision, cacheKey: record.id + ":" + revision, srcdoc, previewWidth: width, previewHeight: height, fidelity, sourceFile, notes };
 }
 
 // source/server/service.mjs
 init_edit_requests();
+
+// source/library/export-store.mjs
+init_safety();
+import fs6 from "node:fs/promises";
+import { constants as constants2 } from "node:fs";
+import os2 from "node:os";
+import path9 from "node:path";
+import { createHash as createHash6, randomUUID as randomUUID5 } from "node:crypto";
+var MAX_BYTES = 128 * 1024 * 1024;
+var PAGE_SIZE = 200;
+var MAX_ENTRIES = 2e4;
+var TOKEN_MS = 30 * 60 * 1e3;
+var preferenceFile = "_state/export-location.json";
+var sha2 = (value) => createHash6("sha256").update(value).digest("hex");
+var fail = (code, message) => new LibraryError(code, message);
+var samePath2 = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+var fingerprint = (stat) => ["dev", "ino", "size", "mode", "mtimeNs", "ctimeNs", "birthtimeNs"].map((key) => String(stat[key])).join(":");
+function absoluteDirectory(value) {
+  if (typeof value !== "string" || !value || value.length > 32e3 || /[\u0000-\u001f\u007f]/.test(value) || !path9.isAbsolute(value)) {
+    throw fail("EXPORT_INVALID_DIRECTORY", "Choose an existing absolute folder path.");
+  }
+  return path9.resolve(value);
+}
+function exportInput(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input) || typeof input.requestId !== "string" || !UUID.test(input.requestId)) {
+    throw fail("EXPORT_INVALID_REQUEST", "A unique export request ID is required.");
+  }
+  const filename = input.filename;
+  if (typeof filename !== "string" || !filename || filename.length > 240 || process.platform !== "win32" && Buffer.byteLength(filename) > 240 || filename === "." || filename === ".." || /[\u0000-\u001f\u007f<>:"/\\|?*]/.test(filename) || filename.trim() !== filename || /[. ]$/.test(filename) || /^(?:con|conin\$|conout\$|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(filename)) {
+    throw fail("EXPORT_INVALID_FILENAME", "Use a safe filename without path separators or reserved characters.");
+  }
+  if (typeof input.mimeType !== "string" || input.mimeType.length > 200 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(input.mimeType)) {
+    throw fail("EXPORT_INVALID_CONTENT", "The export file type is invalid.");
+  }
+  const hasText = Object.hasOwn(input, "text"), hasBase64 = Object.hasOwn(input, "base64");
+  if (hasText === hasBase64) throw fail("EXPORT_INVALID_CONTENT", "Provide exactly one text or base64 export payload.");
+  let bytes;
+  if (hasText) {
+    if (typeof input.text !== "string" || input.text.length > MAX_BYTES || Buffer.byteLength(input.text) > MAX_BYTES) {
+      throw fail("EXPORT_LIMIT_EXCEEDED", "The export exceeds the 128 MiB save limit.");
+    }
+    bytes = Buffer.from(input.text, "utf8");
+  } else {
+    if (typeof input.base64 !== "string" || input.base64.length > Math.ceil(MAX_BYTES / 3) * 4 || input.base64.length % 4 || /[^A-Za-z0-9+/=]/.test(input.base64)) {
+      throw fail("EXPORT_INVALID_CONTENT", "The export payload is not bounded, valid base64.");
+    }
+    const padding = input.base64.endsWith("==") ? 2 : input.base64.endsWith("=") ? 1 : 0;
+    const firstPadding = input.base64.indexOf("=");
+    if (firstPadding !== -1 && firstPadding !== input.base64.length - padding) throw fail("EXPORT_INVALID_CONTENT", "The export padding is invalid.");
+    bytes = Buffer.from(input.base64, "base64");
+    if (bytes.length > MAX_BYTES || bytes.toString("base64") !== input.base64) throw fail("EXPORT_INVALID_CONTENT", "The export payload is not canonical base64.");
+  }
+  if (input.overwriteToken !== void 0 && (typeof input.overwriteToken !== "string" || !UUID.test(input.overwriteToken))) {
+    throw fail("EXPORT_INVALID_CONFIRMATION", "An explicit overwrite confirmation token is required.");
+  }
+  return {
+    requestId: input.requestId.toLowerCase(),
+    filename,
+    mimeType: input.mimeType,
+    bytes,
+    directory: absoluteDirectory(input.directory),
+    overwriteToken: input.overwriteToken
+  };
+}
+function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6, now: now3 = Date.now, beforeCommit } = {}) {
+  if (!store || typeof store.initialize !== "function" || typeof store._checkRoot !== "function") throw new TypeError("A LibraryStore is required.");
+  const io = fsImpl;
+  const ready = async () => {
+    await store.initialize();
+    await store._checkRoot();
+  };
+  const statOrNull2 = async (file) => {
+    try {
+      return await io.lstat(file, { bigint: true });
+    } catch (error3) {
+      if (error3.code === "ENOENT") return null;
+      throw error3;
+    }
+  };
+  const directoryInfo = async (input) => {
+    const requested = absoluteDirectory(input), canonical = await io.realpath(requested);
+    const stat = await io.lstat(canonical, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail("EXPORT_INVALID_DIRECTORY", "The selected location is not a real folder.");
+    return { requested, canonical, identity: `${stat.dev}:${stat.ino}`, stat };
+  };
+  const assertDirectory = async (info) => {
+    const current = await directoryInfo(info.requested);
+    if (!samePath2(current.canonical, info.canonical) || current.identity !== info.identity) {
+      throw fail("EXPORT_DIRECTORY_CHANGED", "The selected folder moved or changed. Choose it again before saving.");
+    }
+  };
+  const targetInfo = async (target) => {
+    const stat = await statOrNull2(target);
+    if (!stat) return null;
+    if (stat.isSymbolicLink() || !stat.isFile()) throw fail("EXPORT_UNSAFE_TARGET", "The destination must be a regular file, not a link or folder.");
+    return { fingerprint: fingerprint(stat), size: Number(stat.size), modifiedAt: new Date(Number(stat.mtimeMs)).toISOString() };
+  };
+  const matchesPayload = async (target, request, contentHash) => {
+    const info = await targetInfo(target);
+    if (!info || info.size !== request.bytes.length) return false;
+    const handle = await io.open(target, constants2.O_RDONLY | (constants2.O_NOFOLLOW || 0));
+    try {
+      const opened = await handle.stat({ bigint: true });
+      if (!opened.isFile() || fingerprint(opened) !== info.fingerprint) return false;
+      const hash = createHash6("sha256").update(request.mimeType + "\0");
+      const buffer = Buffer.alloc(64 * 1024);
+      for (let position = 0; position < info.size; ) {
+        const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, info.size - position), position);
+        if (!bytesRead) return false;
+        hash.update(buffer.subarray(0, bytesRead));
+        position += bytesRead;
+      }
+      return hash.digest("hex") === contentHash && fingerprint(await handle.stat({ bigint: true })) === info.fingerprint;
+    } finally {
+      await handle.close();
+    }
+  };
+  const receiptPath = (id) => `_state/export-receipts/${id}.json`;
+  const collision = async (request, target, contentHash, existing) => {
+    const receipt = {
+      version: 1,
+      requestId: request.requestId,
+      status: "confirmation",
+      target,
+      contentHash,
+      existingFingerprint: existing.fingerprint,
+      overwriteToken: randomUUID5(),
+      expiresAt: now3() + TOKEN_MS
+    };
+    await atomicJson2(store.root, receiptPath(request.requestId), receipt);
+    return {
+      saved: false,
+      exists: true,
+      path: target,
+      overwriteToken: receipt.overwriteToken,
+      existing: { size: existing.size, modifiedAt: existing.modifiedAt }
+    };
+  };
+  const api = {
+    async locations() {
+      await ready();
+      const candidates = [
+        ["home", "Home", homeDirectory],
+        ["desktop", "Desktop", path9.join(homeDirectory, "Desktop")],
+        ["documents", "Documents", path9.join(homeDirectory, "Documents")],
+        ["downloads", "Downloads", path9.join(homeDirectory, "Downloads")]
+      ];
+      const locations = [];
+      for (const [id, label, candidate] of candidates) {
+        try {
+          const folder = await directoryInfo(candidate);
+          if (!locations.some((item) => samePath2(item.path, folder.canonical))) locations.push({ id, label, path: folder.canonical });
+        } catch (error3) {
+          if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EXPORT_INVALID_DIRECTORY"].includes(error3.code)) throw error3;
+        }
+      }
+      let defaultDirectory = locations.find((item) => item.id === "downloads")?.path ?? locations[0]?.path ?? null;
+      let preference;
+      try {
+        preference = await readJson2(store.root, preferenceFile, null);
+      } catch (error3) {
+        if (error3.code !== "INVALID_STATE") throw error3;
+      }
+      if (preference?.version === 1 && typeof preference.directory === "string") {
+        try {
+          defaultDirectory = (await directoryInfo(preference.directory)).canonical;
+        } catch {
+        }
+      }
+      return { locations, defaultDirectory };
+    },
+    async listDirectory({ path: selected, cursor } = {}) {
+      await ready();
+      const folder = await directoryInfo(selected), key = sha2(folder.canonical), revision = `${folder.stat.ino}:${folder.stat.mtimeNs}`;
+      let offset = 0;
+      if (cursor !== void 0) {
+        let value;
+        try {
+          if (typeof cursor !== "string" || cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error("cursor");
+          value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+        } catch {
+          throw fail("EXPORT_INVALID_CURSOR", "The folder page cursor is invalid.");
+        }
+        if (value.key !== key || value.revision !== revision || !Number.isSafeInteger(value.offset) || value.offset < 0 || value.offset > MAX_ENTRIES) {
+          throw fail("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
+        }
+        offset = value.offset;
+      }
+      const entries = [];
+      let count = 0;
+      const directory = await io.opendir(folder.canonical);
+      for await (const entry2 of directory) {
+        if (++count > MAX_ENTRIES) throw fail("EXPORT_DIRECTORY_TOO_LARGE", "This folder contains too many items. Enter a more specific folder path.");
+        if (entry2.isDirectory() && !entry2.isSymbolicLink()) entries.push({ name: entry2.name, path: path9.join(folder.canonical, entry2.name) });
+      }
+      entries.sort((a, b) => a.name.localeCompare(b.name, "en"));
+      await assertDirectory(folder);
+      if ((await directoryInfo(folder.requested)).stat.mtimeNs !== folder.stat.mtimeNs) throw fail("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
+      const parentPath = path9.dirname(folder.canonical);
+      return {
+        path: folder.canonical,
+        parent: parentPath === folder.canonical ? null : parentPath,
+        entries: entries.slice(offset, offset + PAGE_SIZE),
+        ...offset + PAGE_SIZE < entries.length ? { nextCursor: Buffer.from(JSON.stringify({ key, revision, offset: offset + PAGE_SIZE })).toString("base64url") } : {}
+      };
+    },
+    async save(input) {
+      const request = exportInput(input);
+      await ready();
+      return locked(store.root, async () => {
+        const folder = await directoryInfo(request.directory), target = path9.join(folder.canonical, request.filename);
+        const contentHash = createHash6("sha256").update(request.mimeType + "\0").update(request.bytes).digest("hex");
+        const previous = await readJson2(store.root, receiptPath(request.requestId), null);
+        if (previous && (previous.version !== 1 || previous.requestId !== request.requestId || !["confirmation", "committing", "saved"].includes(previous.status) || typeof previous.target !== "string" || !path9.isAbsolute(previous.target) || !/^[a-f0-9]{64}$/.test(previous.contentHash ?? "") || previous.status === "confirmation" && (!UUID.test(previous.overwriteToken ?? "") || !Number.isSafeInteger(previous.expiresAt) || typeof previous.existingFingerprint !== "string" || previous.existingFingerprint.length > 1e3))) {
+          throw fail("EXPORT_INVALID_STATE", "The previous export receipt cannot be verified.");
+        }
+        if (previous && (!samePath2(previous.target, target) || previous.contentHash !== contentHash)) {
+          throw fail("EXPORT_REQUEST_CONFLICT", "This export ID already belongs to different content or a different destination.");
+        }
+        if (previous?.status === "saved") {
+          if (previous.result?.saved !== true || previous.result.path !== target || previous.result.filename !== request.filename || previous.result.bytes !== request.bytes.length) {
+            throw fail("EXPORT_INVALID_STATE", "The saved export receipt cannot be verified.");
+          }
+          if (!await matchesPayload(target, request, contentHash)) throw fail("EXPORT_RESULT_CHANGED", "This export was saved earlier, but the destination has since changed. Start a new export before choosing whether to replace it.");
+          return { ...previous.result, duplicate: true };
+        }
+        if (previous?.status === "committing" && await matchesPayload(target, request, contentHash)) {
+          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
+          await atomicJson2(store.root, receiptPath(request.requestId), { ...previous, status: "saved", result, savedAt: new Date(now3()).toISOString() });
+          await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
+          });
+          return { ...result, duplicate: true };
+        }
+        let existing = await targetInfo(target);
+        if (existing) {
+          if (!request.overwriteToken || previous?.status !== "confirmation" || previous.overwriteToken !== request.overwriteToken || previous.expiresAt < now3() || previous.existingFingerprint !== existing.fingerprint) {
+            return collision(request, target, contentHash, existing);
+          }
+        }
+        const temporary = path9.join(folder.canonical, `.codex-export-${randomUUID5()}.tmp`);
+        let handle;
+        try {
+          handle = await io.open(temporary, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL | (constants2.O_NOFOLLOW || 0), 384);
+          await handle.writeFile(request.bytes);
+          await handle.sync();
+          await handle.close();
+          handle = null;
+          if (beforeCommit) await beforeCommit({ path: target, temporary, replacing: Boolean(existing) });
+          await assertDirectory(folder);
+          const latest = await targetInfo(target);
+          if (existing && (!latest || latest.fingerprint !== existing.fingerprint)) {
+            if (latest) return collision(request, target, contentHash, latest);
+            throw fail("EXPORT_TARGET_CHANGED", "The file changed before replacement. Choose the destination again.");
+          }
+          if (!existing && latest) return collision(request, target, contentHash, latest);
+          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "committing", target, contentHash });
+          if (existing) await io.rename(temporary, target);
+          else {
+            try {
+              await io.link(temporary, target);
+            } catch (error3) {
+              if (["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"].includes(error3.code)) await io.copyFile(temporary, target, constants2.COPYFILE_EXCL);
+              else if (error3.code === "EEXIST") {
+                const appeared = await targetInfo(target);
+                if (appeared) return collision(request, target, contentHash, appeared);
+                throw error3;
+              } else throw error3;
+            }
+          }
+          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
+          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "saved", target, contentHash, result, savedAt: new Date(now3()).toISOString() });
+          await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
+          });
+          return result;
+        } finally {
+          await handle?.close().catch(() => {
+          });
+          try {
+            await assertDirectory(folder);
+            await io.unlink(temporary).catch((error3) => {
+              if (error3.code !== "ENOENT") throw error3;
+            });
+          } catch {
+          }
+        }
+      });
+    }
+  };
+  return api;
+}
+
+// source/server/service.mjs
 init_safety();
 
 // source/server/editor-transport.mjs
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 
 // source/scripts/base64.mjs
 function isValidBase64(value) {
@@ -2158,7 +2476,7 @@ function isValidBase64(value) {
 }
 
 // source/server/editor-transport.mjs
-var fail = (code, message) => Object.assign(new Error(message), { code });
+var fail2 = (code, message) => Object.assign(new Error(message), { code });
 var METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
 var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]);
 var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control"];
@@ -2166,35 +2484,35 @@ var MAX_BODY = 32 * 1024 * 1024;
 var MAX_RESPONSE = 64 * 1024 * 1024;
 function validateEditorRequest(request = {}) {
   const method = String(request.method || "GET").toUpperCase();
-  if (!METHODS.has(method)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
+  if (!METHODS.has(method)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
   const headers = new Headers();
-  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
+  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
   for (const [name, value] of Object.entries(request.headers || {})) {
-    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
     headers.set(name, value);
   }
   let body;
   if (request.body !== void 0) {
-    if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
     body = Buffer.from(request.body, "base64");
-    if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
   }
   return { method, headers, body };
 }
 function editorRequestUrl(base, relative) {
   const root = new URL(base);
-  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
-  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
-  const path13 = relative.split(/[?#]/, 1)[0];
+  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail2("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
+  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail2("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
+  const path14 = relative.split(/[?#]/, 1)[0];
   let decoded;
   try {
-    decoded = decodeURIComponent(path13);
+    decoded = decodeURIComponent(path14);
   } catch {
-    throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
+    throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
   }
-  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
   const target = new URL(relative, root);
-  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
   return target;
 }
 async function limitedBody(response, limit) {
@@ -2203,7 +2521,7 @@ async function limitedBody(response, limit) {
   let size = 0;
   for await (const chunk of response.body) {
     size += chunk.byteLength;
-    if (size > limit) throw fail("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
+    if (size > limit) throw fail2("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, size);
@@ -2249,7 +2567,7 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
     try {
       for await (const chunk of stream.response.body) {
         buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
-        if (buffer.length > 4 * 1024 * 1024) throw fail("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
+        if (buffer.length > 4 * 1024 * 1024) throw fail2("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
         let end;
         while ((end = buffer.indexOf("\n\n")) >= 0) {
           record(buffer.slice(0, end));
@@ -2272,14 +2590,14 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       const response = await fetcher(url, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
       if (response.headers.get("content-type")?.includes("text/event-stream")) {
         await response.body?.cancel();
-        throw fail("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
+        throw fail2("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
       }
       const bytes = await limitedBody(response, MAX_RESPONSE);
       return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
     },
-    async openEvents(id, path13) {
-      const { url } = await get(id, path13);
-      if (!/(?:^|\/)events$/.test(url.pathname)) throw fail("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
+    async openEvents(id, path14) {
+      const { url } = await get(id, path14);
+      if (!/(?:^|\/)events$/.test(url.pathname)) throw fail2("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
       const abort = new AbortController();
       let response;
       const startup = setTimeout(() => abort.abort(), 1e4);
@@ -2290,9 +2608,9 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       }
       if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
         abort.abort();
-        throw fail("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
+        throw fail2("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
       }
-      const stream = { id: randomUUID5(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
+      const stream = { id: randomUUID6(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
       streams.set(stream.id, stream);
       touch(stream);
       void pump(stream);
@@ -2300,8 +2618,8 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
     },
     async pollEvents(id, subscriptionId, cursor = 0) {
       const stream = streams.get(subscriptionId);
-      if (!stream || stream.artifactId !== id || stream.closed) throw fail("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
-      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
+      if (!stream || stream.artifactId !== id || stream.closed) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
       touch(stream);
       if (!stream.ended && stream.cursor <= cursor) await new Promise((resolve) => {
         const wake = () => {
@@ -2326,15 +2644,15 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
 }
 
 // source/server/native-comments.mjs
-import { createHash as createHash6, randomUUID as randomUUID6 } from "node:crypto";
-var fail2 = (code, message) => Object.assign(new Error(message), { code });
+import { createHash as createHash7, randomUUID as randomUUID7 } from "node:crypto";
+var fail3 = (code, message) => Object.assign(new Error(message), { code });
 var encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64");
 var jsonResult = (value, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Accepted", headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, body: encode(value) });
 var parseResult = (result) => {
   try {
     return JSON.parse(Buffer.from(result.body, "base64").toString("utf8"));
   } catch {
-    throw fail2("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
+    throw fail3("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
   }
 };
 function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, idleMs = 12e4 } = {}) {
@@ -2343,8 +2661,8 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     const editor = await editorFor(id);
     const url = editorRequestUrl(editor.url, relative);
     const base = new URL(editor.url);
-    const path13 = decodeURIComponent(url.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
-    return { editor, path: path13, url };
+    const path14 = decodeURIComponent(url.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
+    return { editor, path: path14, url };
   };
   const project = async (id, snapshot2) => {
     const value = await requests.project(id, snapshot2);
@@ -2359,7 +2677,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
   };
   const snapshot = async (id) => {
     const result = await transport.request(id, { path: "__comments", method: "GET" });
-    if (result.status < 200 || result.status >= 300) throw fail2("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
+    if (result.status < 200 || result.status >= 300) throw fail3("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
     return project(id, parseResult(result));
   };
   const prepared = async (id, threadId, response) => {
@@ -2373,7 +2691,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     }
     return { ...response, body: encode(body), nativeDraft: {
       requestId: request.id,
-      attemptId: randomUUID6(),
+      attemptId: randomUUID7(),
       savedCommentId: threadId,
       artifactId: id,
       uri: request.requestUri,
@@ -2392,35 +2710,35 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
   };
   return {
     async request(id, request) {
-      const { path: path13 } = await route(id, request.path);
+      const { path: path14 } = await route(id, request.path);
       const { method, body } = validateEditorRequest(request);
-      if (path13 === "__comments" && ["GET", "HEAD"].includes(method)) {
+      if (path14 === "__comments" && ["GET", "HEAD"].includes(method)) {
         const result = jsonResult(await snapshot(id));
         return method === "HEAD" ? { ...result, body: "" } : result;
       }
-      const send = /^__comments\/([^/]+)\/send$/.exec(path13);
+      const send = /^__comments\/([^/]+)\/send$/.exec(path14);
       if (send && method === "POST") {
         const current = await snapshot(id);
         const matches = current.threads.filter((item) => item.id === send[1]);
         if (!matches.length && send[1].length >= 3) matches.push(...current.threads.filter((item) => item.id.startsWith(send[1])));
-        if (matches.length !== 1) throw fail2(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
+        if (matches.length !== 1) throw fail3(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
         const thread = matches[0];
         return prepared(id, thread.id, jsonResult({ thread }));
       }
-      const mutation = path13 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path13) && ["POST", "PATCH"].includes(method);
-      const adHoc = path13 === "__comments/agent/requests" && method === "POST";
+      const mutation = path14 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path14) && ["POST", "PATCH"].includes(method);
+      const adHoc = path14 === "__comments/agent/requests" && method === "POST";
       if ((mutation || adHoc) && body) {
-        if (body.length > 256 * 1024) throw fail2("INVALID_COMMENT", "The comment exceeds its transfer limit.");
+        if (body.length > 256 * 1024) throw fail3("INVALID_COMMENT", "The comment exceeds its transfer limit.");
         let input;
         try {
           input = JSON.parse(body.toString("utf8"));
         } catch {
-          throw fail2("INVALID_COMMENT", "The comment request is not valid JSON.");
+          throw fail3("INVALID_COMMENT", "The comment request is not valid JSON.");
         }
-        if (!input || typeof input !== "object" || Array.isArray(input)) throw fail2("INVALID_COMMENT", "Expected a comment object.");
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw fail3("INVALID_COMMENT", "Expected a comment object.");
         if (input.send === true || adHoc) {
           const normal = adHoc ? {
-            anchor: "request:" + randomUUID6(),
+            anchor: "request:" + randomUUID7(),
             label: input.label || "Artwork request",
             text: input.text,
             ...input.selection ? { detail: input.selection } : {},
@@ -2429,16 +2747,16 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
           const result = await transport.request(id, { ...request, path: adHoc ? "__comments" : request.path, body: encode(normal) });
           if (result.status < 200 || result.status >= 300) return result;
           const saved = parseResult(result);
-          if (!saved.thread?.id) throw fail2("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
+          if (!saved.thread?.id) throw fail3("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
           return prepared(id, saved.thread.id, adHoc ? { ...result, body: encode({ ...saved, request: { id: saved.thread.id } }) } : result);
         }
       }
       return transport.request(id, request);
     },
-    async openEvents(id, path13) {
-      const found = await route(id, path13);
-      if (found.path !== "__comments/events") return transport.openEvents(id, path13);
-      const stream = { id: randomUUID6(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
+    async openEvents(id, path14) {
+      const found = await route(id, path14);
+      if (found.path !== "__comments/events") return transport.openEvents(id, path14);
+      const stream = { id: randomUUID7(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
       streams.set(stream.id, stream);
       touch(stream);
       return { subscriptionId: stream.id, cursor: 0 };
@@ -2446,16 +2764,16 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     async pollEvents(id, subscriptionId, cursor = 0) {
       const stream = streams.get(subscriptionId);
       if (!stream) return transport.pollEvents(id, subscriptionId, cursor);
-      if (stream.artifactId !== id) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
-      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail2("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
+      if (stream.artifactId !== id) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail3("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
       touch(stream);
       const delay = Math.max(0, pollMs - (Date.now() - stream.lastPoll));
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       if (!streams.has(subscriptionId)) return { events: [], cursor: stream.cursor, ended: true };
       const value = await snapshot(id);
-      const data = JSON.stringify(value), fingerprint = createHash6("sha256").update(data).digest("hex");
-      if (fingerprint !== stream.fingerprint) {
-        stream.fingerprint = fingerprint;
+      const data = JSON.stringify(value), fingerprint2 = createHash7("sha256").update(data).digest("hex");
+      if (fingerprint2 !== stream.fingerprint) {
+        stream.fingerprint = fingerprint2;
         stream.events.push({ cursor: ++stream.cursor, event: "comments", data });
         if (stream.events.length > 128) stream.events.shift();
       }
@@ -2465,7 +2783,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     async closeEvents(id, subscriptionId) {
       const stream = streams.get(subscriptionId);
       if (!stream) return transport.closeEvents(id, subscriptionId);
-      if (stream.artifactId !== id) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (stream.artifactId !== id) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
       close(stream);
       return { closed: true };
     },
@@ -2476,7 +2794,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
 }
 
 // source/server/editor-document.mjs
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 
 // source/scripts/editor-runtime-adapter.mjs
 function repairEditorRuntime(source) {
@@ -3034,7 +3352,7 @@ ${scriptText(body)}
 <script>${scriptText(bootstrap)}</script>`);
   const outputBytes = Buffer.byteLength(html);
   if (outputBytes > maxBytes) throw error("EDITOR_DOCUMENT_TOO_LARGE", "The assembled native editor exceeds its content limit.");
-  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash7("sha256").update(html).digest("hex"), virtualBase: virtual.href };
+  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash8("sha256").update(html).digest("hex"), virtualBase: virtual.href };
 }
 
 // source/scripts/editor-native-transport.js
@@ -3105,6 +3423,7 @@ function installNativeEditorTransport(configuration, target) {
     if (temporary) target.document.documentElement?.setAttribute("data-codex-ui-storage", "memory");
   }
   const pending = /* @__PURE__ */ new Map();
+  let disposed = false;
   const pendingWrites = /* @__PURE__ */ new Set();
   const sources = /* @__PURE__ */ new Set();
   const assetCache = /* @__PURE__ */ new Map();
@@ -3112,13 +3431,13 @@ function installNativeEditorTransport(configuration, target) {
   const assetIds = /* @__PURE__ */ new Set();
   let assetBytes = 0;
   if (target.crypto && typeof target.crypto.randomUUID !== "function" && typeof target.crypto.getRandomValues === "function") {
-    const randomUUID8 = () => {
+    const randomUUID9 = () => {
       const bytes = target.crypto.getRandomValues(new Uint8Array(16));
       bytes[6] = bytes[6] & 15 | 64;
       bytes[8] = bytes[8] & 63 | 128;
       return Array.from(bytes, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
     };
-    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID8, configurable: true });
+    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID9, configurable: true });
   }
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
@@ -3135,11 +3454,16 @@ function installNativeEditorTransport(configuration, target) {
   };
   const base64ToBytes = (text) => Uint8Array.from(target.atob(text), (character) => character.charCodeAt(0));
   const rpc = (action, payload = {}, signal) => new Promise((resolve, reject) => {
+    if (disposed) {
+      reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
+      return;
+    }
     if (signal?.aborted) {
       reject(signal.reason || new DOMException("Aborted", "AbortError"));
       return;
     }
     const requestId2 = String(++sequence);
+    let timer;
     const cleanup = () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
@@ -3149,7 +3473,7 @@ function installNativeEditorTransport(configuration, target) {
       cleanup();
       reject(signal.reason || new DOMException("Aborted", "AbortError"));
     };
-    const timer = setTimeout(() => {
+    if (action !== "editor.download") timer = setTimeout(() => {
       cleanup();
       reject(Object.assign(new Error("The artwork editor connection timed out."), { code: "EDITOR_TRANSPORT_TIMEOUT" }));
     }, 45e3);
@@ -3199,6 +3523,216 @@ function installNativeEditorTransport(configuration, target) {
       host = wrap(value);
     } });
   }
+  const hostTheme = (() => {
+    const document2 = target.document;
+    const root = document2?.documentElement;
+    const originalTheme = root?.getAttribute?.("data-theme");
+    let variables = {}, fonts, mode, signature;
+    let tokens = {};
+    const owned = /* @__PURE__ */ new Map();
+    const content = "[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]";
+    const commentHosts = "[data-baoyu-comments], [data-baoyu-comments-seat]";
+    const observed = /* @__PURE__ */ new WeakSet();
+    const observeScope = (scope) => {
+      if (!observer || observed.has(scope)) return;
+      observer.observe(scope, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "data-font", "data-density"] });
+      observed.add(scope);
+    };
+    const scopes = () => {
+      const result = /* @__PURE__ */ new Set([document2]);
+      for (const scope of result) for (const host of scope.querySelectorAll?.(commentHosts) || []) {
+        if (host.closest?.(content)) continue;
+        const shadow = host.shadowRoot;
+        if (shadow) {
+          result.add(shadow);
+          observeScope(shadow);
+        }
+      }
+      return result;
+    };
+    const eligible = (element) => element && (element === root || element.matches?.(".cds-root")) && !element.closest?.(content);
+    const restore = (element, state) => {
+      for (const [name, original] of state.original) {
+        if (original.value) element.style.setProperty(name, original.value, original.priority);
+        else element.style.removeProperty(name);
+      }
+    };
+    const refresh = () => {
+      if (!root || disposed) return;
+      const candidates = new Set([root].filter(eligible));
+      for (const scope of scopes()) for (const element of scope.querySelectorAll?.(".cds-root") || []) if (eligible(element)) candidates.add(element);
+      for (const [element, state] of owned) if (!candidates.has(element)) {
+        restore(element, state);
+        owned.delete(element);
+      }
+      for (const element of candidates) {
+        if (!element.style) continue;
+        let state = owned.get(element);
+        if (!state) {
+          state = { original: /* @__PURE__ */ new Map(), applied: /* @__PURE__ */ new Map() };
+          owned.set(element, state);
+        }
+        for (const name of /* @__PURE__ */ new Set([...state.applied.keys(), ...Object.keys(tokens)])) {
+          const value = tokens[name];
+          const current = element.style.getPropertyValue(name), priority = element.style.getPropertyPriority?.(name) || "";
+          if (!state.original.has(name) || state.applied.has(name) && (current !== state.applied.get(name) || priority !== "important")) {
+            state.original.set(name, { value: current, priority });
+          }
+          if (value === void 0) {
+            const original = state.original.get(name);
+            if (original.value) element.style.setProperty(name, original.value, original.priority);
+            else element.style.removeProperty(name);
+            state.original.delete(name);
+            state.applied.delete(name);
+          } else {
+            if (current !== value || priority !== "important") element.style.setProperty(name, value, "important");
+            state.applied.set(name, value);
+          }
+        }
+      }
+    };
+    const resolveTokens = () => {
+      const result = {};
+      if (!root || !document2.createElement || !target.getComputedStyle) return result;
+      const probe = document2.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      for (const [name, value] of Object.entries(variables)) probe.style.setProperty(name, value);
+      for (const [name, value] of Object.entries({ position: "fixed", visibility: "hidden", "pointer-events": "none", width: "0px", height: "0px", overflow: "hidden" })) probe.style.setProperty(name, value);
+      (document2.body || root).appendChild(probe);
+      const read = (name, property) => {
+        const value = variables[name];
+        if (typeof value !== "string" || !value.trim()) return;
+        const supported = target.CSS?.supports;
+        if (supported && !supported(property, value)) return;
+        const resolved = target.getComputedStyle(probe).getPropertyValue(name).trim();
+        if (!resolved) return;
+        if (property === "line-height" && /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/.test(resolved)) return resolved;
+        probe.style.removeProperty(property);
+        probe.style.setProperty(property, value);
+        const computed = target.getComputedStyle(probe).getPropertyValue(property).trim();
+        if (computed) return computed;
+      };
+      const map = (source, property, destinations) => {
+        const value = read(source, property);
+        if (value !== void 0) for (const destination of destinations) result[destination] = value;
+        return value;
+      };
+      try {
+        map("--font-sans", "font-family", ["--cds-font-sans", "--cds-font-sans-display"]);
+        map("--font-mono", "font-family", ["--cds-font-mono-ui"]);
+        const size = read("--font-text-md-size", "font-size");
+        const px = size && /^([0-9]+(?:\.[0-9]+)?)px$/.exec(size);
+        if (px && Number(px[1]) >= 8 && Number(px[1]) <= 48) {
+          probe.style.setProperty("font-size", "1rem");
+          const rem = /^([0-9]+(?:\.[0-9]+)?)px$/.exec(target.getComputedStyle(probe).getPropertyValue("font-size").trim());
+          if (rem && Number(rem[1]) > 0) {
+            result["--cds-rem-scale"] = String(Number(px[1]) / (Number(rem[1]) * 0.875));
+            result["--cds-font-size-body"] = size;
+          }
+        }
+        if (size) probe.style.setProperty("font-size", size);
+        map("--font-text-md-line-height", "line-height", ["--cds-leading-body"]);
+        for (const [source, role] of [["normal", "regular"], ["medium", "medium"], ["semibold", "semibold"], ["bold", "bold"]]) {
+          const weight = map("--font-weight-" + source, "font-weight", ["--cds-font-weight-" + role]);
+          if (weight && /^[0-9]+(?:\.[0-9]+)?$/.test(weight)) result["--cds-font-wght-" + role] = '"wght" ' + weight;
+        }
+        for (const [source, destinations] of [
+          ["--color-background-primary", ["--cds-surface-0", "--cds-page-bg", "--t-bg"]],
+          ["--color-background-secondary", ["--cds-surface-1", "--cds-surface-panel", "--cds-surface-popover", "--t-panel"]],
+          ["--color-background-tertiary", ["--cds-surface-2", "--cds-surface-3", "--cds-fill-button-layer", "--cds-fill-button-ghost-hover"]],
+          ["--color-background-disabled", ["--cds-fill-disabled"]],
+          ["--color-text-primary", ["--cds-text-primary", "--t-fg"]],
+          ["--color-text-secondary", ["--cds-text-secondary", "--t-fg-secondary"]],
+          ["--color-text-tertiary", ["--cds-text-muted", "--t-fg-muted"]],
+          ["--color-text-inverse", ["--cds-on-accent"]],
+          ["--color-text-info", ["--cds-fill-accent", "--cds-fill-accent-hover", "--t-app-accent", "--t-blue-text"]],
+          ["--color-text-danger", ["--cds-text-danger", "--cds-fill-danger", "--cds-fill-danger-hover", "--t-bad"]],
+          ["--color-text-success", ["--cds-fill-success", "--cds-fill-success-hover", "--t-ok"]],
+          ["--color-text-warning", ["--cds-fill-warning", "--cds-fill-warning-hover", "--t-warn"]],
+          ["--color-border-primary", ["--cds-border-strong", "--cds-border-stronger", "--t-border-strong"]],
+          ["--color-border-secondary", ["--cds-border", "--t-border"]]
+        ]) map(source, "color", destinations);
+        const focus = read("--color-ring-primary", "color");
+        if (focus) for (const name of ["--cds-focus-shadow", "--cds-shadow-drop-ring"]) result[name] = "0 0 0 2px " + focus;
+        const dangerFocus = read("--color-ring-danger", "color");
+        if (dangerFocus) for (const name of ["--cds-focus-shadow-danger", "--cds-shadow-drop-ring-danger"]) result[name] = "0 0 0 2px " + dangerFocus;
+        map("--border-radius-xs", "border-radius", ["--cds-radius--xs"]);
+        map("--border-radius-sm", "border-radius", ["--cds-radius--sm", "--cds-checkbox-radius"]);
+        map("--border-radius-md", "border-radius", ["--cds-radius"]);
+        map("--border-radius-lg", "border-radius", ["--cds-radius--lg", "--cds-panel-radius"]);
+        map("--shadow-sm", "box-shadow", ["--cds-shadow-sm"]);
+        map("--shadow-md", "box-shadow", ["--cds-shadow-md", "--cds-shadow-popover"]);
+        map("--shadow-lg", "box-shadow", ["--cds-shadow-lg", "--cds-panel-shadow"]);
+      } finally {
+        probe.remove();
+      }
+      return result;
+    };
+    const hasChrome = (node) => node?.matches?.(".cds-root") || node?.matches?.(commentHosts) || node?.querySelector?.(".cds-root, " + commentHosts);
+    const changed = (records) => {
+      const relevant = records.some((record) => !record.target?.closest?.(content) && (record.type === "attributes" ? eligible(record.target) || record.target?.matches?.(commentHosts) : [...record.addedNodes || [], ...record.removedNodes || []].some(hasChrome)));
+      if (relevant) refresh();
+    };
+    const observer = root && typeof target.MutationObserver === "function" ? new target.MutationObserver(changed) : null;
+    if (root) observeScope(root);
+    const elementPrototype = target.Element?.prototype;
+    const originalAttachShadow = elementPrototype?.attachShadow;
+    let attachShadow;
+    if (typeof originalAttachShadow === "function") {
+      attachShadow = function(options) {
+        const shadow = originalAttachShadow.call(this, options);
+        if (!disposed && options?.mode === "open" && this.matches?.(commentHosts) && !this.closest?.(content)) {
+          observeScope(shadow);
+          refresh();
+        }
+        return shadow;
+      };
+      elementPrototype.attachShadow = attachShadow;
+    }
+    return {
+      update(context, snapshot) {
+        if (!root || !context || typeof context !== "object" || disposed) return;
+        if (Object.hasOwn(context, "theme") || snapshot) mode = ["dark", "light"].includes(context.theme) ? context.theme : void 0;
+        if (mode) root.setAttribute("data-theme", mode);
+        else if (originalTheme) root.setAttribute("data-theme", originalTheme);
+        else root.removeAttribute?.("data-theme");
+        if (snapshot) variables = {};
+        if (context.styles?.variables === null) variables = {};
+        else if (context.styles?.variables && typeof context.styles.variables === "object") {
+          for (const [name, value] of Object.entries(context.styles.variables).slice(0, 512)) {
+            if (!/^--[a-zA-Z0-9_-]+$/.test(name)) continue;
+            if (typeof value === "string" && value.trim() && value.length <= 8192) variables[name] = value;
+            else delete variables[name];
+          }
+        }
+        if (snapshot || context.styles?.css && Object.hasOwn(context.styles.css, "fonts")) fonts = typeof context.styles?.css?.fonts === "string" ? context.styles.css.fonts : void 0;
+        let fontStyle = document2.getElementById?.("codex-native-host-fonts");
+        if (fonts) {
+          if (!fontStyle) {
+            fontStyle = document2.createElement("style");
+            fontStyle.id = "codex-native-host-fonts";
+            document2.head.appendChild(fontStyle);
+          }
+          if (fontStyle.textContent !== fonts) fontStyle.textContent = fonts;
+        } else fontStyle?.remove();
+        const next = JSON.stringify([variables, mode]);
+        if (next !== signature) {
+          tokens = resolveTokens();
+          signature = next;
+        }
+        refresh();
+      },
+      dispose() {
+        observer?.disconnect();
+        if (attachShadow && elementPrototype.attachShadow === attachShadow) elementPrototype.attachShadow = originalAttachShadow;
+        for (const [element, state] of owned) restore(element, state);
+        owned.clear();
+        document2?.getElementById?.("codex-native-host-fonts")?.remove();
+        if (originalTheme) root?.setAttribute("data-theme", originalTheme);
+        else root?.removeAttribute?.("data-theme");
+      }
+    };
+  })();
   target.addEventListener("message", (event) => {
     const message = event.data;
     if (event.source !== target.parent || message?.channel !== channel) return;
@@ -3232,27 +3766,7 @@ function installNativeEditorTransport(configuration, target) {
       return;
     }
     if (message.type === "codex-design:host-context-changed") {
-      const root = target.document?.documentElement;
-      const context = message.context;
-      if (!root || !context || typeof context !== "object") return;
-      if (context.theme === "dark" || context.theme === "light") root.setAttribute("data-theme", context.theme);
-      const variables = context.styles?.variables || {};
-      if (typeof variables["--font-sans"] === "string") {
-        root.style.setProperty("--cds-font-sans", variables["--font-sans"]);
-        root.style.setProperty("--cds-font-sans-display", variables["--font-sans"]);
-      }
-      if (typeof variables["--font-mono"] === "string") root.style.setProperty("--cds-font-mono-ui", variables["--font-mono"]);
-      const size = Number.parseFloat(variables["--font-text-md-size"]);
-      if (Number.isFinite(size) && size >= 10 && size <= 32) root.style.setProperty("--cds-rem-scale", String(size / 16));
-      if (typeof context.styles?.css?.fonts === "string") {
-        let style = target.document.getElementById("codex-native-host-fonts");
-        if (!style) {
-          style = target.document.createElement("style");
-          style.id = "codex-native-host-fonts";
-          target.document.head.appendChild(style);
-        }
-        style.textContent = context.styles.css.fonts;
-      }
+      hostTheme.update(message.context, message.hostContextIsSnapshot === true);
       return;
     }
     if (message.type !== "codex-design:editor-response") return;
@@ -3308,15 +3822,15 @@ function installNativeEditorTransport(configuration, target) {
   };
   target.fetch = async (input, init) => {
     const url = typeof input === "string" || input instanceof URL ? new URL(String(input), base).href : input.url;
-    const path13 = relative(url);
-    if (path13 === null) return originalFetch(input, init);
+    const path14 = relative(url);
+    if (path14 === null) return originalFetch(input, init);
     const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
     const headers = {};
     for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
     let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
-    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path13.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
+    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path14.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
     const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
-    const responseTask = rpc("editor.request", { request: { path: path13, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
+    const responseTask = rpc("editor.request", { request: { path: path14, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
     const writing = !["GET", "HEAD"].includes(request.method);
     if (writing) pendingWrites.add(responseTask);
     let response;
@@ -3438,7 +3952,7 @@ function installNativeEditorTransport(configuration, target) {
         for (const vendor of configuration.previewVendors || []) {
           const relative2 = "artifact-type/vendor/" + vendor.file;
           const url = new URL(relative2, base);
-          for (const path13 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path13).join(vendor.url);
+          for (const path14 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path14).join(vendor.url);
         }
         const runtime = "<script data-codex-native-preview-transport>(" + installPreviewTransport.toString() + ")();</script>";
         srcdoc.set.call(this, /<head\b[^>]*>/i.test(preview) ? preview.replace(/<head\b[^>]*>/i, (head) => head + runtime) : runtime + preview);
@@ -3532,6 +4046,9 @@ function installNativeEditorTransport(configuration, target) {
   }
   target.addEventListener("unload", () => {
     for (const source of sources) source.close();
+    disposed = true;
+    hostTheme.dispose();
+    for (const call of [...pending.values()]) call.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
   });
   target.addEventListener("error", (event) => {
     if (!event.message) return;
@@ -3558,17 +4075,17 @@ init_worker_client();
 // source/server/editor-lifecycle.mjs
 init_bridge_core();
 import { spawn } from "node:child_process";
-import fs6 from "node:fs";
-import path9 from "node:path";
+import fs7 from "node:fs";
+import path10 from "node:path";
 var failure = (code, message) => Object.assign(new Error(message), { code });
 async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 15e3 } = {}) {
-  const stateFile = path9.join(record.path, ".artifact-server.json");
-  if (!fs6.existsSync(stateFile)) return { stopped: false };
+  const stateFile = path10.join(record.path, ".artifact-server.json");
+  if (!fs7.existsSync(stateFile)) return { stopped: false };
   const state = readJson(stateFile);
   if (!state || state.kind !== record.kind || !samePath(state.root, record.path)) {
     throw failure("EDITOR_IDENTITY_UNVERIFIED", "The selected artwork editor record is invalid. Its process and files were preserved.");
   }
-  const cli = path9.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
+  const cli = path10.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, "stop", record.path], {
       cwd: pluginRoot,
@@ -3651,7 +4168,10 @@ var ACTIONS = Object.freeze([
   "editor.events.poll",
   "editor.events.close",
   "request.draftAdded",
-  "request.draftFailed"
+  "request.draftFailed",
+  "export.locations",
+  "export.listDirectory",
+  "export.save"
 ]);
 var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 var referenceUri = (id) => `codex-design://artifacts/${encodeURIComponent(id)}/reference`;
@@ -3673,7 +4193,7 @@ function kindOf(value) {
   return value;
 }
 function relativeOf(value) {
-  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path10.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
+  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path11.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
   return value;
 }
 var capabilityState = () => ({
@@ -3684,10 +4204,10 @@ var capabilityState = () => ({
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
 async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
-  const current = readJson(path10.join(record.path, ".artifact-server.json"));
+  const current = readJson(path11.join(record.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record.path, record.kind);
-    const binding = readJson(path10.join(record.path, ".codex-design-bridge.json"));
+    const binding = readJson(path11.join(record.path, ".codex-design-bridge.json"));
     return {
       url: current.url,
       artifactId: record.id,
@@ -3698,7 +4218,7 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     };
   }
   const skill = `codex-${record.kind}`;
-  const cli = path10.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
+  const cli = path11.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [cli, "open-service", record.path, "--delivery", "native"], {
       cwd: record.path,
@@ -3779,6 +4299,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
   };
   const transport = createEditorTransport({ editorFor });
   const requests = createEditRequestStore({ store });
+  const exports = createExportStore({ store });
   const nativeComments = createNativeComments({ requests, transport, editorFor });
   const modelRequest = async (requestId2) => {
     const value = await requests.requestForModel(idOf(requestId2));
@@ -3786,11 +4307,11 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
     const comments = await readJson2(value.artifactRoot, "comments.json", { version: 1, threads: [] });
     const projected = await requests.project(value.artifactId, { threads: comments.threads });
     const reported = projected.threads.find((thread) => thread.agent?.nativeRequest?.requestId === value.id)?.agent.nativeRequest;
-    const cli = path10.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
+    const cli = path11.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
     return {
       ...value,
       ...reported ? { status: reported.status, phase: reported.phase } : {},
-      skillFile: path10.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
+      skillFile: path11.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
       dispatchCommand: { executable: process.execPath, args: [cli, "request-dispatch", value.artifactRoot, value.id] },
       workerStatus: { executable: process.execPath, args: [cli, "worker-status", value.artifactRoot] },
       executionPolicy: "Dispatch only requests attached to the user message you actually received. Run the dispatch command in your own native parent environment. Inspect the real native worker before choosing reuse, resume or a new child; only the registered native child runs worker-register/worker-next/worker-complete. Never invent thread IDs, start an independent model process, or replay legacy unconfirmed jobs."
@@ -3851,6 +4372,12 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
       if (action === "conversation.send") throw failure2(UNSUPPORTED_CHAT_CODE, "The host has not exposed a verified per-artifact native edit-conversation bridge. No message was sent.");
       if (!ACTIONS.includes(action)) throw failure2("UNKNOWN_ACTION", "Unsupported library action.");
       switch (action) {
+        case "export.locations":
+          return await exports.locations();
+        case "export.listDirectory":
+          return await exports.listDirectory(payload);
+        case "export.save":
+          return await exports.save(payload);
         case "library.list":
           return await store.list({ kind: payload.kind === void 0 ? void 0 : kindOf(payload.kind), query: typeof payload.query === "string" ? payload.query.slice(0, 200) : "", favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
         case "library.get":
@@ -3936,8 +4463,8 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
               ["react.production.min.js", "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"],
               ["react-dom.production.min.js", "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"]
             ].map(async ([file, expected]) => {
-              const bytes = await readFile(path10.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
-              if (bytes.length > 256 * 1024 || createHash8("sha256").update(bytes).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
+              const bytes = await readFile(path11.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
+              if (bytes.length > 256 * 1024 || createHash9("sha256").update(bytes).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
               return { file, url: "data:text/javascript;base64," + bytes.toString("base64") };
             }));
           }
@@ -3949,10 +4476,10 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
             const relative = url.pathname.slice(root.pathname.length);
             editorRequestUrl(root.href, relative + url.search);
             let asset;
-            if (!relative) asset = path10.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
-            else if (relative === "__codex/annotations.js") asset = path10.join(pluginRoot, "scripts/browser-annotations.js");
+            if (!relative) asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
+            else if (relative === "__codex/annotations.js") asset = path11.join(pluginRoot, "scripts/browser-annotations.js");
             else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
-              asset = path10.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
+              asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
             } else throw failure2("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
             const bytes = await readFile(asset);
             return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
@@ -3967,7 +4494,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
           if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase64(payload.base64)) throw failure2("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");
           const bytes = Buffer.from(payload.base64, "base64");
           if (bytes.length > 32 * 1024 * 1024) throw failure2("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
-          return { base64: createHash8("sha256").update(bytes).digest("base64") };
+          return { base64: createHash9("sha256").update(bytes).digest("base64") };
         }
         case "editor.events.open":
           return await nativeComments.openEvents(idOf(payload.id), payload.path);
@@ -4010,7 +4537,7 @@ var alive2 = (pid) => {
   }
 };
 var detail = (cause) => ({ code: cause.code || "PREVIEW_ERROR", message: String(cause.message || cause).slice(0, 2e3) });
-var samePath2 = (a, b) => process.platform === "win32" ? path11.resolve(a).toLowerCase() === path11.resolve(b).toLowerCase() : path11.resolve(a) === path11.resolve(b);
+var samePath3 = (a, b) => process.platform === "win32" ? path12.resolve(a).toLowerCase() === path12.resolve(b).toLowerCase() : path12.resolve(a) === path12.resolve(b);
 async function previewNativeActivity(record) {
   try {
     const status = await getWorkerStatus(record.path);
@@ -4020,7 +4547,7 @@ async function previewNativeActivity(record) {
   }
 }
 function verifiedState(state, root) {
-  if (!state || state.version !== 1 || state.kind !== KIND || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state.token) || typeof state.instanceId !== "string" || !samePath2(state.root, root)) throw error2("INVALID_PREVIEW_STATE", "The preview record cannot identify this library.");
+  if (!state || state.version !== 1 || state.kind !== KIND || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state.token) || typeof state.instanceId !== "string" || !samePath3(state.root, root)) throw error2("INVALID_PREVIEW_STATE", "The preview record cannot identify this library.");
   let url;
   try {
     url = new URL(state.url);
@@ -4031,7 +4558,7 @@ function verifiedState(state, root) {
   return url;
 }
 async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutMs = 2e3 } = {}) {
-  root = path11.resolve(root);
+  root = path12.resolve(root);
   if (!await statOrNull(root)) return { running: false, root };
   const state = await readJson2(root, PREVIEW_STATE, null);
   if (!state) return { running: false, root };
@@ -4040,7 +4567,7 @@ async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutM
   try {
     const response = await fetch(new URL("session", url), { redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
     const session = response.ok ? await response.json() : null;
-    if (!session || session.kind !== KIND || session.pid !== state.pid || session.instanceId !== state.instanceId || !samePath2(session.root, root)) throw error2("PREVIEW_IDENTITY_UNVERIFIED", "A live PID did not confirm this preview identity.");
+    if (!session || session.kind !== KIND || session.pid !== state.pid || session.instanceId !== state.instanceId || !samePath3(session.root, root)) throw error2("PREVIEW_IDENTITY_UNVERIFIED", "A live PID did not confirm this preview identity.");
     return { running: true, root, url: state.url, pid: state.pid, instanceId: state.instanceId, state };
   } catch {
     throw error2("PREVIEW_IDENTITY_UNVERIFIED", "The recorded live process did not confirm this library preview. No process was stopped.");
@@ -4101,10 +4628,10 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
   store ||= createLibraryStore({ ...root === void 0 ? {} : { root }, isBusy: previewNativeActivity });
   await store.initialize();
   root = store.root;
-  pluginRoot = path11.resolve(pluginRoot);
+  pluginRoot = path12.resolve(pluginRoot);
   service ||= createDesignService({ store, pluginRoot });
-  if (html === void 0) html = await fs7.readFile(path11.join(pluginRoot, "ui", "index.html"), "utf8");
-  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID7(), nonce = randomBytes(18).toString("base64");
+  if (html === void 0) html = await fs8.readFile(path12.join(pluginRoot, "ui", "index.html"), "utf8");
+  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID8(), nonce = randomBytes(18).toString("base64");
   const prefix = `/${token}/`, subscribers = /* @__PURE__ */ new Set(), timers = /* @__PURE__ */ new Map();
   let origin, servedHtml, state, closed = false;
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; connect-src 'self'; frame-src 'self' http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'self'`;
@@ -4133,7 +4660,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
     });
     await locked(root, async () => {
       const recorded = await readJson2(root, PREVIEW_STATE, null);
-      if (recorded?.instanceId === instanceId) await fs7.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
+      if (recorded?.instanceId === instanceId) await fs8.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
     });
   };
   server = http.createServer({ maxHeaderSize: 8192 }, async (request, response) => {
@@ -4239,7 +4766,7 @@ function parse(argv) {
     if (!match) throw new Error("Use --root, --plugin-root, or --port.");
     const value = match[2] ?? arguments_[++i];
     if (!value || value.startsWith("--")) throw new Error("Missing option value.");
-    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path12.resolve(value);
+    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path13.resolve(value);
   }
   return { command, options };
 }
@@ -4277,11 +4804,11 @@ async function main(argv = process.argv.slice(2)) {
     const store = createLibraryStore({ root });
     await store.initialize();
     const log = await safePath(root, "_state/library-preview.log", { mustExist: false });
-    const fd = fs8.openSync(log, "a");
+    const fd = fs9.openSync(log, "a");
     const entrypoint = fileURLToPath3(import.meta.url), childArgs = [entrypoint, "serve", "--root", root, "--plugin-root", options.pluginRoot || fileURLToPath3(new URL("../", import.meta.url)), ...options.port === void 0 ? [] : ["--port", String(options.port)]];
     const child = spawn3(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
     child.unref();
-    fs8.closeSync(fd);
+    fs9.closeSync(fd);
     let childError;
     child.once("error", (cause) => {
       childError = cause;
@@ -4300,7 +4827,7 @@ async function main(argv = process.argv.slice(2)) {
   }
   console.log("Usage: node scripts/library-preview.mjs open|serve|status|stop [--root <library>] [--plugin-root <built-plugin>] [--port <number>]");
 }
-if (process.argv[1] && pathToFileURL(path12.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
+if (process.argv[1] && pathToFileURL(path13.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
   console.error(JSON.stringify({ error: cause.code || "LIBRARY_PREVIEW_ERROR", message: cause.message }));
   process.exitCode = 1;
 });

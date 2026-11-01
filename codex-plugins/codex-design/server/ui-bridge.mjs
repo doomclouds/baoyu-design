@@ -1,13 +1,14 @@
 import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import { ACTIONS, READ_ACTIONS, UNSUPPORTED_CHAT_CODE, PLUGIN_UI_VERSION } from './contract.mjs';
+import { createExportDialog } from '../ui/export-dialog.mjs';
 
 const fail = (message, code) => Object.assign(new Error(message), { code });
-const changed = action => !READ_ACTIONS.includes(action) && !action.startsWith('editor.') && action !== 'thumbnail.get';
+const changed = action => !READ_ACTIONS.includes(action) && !action.startsWith('editor.') && !action.startsWith('export.') && action !== 'thumbnail.get';
 const artifactRoute = /^\/artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?[^#]*)?$/i;
 const artifactId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app = new App({ name: 'codex-design', version: PLUGIN_UI_VERSION }) } = {}) {
+export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, exportDialogFactory = createExportDialog, app = new App({ name: 'codex-design', version: PLUGIN_UI_VERSION }) } = {}) {
   const extensions = new OpenAIExtensions(app);
   const listeners = new Set();
   let toolInput;
@@ -18,6 +19,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
   let latestViewState;
   let navigation = Promise.resolve();
   let pendingArtifact;
+  let exportDialog;
   const bridge = {
     available: true, transport: 'mcp', uiVersion: PLUGIN_UI_VERSION, supportsInlineEditor: true,
     language: 'en', hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS], canDraftComments: false },
@@ -67,14 +69,13 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
     },
     async downloadResource({ filename, mimeType, text, base64 }) {
       if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
-      if (!app.getHostCapabilities()?.downloadFile) throw fail('This host does not support artwork downloads.', 'DOWNLOAD_UNAVAILABLE');
       if (typeof filename !== 'string' || !filename || filename.length > 300 || /[\\/\u0000-\u001f\u007f]/.test(filename)
         || typeof mimeType !== 'string' || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(mimeType)
         || (typeof text === 'string') === (typeof base64 === 'string')) throw fail('Invalid artwork download.', 'INVALID_DOWNLOAD');
       if (typeof base64 === 'string' && (base64.length > 180 * 1024 * 1024 || base64.length % 4 || /[^A-Za-z0-9+/=]/.test(base64))) throw fail('Invalid artwork download encoding.', 'INVALID_DOWNLOAD');
-      const resource = { uri: 'file:///' + encodeURIComponent(filename), mimeType, ...(text === undefined ? { blob: base64 } : { text }) };
-      const result = await app.downloadFile({ contents: [{ type: 'resource', resource }] });
-      if (result.isError) throw fail('The artwork download was cancelled or denied.', 'DOWNLOAD_CANCELLED');
+      exportDialog ??= exportDialogFactory({ invoke: (action, payload) => bridge.invoke(action, payload) });
+      const result = await exportDialog.save({ filename, mimeType, ...(text === undefined ? { base64 } : { text }) });
+      if (result?.saved !== true || typeof result.path !== 'string' || !result.path) throw fail('The export save result could not be confirmed.', 'EXPORT_UNCONFIRMED');
       return result;
     },
     diagnostics() {
@@ -87,7 +88,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
         styleVariableNames: Object.keys(context?.styles?.variables || {}).sort() };
     },
     subscribe(handler) { listeners.add(handler); return () => listeners.delete(handler); },
-    async dispose() { disposed = true; bridge.available = false; connected = false; bridge.capabilities.canDraftComments = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
+    async dispose() { disposed = true; exportDialog?.dispose?.(); bridge.available = false; connected = false; bridge.capabilities.canDraftComments = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
   };
   const applyContext = () => {
     // SDK listeners receive params directly; the SDK merges each partial patch first.
@@ -165,6 +166,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
   app.addEventListener('hostcontextchanged', onHostContext);
   app.onteardown = async () => {
     await bridge.beforeNavigate?.({ action: 'teardown' });
+    exportDialog?.dispose?.(); exportDialog = undefined;
     return {};
   };
   app.ontoolinput = ({ arguments: args }) => { toolInput = args; void readDescriptor(); };

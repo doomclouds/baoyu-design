@@ -33,6 +33,8 @@ Actions and results:
 | `view.reorderTabs` | `{ids}` including fixed library first | view state |
 | `editor.open` | `{id,force?}` | `{url}` for the real existing editor |
 | `editor.document` | `{id,language:'en',channel,force?}` | self-contained native editor HTML and scoped transport metadata |
+| `export.locations` / `export.listDirectory` | `{}` / `{path,cursor?}` | app-only location bookmarks and a bounded directory page |
+| `export.save` | `{requestId,directory,filename,mimeType,text? or base64?,overwriteToken?}` | confirmed saved path/bytes, or an explicit replacement receipt |
 | `conversation.get` | `{id}` | `{binding,messages,status,capabilities,reasonCode?}` |
 | `conversation.send` | `{id,text}` | actual delivery result; UI reloads conversation |
 
@@ -58,4 +60,4 @@ Global sidebar Create and All-page creation controls open an anchored content me
 
 The MCP adapter applies host theme, font CSS and standard style variables. The UI consumes `--font-sans`, `--font-text-md-size`, host weights, heading sizes and semantic colors; text sizes use relative units so Codex typography changes propagate. Standalone previews have an explicit light/dark fallback palette.
 
-Import and Export transfer content-only `.codexdesign.json` packages through `library-transfer.mjs`, with a 16 MB UI transfer limit. The native bridge uses the MCP download API; standalone previews use browser downloads. Version history lists content recovery points. Restoring confirms saved edits, unmounts the current editor to stop autosave, saves a recovery point, replaces content and reopens the editor. Comments, conversations and runtime state remain separate.
+Import and Export transfer content-only `.codexdesign.json` packages through `library-transfer.mjs`, with a 16 MB UI bundle limit. The native bridge uses one themed Save As surface for library and editor exports, backed by app-only directory/save actions; it returns a confirmed path instead of relying on a host download acknowledgement. Standalone previews retain browser downloads. Version history lists content recovery points. Restoring confirms saved edits, unmounts the current editor to stop autosave, saves a recovery point, replaces content and reopens the editor. Comments, conversations and runtime state remain separate.

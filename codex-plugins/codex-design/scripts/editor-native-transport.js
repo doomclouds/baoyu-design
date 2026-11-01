@@ -48,6 +48,7 @@ export function installNativeEditorTransport(configuration, target) {
     if (temporary) target.document.documentElement?.setAttribute('data-codex-ui-storage', 'memory');
   }
   const pending = new Map();
+  let disposed = false;
   const pendingWrites = new Set();
   const sources = new Set();
   const assetCache = new Map();
@@ -75,11 +76,15 @@ export function installNativeEditorTransport(configuration, target) {
   };
   const base64ToBytes = text => Uint8Array.from(target.atob(text), character => character.charCodeAt(0));
   const rpc = (action, payload = {}, signal) => new Promise((resolve, reject) => {
+    if (disposed) { reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' })); return; }
     if (signal?.aborted) { reject(signal.reason || new DOMException('Aborted', 'AbortError')); return; }
     const requestId = String(++sequence);
+    let timer;
     const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); pending.delete(requestId); };
     const abort = () => { cleanup(); reject(signal.reason || new DOMException('Aborted', 'AbortError')); };
-    const timer = setTimeout(() => { cleanup(); reject(Object.assign(new Error('The artwork editor connection timed out.'), { code: 'EDITOR_TRANSPORT_TIMEOUT' })); }, 45_000);
+    // A human Save As dialog owns its lifetime. Timing it out here could leave
+    // an apparently failed request that writes a file after the user confirms.
+    if (action !== 'editor.download') timer = setTimeout(() => { cleanup(); reject(Object.assign(new Error('The artwork editor connection timed out.'), { code: 'EDITOR_TRANSPORT_TIMEOUT' })); }, 45_000);
     pending.set(requestId, { resolve: value => { cleanup(); resolve(value); }, reject: error => { cleanup(); reject(error); } });
     signal?.addEventListener('abort', abort, { once: true });
     target.parent.postMessage({ type: 'codex-design:editor-request', channel, requestId, action, payload }, '*');
@@ -118,6 +123,213 @@ export function installNativeEditorTransport(configuration, target) {
     host = wrap(host);
     Object.defineProperty(target, name, { configurable: true, enumerable: true, get: () => host, set: value => { host = wrap(value); } });
   }
+  // Keep this controller inside the serialized bootstrap: it must have no
+  // module closure or authority over preview documents, artwork or the host.
+  const hostTheme = (() => {
+    const document = target.document;
+    const root = document?.documentElement;
+    const originalTheme = root?.getAttribute?.('data-theme');
+    let variables = {}, fonts, mode, signature;
+    let tokens = {};
+    const owned = new Map();
+    const content = '[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]';
+    const commentHosts = '[data-baoyu-comments], [data-baoyu-comments-seat]';
+    const observed = new WeakSet();
+    const observeScope = scope => {
+      if (!observer || observed.has(scope)) return;
+      observer.observe(scope, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'data-font', 'data-density'] });
+      observed.add(scope);
+    };
+    const scopes = () => {
+      const result = new Set([document]);
+      for (const scope of result) for (const host of scope.querySelectorAll?.(commentHosts) || []) {
+        // Canonical comments own these open shadow hosts. Never inspect an
+        // artwork subtree or traverse arbitrary/closed user shadow roots.
+        if (host.closest?.(content)) continue;
+        const shadow = host.shadowRoot;
+        if (shadow) { result.add(shadow); observeScope(shadow); }
+      }
+      return result;
+    };
+    const eligible = element => element && (element === root || element.matches?.('.cds-root'))
+      && !element.closest?.(content);
+    const restore = (element, state) => {
+      for (const [name, original] of state.original) {
+        if (original.value) element.style.setProperty(name, original.value, original.priority);
+        else element.style.removeProperty(name);
+      }
+    };
+    const refresh = () => {
+      if (!root || disposed) return;
+      const candidates = new Set([root].filter(eligible));
+      for (const scope of scopes()) for (const element of scope.querySelectorAll?.('.cds-root') || []) if (eligible(element)) candidates.add(element);
+      for (const [element, state] of owned) if (!candidates.has(element)) { restore(element, state); owned.delete(element); }
+      for (const element of candidates) {
+        if (!element.style) continue;
+        let state = owned.get(element);
+        if (!state) { state = { original: new Map(), applied: new Map() }; owned.set(element, state); }
+        for (const name of new Set([...state.applied.keys(), ...Object.keys(tokens)])) {
+          const value = tokens[name];
+          const current = element.style.getPropertyValue(name), priority = element.style.getPropertyPriority?.(name) || '';
+          if (!state.original.has(name) || state.applied.has(name) && (current !== state.applied.get(name) || priority !== 'important')) {
+            state.original.set(name, { value: current, priority });
+          }
+          if (value === undefined) {
+            const original = state.original.get(name);
+            if (original.value) element.style.setProperty(name, original.value, original.priority);
+            else element.style.removeProperty(name);
+            state.original.delete(name); state.applied.delete(name);
+          } else {
+            if (current !== value || priority !== 'important') element.style.setProperty(name, value, 'important');
+            state.applied.set(name, value);
+          }
+        }
+      }
+    };
+    const resolveTokens = () => {
+      const result = {};
+      if (!root || !document.createElement || !target.getComputedStyle) return result;
+      const probe = document.createElement('span');
+      probe.setAttribute('aria-hidden', 'true');
+      for (const [name, value] of Object.entries(variables)) probe.style.setProperty(name, value);
+      for (const [name, value] of Object.entries({ position: 'fixed', visibility: 'hidden', 'pointer-events': 'none', width: '0px', height: '0px', overflow: 'hidden' })) probe.style.setProperty(name, value);
+      (document.body || root).appendChild(probe);
+      const read = (name, property) => {
+        const value = variables[name];
+        if (typeof value !== 'string' || !value.trim()) return;
+        const supported = target.CSS?.supports;
+        if (supported && !supported(property, value)) return;
+        // Computed custom properties are empty for unresolved/cyclic var().
+        // Measure real CSS values, rather than parseFloat('1rem') as one pixel.
+        const resolved = target.getComputedStyle(probe).getPropertyValue(name).trim();
+        if (!resolved) return;
+        if (property === 'line-height' && /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/.test(resolved)) return resolved;
+        probe.style.removeProperty(property);
+        probe.style.setProperty(property, value);
+        const computed = target.getComputedStyle(probe).getPropertyValue(property).trim();
+        if (computed) return computed;
+      };
+      const map = (source, property, destinations) => {
+        const value = read(source, property);
+        if (value !== undefined) for (const destination of destinations) result[destination] = value;
+        return value;
+      };
+      try {
+        map('--font-sans', 'font-family', ['--cds-font-sans', '--cds-font-sans-display']);
+        // The generic mono token may be consumed by authored code blocks.
+        // Use the dedicated UI token, just as the artwork boundary retains its
+        // own --cds-font-system rather than replacing it with the host font.
+        map('--font-mono', 'font-family', ['--cds-font-mono-ui']);
+        const size = read('--font-text-md-size', 'font-size');
+        const px = size && /^([0-9]+(?:\.[0-9]+)?)px$/.exec(size);
+        if (px && Number(px[1]) >= 8 && Number(px[1]) <= 48) {
+          probe.style.setProperty('font-size', '1rem');
+          const rem = /^([0-9]+(?:\.[0-9]+)?)px$/.exec(target.getComputedStyle(probe).getPropertyValue('font-size').trim());
+          if (rem && Number(rem[1]) > 0) {
+            // The packaged comfortable CDS body is .875rem (14px at a 16px
+            // root), not 1rem. Preserve its scale while matching the host body.
+            result['--cds-rem-scale'] = String(Number(px[1]) / (Number(rem[1]) * 0.875));
+            result['--cds-font-size-body'] = size;
+          }
+        }
+        if (size) probe.style.setProperty('font-size', size);
+        map('--font-text-md-line-height', 'line-height', ['--cds-leading-body']);
+        for (const [source, role] of [['normal', 'regular'], ['medium', 'medium'], ['semibold', 'semibold'], ['bold', 'bold']]) {
+          const weight = map('--font-weight-' + source, 'font-weight', ['--cds-font-weight-' + role]);
+          if (weight && /^[0-9]+(?:\.[0-9]+)?$/.test(weight)) result['--cds-font-wght-' + role] = '"wght" ' + weight;
+        }
+        for (const [source, destinations] of [
+          ['--color-background-primary', ['--cds-surface-0', '--cds-page-bg', '--t-bg']],
+          ['--color-background-secondary', ['--cds-surface-1', '--cds-surface-panel', '--cds-surface-popover', '--t-panel']],
+          ['--color-background-tertiary', ['--cds-surface-2', '--cds-surface-3', '--cds-fill-button-layer', '--cds-fill-button-ghost-hover']],
+          ['--color-background-disabled', ['--cds-fill-disabled']],
+          ['--color-text-primary', ['--cds-text-primary', '--t-fg']],
+          ['--color-text-secondary', ['--cds-text-secondary', '--t-fg-secondary']],
+          ['--color-text-tertiary', ['--cds-text-muted', '--t-fg-muted']],
+          ['--color-text-inverse', ['--cds-on-accent']],
+          ['--color-text-info', ['--cds-fill-accent', '--cds-fill-accent-hover', '--t-app-accent', '--t-blue-text']],
+          ['--color-text-danger', ['--cds-text-danger', '--cds-fill-danger', '--cds-fill-danger-hover', '--t-bad']],
+          ['--color-text-success', ['--cds-fill-success', '--cds-fill-success-hover', '--t-ok']],
+          ['--color-text-warning', ['--cds-fill-warning', '--cds-fill-warning-hover', '--t-warn']],
+          ['--color-border-primary', ['--cds-border-strong', '--cds-border-stronger', '--t-border-strong']],
+          ['--color-border-secondary', ['--cds-border', '--t-border']],
+        ]) map(source, 'color', destinations);
+        const focus = read('--color-ring-primary', 'color');
+        if (focus) for (const name of ['--cds-focus-shadow', '--cds-shadow-drop-ring']) result[name] = '0 0 0 2px ' + focus;
+        const dangerFocus = read('--color-ring-danger', 'color');
+        if (dangerFocus) for (const name of ['--cds-focus-shadow-danger', '--cds-shadow-drop-ring-danger']) result[name] = '0 0 0 2px ' + dangerFocus;
+        map('--border-radius-xs', 'border-radius', ['--cds-radius--xs']);
+        map('--border-radius-sm', 'border-radius', ['--cds-radius--sm', '--cds-checkbox-radius']);
+        map('--border-radius-md', 'border-radius', ['--cds-radius']);
+        map('--border-radius-lg', 'border-radius', ['--cds-radius--lg', '--cds-panel-radius']);
+        map('--shadow-sm', 'box-shadow', ['--cds-shadow-sm']);
+        map('--shadow-md', 'box-shadow', ['--cds-shadow-md', '--cds-shadow-popover']);
+        map('--shadow-lg', 'box-shadow', ['--cds-shadow-lg', '--cds-panel-shadow']);
+      } finally { probe.remove(); }
+      return result;
+    };
+    const hasChrome = node => node?.matches?.('.cds-root') || node?.matches?.(commentHosts)
+      || node?.querySelector?.('.cds-root, ' + commentHosts);
+    const changed = records => {
+      // Object drags and authored animation can mutate thousands of styles.
+      // Only new/removed chrome roots or changes to a managed root need work.
+      const relevant = records.some(record => !record.target?.closest?.(content) && (
+        record.type === 'attributes' ? eligible(record.target) || record.target?.matches?.(commentHosts)
+          : [...(record.addedNodes || []), ...(record.removedNodes || [])].some(hasChrome)));
+      if (relevant) refresh();
+    };
+    const observer = root && typeof target.MutationObserver === 'function' ? new target.MutationObserver(changed) : null;
+    if (root) observeScope(root);
+    const elementPrototype = target.Element?.prototype;
+    const originalAttachShadow = elementPrototype?.attachShadow;
+    let attachShadow;
+    if (typeof originalAttachShadow === 'function') {
+      attachShadow = function (options) {
+        const shadow = originalAttachShadow.call(this, options);
+        if (!disposed && options?.mode === 'open' && this.matches?.(commentHosts) && !this.closest?.(content)) {
+          observeScope(shadow); refresh();
+        }
+        return shadow;
+      };
+      elementPrototype.attachShadow = attachShadow;
+    }
+    return {
+      update(context, snapshot) {
+        if (!root || !context || typeof context !== 'object' || disposed) return;
+        if (Object.hasOwn(context, 'theme') || snapshot) mode = ['dark', 'light'].includes(context.theme) ? context.theme : undefined;
+        if (mode) root.setAttribute('data-theme', mode);
+        else if (originalTheme) root.setAttribute('data-theme', originalTheme);
+        else root.removeAttribute?.('data-theme');
+        if (snapshot) variables = {};
+        if (context.styles?.variables === null) variables = {};
+        else if (context.styles?.variables && typeof context.styles.variables === 'object') {
+          for (const [name, value] of Object.entries(context.styles.variables).slice(0, 512)) {
+            if (!/^--[a-zA-Z0-9_-]+$/.test(name)) continue;
+            if (typeof value === 'string' && value.trim() && value.length <= 8192) variables[name] = value;
+            else delete variables[name];
+          }
+        }
+        if (snapshot || context.styles?.css && Object.hasOwn(context.styles.css, 'fonts')) fonts = typeof context.styles?.css?.fonts === 'string' ? context.styles.css.fonts : undefined;
+        let fontStyle = document.getElementById?.('codex-native-host-fonts');
+        if (fonts) {
+          if (!fontStyle) { fontStyle = document.createElement('style'); fontStyle.id = 'codex-native-host-fonts'; document.head.appendChild(fontStyle); }
+          if (fontStyle.textContent !== fonts) fontStyle.textContent = fonts;
+        } else fontStyle?.remove();
+        const next = JSON.stringify([variables, mode]);
+        if (next !== signature) { tokens = resolveTokens(); signature = next; }
+        refresh();
+      },
+      dispose() {
+        observer?.disconnect();
+        if (attachShadow && elementPrototype.attachShadow === attachShadow) elementPrototype.attachShadow = originalAttachShadow;
+        for (const [element, state] of owned) restore(element, state);
+        owned.clear();
+        document?.getElementById?.('codex-native-host-fonts')?.remove();
+        if (originalTheme) root?.setAttribute('data-theme', originalTheme);
+        else root?.removeAttribute?.('data-theme');
+      },
+    };
+  })();
   target.addEventListener('message', event => {
     const message = event.data;
     if (event.source !== target.parent || message?.channel !== channel) return;
@@ -148,25 +360,7 @@ export function installNativeEditorTransport(configuration, target) {
       return;
     }
     if (message.type === 'codex-design:host-context-changed') {
-      const root = target.document?.documentElement;
-      const context = message.context;
-      if (!root || !context || typeof context !== 'object') return;
-      if (context.theme === 'dark' || context.theme === 'light') root.setAttribute('data-theme', context.theme);
-      const variables = context.styles?.variables || {};
-      // These variables belong to editor chrome. Authored artwork is rendered
-      // by the original editor in its own document and keeps its design fonts.
-      if (typeof variables['--font-sans'] === 'string') {
-        root.style.setProperty('--cds-font-sans', variables['--font-sans']);
-        root.style.setProperty('--cds-font-sans-display', variables['--font-sans']);
-      }
-      if (typeof variables['--font-mono'] === 'string') root.style.setProperty('--cds-font-mono-ui', variables['--font-mono']);
-      const size = Number.parseFloat(variables['--font-text-md-size']);
-      if (Number.isFinite(size) && size >= 10 && size <= 32) root.style.setProperty('--cds-rem-scale', String(size / 16));
-      if (typeof context.styles?.css?.fonts === 'string') {
-        let style = target.document.getElementById('codex-native-host-fonts');
-        if (!style) { style = target.document.createElement('style'); style.id = 'codex-native-host-fonts'; target.document.head.appendChild(style); }
-        style.textContent = context.styles.css.fonts;
-      }
+      hostTheme.update(message.context, message.hostContextIsSnapshot === true);
       return;
     }
     if (message.type !== 'codex-design:editor-response') return;
@@ -393,7 +587,12 @@ export function installNativeEditorTransport(configuration, target) {
       })().catch(error => target.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel, message: String(error.message || error).slice(0, 500) }, '*'));
     };
   }
-  target.addEventListener('unload', () => { for (const source of sources) source.close(); });
+  target.addEventListener('unload', () => {
+    for (const source of sources) source.close();
+    disposed = true;
+    hostTheme.dispose();
+    for (const call of [...pending.values()]) call.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
+  });
   target.addEventListener('error', event => {
     if (!event.message) return;
     target.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel, message: String(event.message).slice(0, 500) }, '*');

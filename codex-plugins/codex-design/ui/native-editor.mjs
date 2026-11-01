@@ -82,7 +82,7 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
   }, startupTimeoutMs);
   startup.unref?.();
   const sendHostContext = () => {
-    if (!disposed && bridge.hostContext) iframe.contentWindow?.postMessage({ type: 'codex-design:host-context-changed', channel, context: bridge.hostContext }, '*');
+    if (!disposed && bridge.hostContext) iframe.contentWindow?.postMessage({ type: 'codex-design:host-context-changed', channel, context: bridge.hostContext, hostContextIsSnapshot: true }, '*');
   };
   const reply = (requestId, value) => {
     if (!disposed) iframe.contentWindow?.postMessage({ type: 'codex-design:editor-response', channel, requestId, ...value }, '*');

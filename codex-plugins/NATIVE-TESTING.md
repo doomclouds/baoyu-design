@@ -108,6 +108,7 @@ actual action, observable outcome, evidence location, and pass/fail/pending.
 | Case | Required actual-host observation |
 | --- | --- |
 | Global entry | Left-rail click opens the installed app; current native route and screenshot agree |
+| Native home Tab | First open shows the named nonclosable home without creating a dummy second Tab; rail reentry and restart preserve it. A manual full-view shortcut success alone is not a default-initialization pass |
 | Creation context | Global sidebar Create and All-page Create offer type choices; each category's heading/empty-state action creates that type directly; keyboard focus, Escape and dismissal work for actual menus |
 | Four blank types | Slides, Design, Design System and Dashboard each show real editable content after creation, not a gray/broken frame |
 | CSP | Inner editor scripts/assets load under the consuming host policy; no HTTP loopback frame dependency remains |
@@ -123,9 +124,12 @@ actual action, observable outcome, evidence location, and pass/fail/pending.
 | Trash/restore | Trash hides the work from active lists and DS search; restore brings back the same UUID/content |
 | Restart | Reopen the installed app and retained local library data loads without relying on an expired localhost URL |
 
-Download must be checked in the real host. The desktop sandbox intercepts
-downloads; successful browser `a.download` behavior does not prove that its
-native export/file-opening flow works.
+Export must be checked in the real installed host. The earlier download path
+delegated to the desktop sandbox; from 0.5.1 the shared native path instead uses
+the plugin's Save As UI and app-only filesystem save operations. Verify chosen
+directory, filename, actual bytes, cancellation, overwrite confirmation and
+returned path for library and editor exports. A simulated bridge or browser
+`a.download` result does not establish installed-host export behavior.
 
 ## 5. Explicit capability limits
 

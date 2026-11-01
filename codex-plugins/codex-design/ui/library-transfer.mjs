@@ -105,8 +105,9 @@ export function createLibraryTransfer({ invoke, pickFile = pickArtworkFile, down
     async exportArtifact(id, title) {
       const bundle = portableBundle(await invoke('library.exportArtifact', { id }), { maxBytes: maxBundleBytes });
       const text = JSON.stringify(bundle), filename = packageFilename(title || bundle.title);
-      await download({ filename, text });
-      return { filename, bytes: bytes(text), bundle };
+      const saved = await download({ filename, text });
+      return { filename: saved?.saved === true ? saved.filename : filename, bytes: bytes(text), bundle,
+        ...(saved?.saved === true && typeof saved.path === 'string' ? { path: saved.path } : {}) };
     },
     listSnapshots(id) { return invoke('library.listSnapshots', { id }); },
     createSnapshot(id, label) { return invoke('library.snapshot', { id, ...(label ? { label } : {}) }); },

@@ -176,9 +176,9 @@ a { color: inherit; }
 .design-card { min-width: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--background); }
 .design-card:hover { border-color: #51514a; }
 .card-open { flex-direction: column; align-items: stretch; gap: 0; }
-.card-open .design-thumbnail { width: 100%; height: auto; aspect-ratio: 16/9; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.card-open .design-thumbnail { width: 100%; height: auto; aspect-ratio: 16/9; border: 0; border-radius: 0; }
 .card-open .thumbnail-empty .icon { width: 42px; height: 42px; }
-.card-open .record-copy { padding: 17px 18px 3px; gap: 8px; }
+.card-open .record-copy { padding: 17px 18px 3px; gap: 8px; border-top: 1px solid var(--line); }
 .card-bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 4px 12px 10px 18px; color: var(--muted); font-size: 0.8571rem; }
 .library-empty { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; min-height: 410px; padding: 64px 24px; text-align: center; }
 .empty-symbol { display: flex; justify-content: center; align-items: center; width: 66px; height: 66px; margin-bottom: 5px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); color: #c3c0b5; }
@@ -402,7 +402,7 @@ a { color: inherit; }
 .record-kind { font-size: 0.8571rem; color: var(--muted); }
 .design-thumbnail { position: relative; width: 120px; height: 68px; border-color: var(--line); background: var(--surface); }
 .thumbnail-empty { background: var(--surface); color: var(--subtle); }
-.thumbnail-frame { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; background: #f1eee6; }
+.thumbnail-frame { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; background: transparent; }
 .record-actions .icon-button { width: 28px; }
 .editor-workspace-heading { min-height: 49px; padding: 9px 20px; }
 .editor-design-title { font-size: 1.1429rem; font-weight: var(--font-weight-medium, 500); }
@@ -451,6 +451,19 @@ a { color: inherit; }
 /* Host typography and palette are semantic variables supplied by MCP Apps. */
 .button.primary { background: var(--text); color: var(--inverse); border-color: var(--text); }
 .button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 88%, var(--background)); border-color: transparent; }
+.design-shell { border-top: var(--border-width-regular, 1px) solid var(--line-strong); }
+/* Host shape/elevation tokens apply to library chrome, never artwork previews. */
+.icon-button { border-radius: var(--border-radius-sm, 7px); }
+.sidebar-item { border-radius: var(--border-radius-md, 10px); }
+.workspace-tab { border-radius: var(--border-radius-md, 10px) var(--border-radius-md, 10px) 0 0; }
+.tab-close, .menu-item { border-radius: var(--border-radius-sm, 6px); }
+.button { border-radius: var(--border-radius-md, 8px); }
+.search-field, .library-heading .button.primary, .filter-tab { border-radius: var(--border-radius-full, 24px); }
+.design-card { border-radius: var(--border-radius-lg, 10px); }
+.empty-symbol { border-radius: var(--border-radius-lg, 16px); }
+.menu-panel { border-radius: var(--border-radius-lg, 12px); box-shadow: var(--shadow-lg, 0 10px 35px #0006); }
+.toast { border-radius: var(--border-radius-lg, 12px); box-shadow: var(--shadow-md, 0 8px 30px #0007); }
+.design-dialog { border-radius: var(--border-radius-xl, 18px); box-shadow: var(--shadow-lg, 0 20px 90px #000a); }
 .search-field:focus-within { border-color: var(--focus); }
 .workspace-tabbar { display: flex; align-items: stretch; min-width: 0; flex-shrink: 0; border-bottom: 1px solid var(--line); }
 .workspace-tabs { flex: 1; min-width: 0; border-bottom: 0; padding-top: 0; min-height: 44px; }
@@ -550,4 +563,45 @@ a { color: inherit; }
   .sidebar-toggle { display: inline-flex; }
   .mobile-menu { display: none; }
   .sidebar-heading-actions .sidebar-collapse { display: inline-flex; }
+}
+
+/* Shared native Save As dialog; the host theme and typography remain authoritative. */
+.codex-export-dialog { width: min(780px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow-y: auto; color: var(--text); background: var(--background); }
+.codex-export-dialog .dialog-form { gap: 18px; }
+.codex-export-dialog .dialog-form > header { gap: 16px; }
+.codex-export-dialog .dialog-form h2 { font-size: var(--font-heading-sm-size, 1.25rem); }
+.codex-export-dialog input { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--text); background: var(--background); }
+.export-location-row, .export-filename { display: grid; gap: 7px; font-size: .9286rem; }
+.export-location-row > div { display: flex; gap: 8px; min-width: 0; }
+.export-location-row input { flex: 1; }
+.export-browser { display: grid; grid-template-columns: 144px minmax(0, 1fr); min-height: 220px; max-height: 340px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.export-places { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 8px; border-right: 1px solid var(--line); background: var(--surface); }
+.export-place { padding: 9px 10px; border-radius: 6px; text-align: left; overflow-wrap: anywhere; color: var(--text); background: transparent; }
+.export-place:hover:not(:disabled), .export-place.is-selected, .export-folder:hover:not(:disabled) { background: var(--surface-active); }
+.export-directory { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.export-directory-toolbar { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.export-directory-toolbar .button { min-height: 28px; padding: 4px 8px; font-size: .8571rem; }
+.export-breadcrumbs { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; font-size: .8571rem; color: var(--muted); }
+.export-breadcrumbs button { flex-shrink: 0; padding: 3px; border-radius: 3px; color: var(--text); background: transparent; }
+.export-breadcrumbs [aria-current] { font-weight: var(--font-weight-medium, 500); }
+.export-folders { display: flex; flex-direction: column; gap: 2px; min-height: 150px; overflow-y: auto; padding: 7px; }
+.export-folders > p { margin: 12px; }
+.export-folder { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 5px; text-align: left; color: var(--text); background: transparent; }
+.export-folder svg { flex-shrink: 0; width: 18px; height: 18px; color: var(--muted); }
+.export-folder span { min-width: 0; overflow-wrap: anywhere; }
+.export-more { align-self: flex-start; margin: 4px 8px 8px; }
+.export-saved-path, .export-target-path { display: block; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); overflow-wrap: anywhere; user-select: text; font-size: .9286rem; line-height: 1.6; }
+.export-collision { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); }
+.export-collision h3, .export-collision p { margin: 0; }
+.export-collision h3 { font-size: 1rem; font-weight: var(--font-weight-semibold, 600); }
+.export-collision > div { display: flex; justify-content: flex-end; gap: 8px; }
+.export-uncertain, .export-error { margin: 0; font-size: .9286rem; line-height: 1.6; overflow-wrap: anywhere; }
+.export-uncertain { color: var(--warning); }
+@media (max-width: 560px) {
+  .codex-export-dialog .dialog-form { padding: 16px; }
+  .export-browser { grid-template-columns: minmax(0, 1fr); }
+  .export-places { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .export-place { flex-shrink: 0; }
+  .export-directory-toolbar { flex-wrap: wrap; }
+  .export-breadcrumbs { flex-basis: 100%; }
 }

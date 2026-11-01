@@ -852,7 +852,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'import') {
       const task = transfer.importArtifact();
       await runAction('import', async () => { if (await task) toast(t('imported')); });
-    } else if (action === 'export') await runAction('export-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.exportArtifact(id, recordFor(id)?.title); toast(t('exported')); });
+    } else if (action === 'export') await runAction('export-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); const saved = await transfer.exportArtifact(id, recordFor(id)?.title); toast(saved?.path ? t('exported') + ': ' + saved.path : t('exported')); });
     else if (action === 'history') await openHistory(id);
     else if (action === 'snapshot-create') await runAction('snapshot-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.createSnapshot(id, t('manualSnapshot')); await openHistory(id); });
     else if (action === 'snapshot-restore') { const record = recordFor(id); if (record) openDialog('restore-snapshot', record, { snapshotId: button.dataset.snapshotId }); }

@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { App } from '@modelcontextprotocol/ext-apps';
 import { createMcpBridge, installMcpBridge } from '../source/server/ui-bridge.mjs';
 import { PLUGIN_UI_VERSION } from '../source/server/contract.mjs';
+import { createExportDialog } from '../source/ui/export-dialog.mjs';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
 const secondId = '22222222-2222-4222-8222-222222222222';
@@ -310,4 +311,70 @@ test('an external artwork deep link keeps the current editor open when its unsav
   await until(() => bridge.navigationError?.code === 'EDITOR_UNSAVED_CHANGES');
   assert.equal(f.calls().length, 0);
   assert.equal(bridge.initialState.viewState.activeTabId, firstId);
+});
+
+test('library and editor downloads share Save As and never invoke host downloads or refresh library while browsing', async t => {
+  let handlers, model;
+  const f = host(t, { hostCapabilities: {}, onCall: ({ arguments: { action, payload } }) => {
+    if (action === 'export.locations') return resultFor({ locations: [{ id: 'home', label: 'Home', path: '/export' }], defaultDirectory: '/export' });
+    if (action === 'export.listDirectory') return resultFor({ path: payload.path, parent: '/', entries: [] });
+    if (action === 'export.save') return resultFor({ saved: true, path: '/export/' + payload.filename, filename: payload.filename, bytes: 4 });
+    throw new Error('Unexpected export action: ' + action);
+  } });
+  const bridge = await createMcpBridge({ app: f.app, exportDialogFactory: ({ invoke }) => createExportDialog({ invoke,
+    viewFactory(value) { handlers = value; return { render(value) { model = value; }, close() {}, destroy() {} }; },
+  }) });
+  t.after(() => bridge.dispose());
+  const changes = []; bridge.subscribe(event => changes.push(event));
+  const exports = [
+    { filename: 'Library.codexdesign.json', mimeType: 'application/json', text: '{}' },
+    { filename: 'Slides.pdf', mimeType: 'application/pdf', base64: 'JVBERg==' },
+    { filename: 'Slides.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', base64: 'UEsDBA==' },
+    { filename: 'Design.png', mimeType: 'image/png', base64: 'iVBORw==' },
+    { filename: 'System.zip', mimeType: 'application/zip', base64: 'UEsDBA==' },
+    { filename: 'Dashboard.html', mimeType: 'text/html', text: '<!doctype html>' },
+  ];
+  for (const value of exports) {
+    const pending = value.filename.endsWith('.codexdesign.json') ? bridge.downloadArtifact(value) : bridge.downloadResource(value);
+    await until(() => model?.filename === value.filename && !model.loading);
+    handlers.onAction('save'); await until(() => Boolean(model.result));
+    assert.equal(model.result.path, '/export/' + value.filename);
+    handlers.onAction('done'); assert.equal((await pending).saved, true);
+  }
+  assert.equal(changes.length, 0, 'export browsing/writes are not library mutations');
+  assert.equal(f.requests.some(request => request.method === 'ui/download-file' || request.method === 'ui/open-link'), false);
+  const saves = f.calls().filter(call => call.params.arguments.action === 'export.save');
+  assert.equal(saves.length, exports.length);
+  assert.equal(saves.every(call => call.params.name === 'design_action'), true);
+  assert.deepEqual(saves.map(call => call.params.arguments.payload.filename), exports.map(value => value.filename));
+  assert.equal(saves[0].params.arguments.payload.text, '{}');
+});
+
+test('Save As cancellation rejects the native download without any save or legacy fallback', async t => {
+  let handlers, ready = false;
+  const f = host(t, { onCall: ({ arguments: { action } }) => resultFor(action === 'export.locations'
+    ? { locations: [], defaultDirectory: null } : null) });
+  const bridge = await createMcpBridge({ app: f.app, exportDialogFactory: ({ invoke }) => createExportDialog({ invoke,
+    viewFactory(value) { handlers = value; return { render(model) { ready = !model.loading; }, close() {}, destroy() {} }; },
+  }) });
+  t.after(() => bridge.dispose());
+  const pending = bridge.downloadResource({ filename: 'Report.pdf', mimeType: 'application/pdf', base64: 'JVBERg==' });
+  pending.catch(() => {}); await until(() => ready); handlers.onAction('cancel');
+  await assert.rejects(pending, { code: 'DOWNLOAD_CANCELLED' });
+  assert.equal(f.calls().some(call => call.params.arguments.action === 'export.save'), false);
+  assert.equal(f.requests.some(request => request.method === 'ui/download-file'), false);
+});
+
+test('bridge disposal closes active and queued Save As requests before user Save', async t => {
+  let renders = 0, destroyed = false;
+  const f = host(t, { onCall: () => resultFor({ locations: [], defaultDirectory: null }) });
+  const bridge = await createMcpBridge({ app: f.app, exportDialogFactory: ({ invoke }) => createExportDialog({ invoke,
+    viewFactory() { return { render() { renders++; }, close() {}, destroy() { destroyed = true; } }; },
+  }) });
+  const first = bridge.downloadArtifact({ filename: 'One.json', text: '{}' }), second = bridge.downloadArtifact({ filename: 'Two.json', text: '{}' });
+  first.catch(() => {}); second.catch(() => {}); await until(() => renders > 0);
+  await bridge.dispose();
+  await assert.rejects(first, { code: 'DOWNLOAD_CANCELLED' }); await assert.rejects(second, { code: 'DOWNLOAD_CANCELLED' });
+  assert.equal(destroyed, true);
+  assert.equal(f.calls().some(call => call.params.arguments.action === 'export.save'), false);
 });

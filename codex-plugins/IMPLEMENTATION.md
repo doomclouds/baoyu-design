@@ -24,12 +24,18 @@ delivery keep their original behavior. The request audit is recorded in
 
 Specific library categories create their own type directly from the heading
 and empty state. All-page and sidebar global creation retain the type menu.
-The staged code passed 340 tests and portable relocation with 179 owned files.
-This prepared revision has not replaced installed 0.5.0. The user's full-row
-native-header requirement is still under separate host-level investigation;
-neither removing inner controls nor filling the row with file tabs is accepted
-as that fix. Comment pins retain the upstream author avatar by explicit user
-choice.
+The later staged code also adds a shared app-only Save As folder browser and
+verified filesystem save path, host theme/font token mapping for editor UI,
+thumbnail aspect/letterbox repairs, and a host-colored seam separator. It passed
+392 tests and portable relocation with 181 owned files. The earlier 340-test
+result remains a baseline for the prior prepared source.
+This prepared revision has not replaced installed 0.5.0. The current header
+target is a named, nonclosable native home tab visible from first open, with a
+quiet separator below it. A real full-view command reveals the sole home tab,
+but rail reentry returned to the blank native row: automatic initialization and
+persistence are not fixed. Entire-row removal is no longer the selected target.
+The true host middle-sidebar slot is explicitly deferred. Comment pins retain
+the upstream author avatar by explicit user choice.
 
 ## 0.5.0 global native draft workflow
 

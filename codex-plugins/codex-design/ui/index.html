@@ -184,9 +184,9 @@ a { color: inherit; }
 .design-card { min-width: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--background); }
 .design-card:hover { border-color: #51514a; }
 .card-open { flex-direction: column; align-items: stretch; gap: 0; }
-.card-open .design-thumbnail { width: 100%; height: auto; aspect-ratio: 16/9; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.card-open .design-thumbnail { width: 100%; height: auto; aspect-ratio: 16/9; border: 0; border-radius: 0; }
 .card-open .thumbnail-empty .icon { width: 42px; height: 42px; }
-.card-open .record-copy { padding: 17px 18px 3px; gap: 8px; }
+.card-open .record-copy { padding: 17px 18px 3px; gap: 8px; border-top: 1px solid var(--line); }
 .card-bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 4px 12px 10px 18px; color: var(--muted); font-size: 0.8571rem; }
 .library-empty { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; min-height: 410px; padding: 64px 24px; text-align: center; }
 .empty-symbol { display: flex; justify-content: center; align-items: center; width: 66px; height: 66px; margin-bottom: 5px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); color: #c3c0b5; }
@@ -410,7 +410,7 @@ a { color: inherit; }
 .record-kind { font-size: 0.8571rem; color: var(--muted); }
 .design-thumbnail { position: relative; width: 120px; height: 68px; border-color: var(--line); background: var(--surface); }
 .thumbnail-empty { background: var(--surface); color: var(--subtle); }
-.thumbnail-frame { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; background: #f1eee6; }
+.thumbnail-frame { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; background: transparent; }
 .record-actions .icon-button { width: 28px; }
 .editor-workspace-heading { min-height: 49px; padding: 9px 20px; }
 .editor-design-title { font-size: 1.1429rem; font-weight: var(--font-weight-medium, 500); }
@@ -459,6 +459,19 @@ a { color: inherit; }
 /* Host typography and palette are semantic variables supplied by MCP Apps. */
 .button.primary { background: var(--text); color: var(--inverse); border-color: var(--text); }
 .button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 88%, var(--background)); border-color: transparent; }
+.design-shell { border-top: var(--border-width-regular, 1px) solid var(--line-strong); }
+/* Host shape/elevation tokens apply to library chrome, never artwork previews. */
+.icon-button { border-radius: var(--border-radius-sm, 7px); }
+.sidebar-item { border-radius: var(--border-radius-md, 10px); }
+.workspace-tab { border-radius: var(--border-radius-md, 10px) var(--border-radius-md, 10px) 0 0; }
+.tab-close, .menu-item { border-radius: var(--border-radius-sm, 6px); }
+.button { border-radius: var(--border-radius-md, 8px); }
+.search-field, .library-heading .button.primary, .filter-tab { border-radius: var(--border-radius-full, 24px); }
+.design-card { border-radius: var(--border-radius-lg, 10px); }
+.empty-symbol { border-radius: var(--border-radius-lg, 16px); }
+.menu-panel { border-radius: var(--border-radius-lg, 12px); box-shadow: var(--shadow-lg, 0 10px 35px #0006); }
+.toast { border-radius: var(--border-radius-lg, 12px); box-shadow: var(--shadow-md, 0 8px 30px #0007); }
+.design-dialog { border-radius: var(--border-radius-xl, 18px); box-shadow: var(--shadow-lg, 0 20px 90px #000a); }
 .search-field:focus-within { border-color: var(--focus); }
 .workspace-tabbar { display: flex; align-items: stretch; min-width: 0; flex-shrink: 0; border-bottom: 1px solid var(--line); }
 .workspace-tabs { flex: 1; min-width: 0; border-bottom: 0; padding-top: 0; min-height: 44px; }
@@ -558,6 +571,47 @@ a { color: inherit; }
   .sidebar-toggle { display: inline-flex; }
   .mobile-menu { display: none; }
   .sidebar-heading-actions .sidebar-collapse { display: inline-flex; }
+}
+
+/* Shared native Save As dialog; the host theme and typography remain authoritative. */
+.codex-export-dialog { width: min(780px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow-y: auto; color: var(--text); background: var(--background); }
+.codex-export-dialog .dialog-form { gap: 18px; }
+.codex-export-dialog .dialog-form > header { gap: 16px; }
+.codex-export-dialog .dialog-form h2 { font-size: var(--font-heading-sm-size, 1.25rem); }
+.codex-export-dialog input { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--text); background: var(--background); }
+.export-location-row, .export-filename { display: grid; gap: 7px; font-size: .9286rem; }
+.export-location-row > div { display: flex; gap: 8px; min-width: 0; }
+.export-location-row input { flex: 1; }
+.export-browser { display: grid; grid-template-columns: 144px minmax(0, 1fr); min-height: 220px; max-height: 340px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.export-places { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 8px; border-right: 1px solid var(--line); background: var(--surface); }
+.export-place { padding: 9px 10px; border-radius: 6px; text-align: left; overflow-wrap: anywhere; color: var(--text); background: transparent; }
+.export-place:hover:not(:disabled), .export-place.is-selected, .export-folder:hover:not(:disabled) { background: var(--surface-active); }
+.export-directory { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.export-directory-toolbar { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.export-directory-toolbar .button { min-height: 28px; padding: 4px 8px; font-size: .8571rem; }
+.export-breadcrumbs { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; font-size: .8571rem; color: var(--muted); }
+.export-breadcrumbs button { flex-shrink: 0; padding: 3px; border-radius: 3px; color: var(--text); background: transparent; }
+.export-breadcrumbs [aria-current] { font-weight: var(--font-weight-medium, 500); }
+.export-folders { display: flex; flex-direction: column; gap: 2px; min-height: 150px; overflow-y: auto; padding: 7px; }
+.export-folders > p { margin: 12px; }
+.export-folder { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 5px; text-align: left; color: var(--text); background: transparent; }
+.export-folder svg { flex-shrink: 0; width: 18px; height: 18px; color: var(--muted); }
+.export-folder span { min-width: 0; overflow-wrap: anywhere; }
+.export-more { align-self: flex-start; margin: 4px 8px 8px; }
+.export-saved-path, .export-target-path { display: block; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); overflow-wrap: anywhere; user-select: text; font-size: .9286rem; line-height: 1.6; }
+.export-collision { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); }
+.export-collision h3, .export-collision p { margin: 0; }
+.export-collision h3 { font-size: 1rem; font-weight: var(--font-weight-semibold, 600); }
+.export-collision > div { display: flex; justify-content: flex-end; gap: 8px; }
+.export-uncertain, .export-error { margin: 0; font-size: .9286rem; line-height: 1.6; overflow-wrap: anywhere; }
+.export-uncertain { color: var(--warning); }
+@media (max-width: 560px) {
+  .codex-export-dialog .dialog-form { padding: 16px; }
+  .export-browser { grid-template-columns: minmax(0, 1fr); }
+  .export-places { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .export-place { flex-shrink: 0; }
+  .export-directory-toolbar { flex-wrap: wrap; }
+  .export-breadcrumbs { flex-basis: 100%; }
 }
 
 </style>
@@ -24099,8 +24153,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       async exportArtifact(id, title) {
         const bundle = portableBundle(await invoke("library.exportArtifact", { id }), { maxBytes: maxBundleBytes });
         const text = JSON.stringify(bundle), filename = packageFilename(title || bundle.title);
-        await download({ filename, text });
-        return { filename, bytes: bytes(text), bundle };
+        const saved = await download({ filename, text });
+        return {
+          filename: saved?.saved === true ? saved.filename : filename,
+          bytes: bytes(text),
+          bundle,
+          ...saved?.saved === true && typeof saved.path === "string" ? { path: saved.path } : {}
+        };
       },
       listSnapshots(id) {
         return invoke("library.listSnapshots", { id });
@@ -24200,7 +24259,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }, startupTimeoutMs);
     startup.unref?.();
     const sendHostContext = () => {
-      if (!disposed && bridge.hostContext) iframe.contentWindow?.postMessage({ type: "codex-design:host-context-changed", channel, context: bridge.hostContext }, "*");
+      if (!disposed && bridge.hostContext) iframe.contentWindow?.postMessage({ type: "codex-design:host-context-changed", channel, context: bridge.hostContext, hostContextIsSnapshot: true }, "*");
     };
     const reply = (requestId, value) => {
       if (!disposed) iframe.contentWindow?.postMessage({ type: "codex-design:editor-response", channel, requestId, ...value }, "*");
@@ -25313,8 +25372,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         });
       } else if (action === "export") await runAction("export-" + id, async () => {
         if (state.view.activeTabId === id) await flushCurrentEditor();
-        await transfer.exportArtifact(id, recordFor(id)?.title);
-        toast(t2("exported"));
+        const saved = await transfer.exportArtifact(id, recordFor(id)?.title);
+        toast(saved?.path ? t2("exported") + ": " + saved.path : t2("exported"));
       });
       else if (action === "history") await openHistory(id);
       else if (action === "snapshot-create") await runAction("snapshot-" + id, async () => {
@@ -43431,16 +43490,372 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "editor.events.poll",
     "editor.events.close",
     "request.draftAdded",
-    "request.draftFailed"
+    "request.draftFailed",
+    "export.locations",
+    "export.listDirectory",
+    "export.save"
   ]);
   var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 
+  // source/ui/export-dialog.mjs
+  var fail2 = (message, code = "EXPORT_FAILED") => Object.assign(new Error(message), { code });
+  var escape3 = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  var absolute = (value) => /^(?:[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+|\/)/i.test(value);
+  var noWriteFailures = /* @__PURE__ */ new Set([
+    "INVALID_ARGUMENTS",
+    "EXPORT_INVALID_REQUEST",
+    "EXPORT_INVALID_DIRECTORY",
+    "EXPORT_INVALID_FILENAME",
+    "EXPORT_INVALID_CONTENT",
+    "EXPORT_LIMIT_EXCEEDED",
+    "EXPORT_INVALID_CONFIRMATION",
+    "EXPORT_REQUEST_CONFLICT",
+    "EXPORT_DIRECTORY_CHANGED",
+    "EXPORT_UNSAFE_TARGET",
+    "EXPORT_TARGET_CHANGED"
+  ]);
+  function directoryBreadcrumbs(directory) {
+    if (typeof directory !== "string" || !directory) return [];
+    const windows = /^[a-z]:[\\/]|^\\\\/i.test(directory), separator = windows ? "\\" : "/";
+    const normalized = windows ? directory.replaceAll("/", "\\") : directory;
+    const root = windows ? /^[a-z]:\\/i.exec(normalized)?.[0] || /^\\\\[^\\]+\\[^\\]+\\?/.exec(normalized)?.[0] : normalized.startsWith("/") ? "/" : null;
+    if (!root) return [{ name: directory, path: directory }];
+    const crumbs = [{ name: root, path: root }];
+    let current = root;
+    for (const name of normalized.slice(root.length).split(separator).filter(Boolean)) {
+      current = current.endsWith(separator) ? current + name : current + separator + name;
+      crumbs.push({ name, path: current });
+    }
+    return crumbs;
+  }
+  function renderExportView({ document: document2, onAction, onFilename, onLocation }) {
+    if (!document2?.body || typeof document2.createElement !== "function") throw fail2("The Save As dialog is unavailable in this environment.", "EXPORT_DIALOG_UNAVAILABLE");
+    const dialog = document2.createElement("dialog");
+    dialog.className = "design-dialog codex-export-dialog";
+    dialog.setAttribute("aria-labelledby", "codex-export-title");
+    let current, composition = null, ignoreCompositionSubmit = false;
+    const inputField = (target) => target?.matches?.('[data-export-field="location"]') ? "location" : target?.matches?.('[data-export-field="filename"]') ? "filename" : null;
+    const updateField = (field, value) => {
+      if (field === "filename" && value !== current?.filename) {
+        onFilename(value);
+        return true;
+      }
+      if (field === "location" && value !== current?.locationInput) {
+        onLocation(value);
+        return true;
+      }
+      return false;
+    };
+    const go = () => {
+      if (!current?.loading && !current?.saving && !current?.uncertain && !current?.restartRequired && !current?.result) onAction("go");
+    };
+    dialog.addEventListener("click", (event) => {
+      if (!composition) ignoreCompositionSubmit = false;
+      const button = event.target.closest("[data-export-action]");
+      if (button && !button.disabled) onAction(button.dataset.exportAction, button.dataset.path);
+    });
+    dialog.addEventListener("input", (event) => {
+      const field = inputField(event.target);
+      if (!field) return;
+      if (composition || event.isComposing) {
+        composition = { field, value: event.target.value };
+        return;
+      }
+      updateField(field, event.target.value);
+    });
+    dialog.addEventListener("compositionstart", (event) => {
+      const field = inputField(event.target);
+      if (field) composition = { field, value: event.target.value };
+    });
+    dialog.addEventListener("compositionend", (event) => {
+      const field = inputField(event.target);
+      if (!field || !composition) return;
+      composition = null;
+      if (!updateField(field, event.target.value)) view.render(current);
+    });
+    dialog.addEventListener("keydown", (event) => {
+      const field = inputField(event.target);
+      if (!field) return;
+      if (event.isComposing || event.keyCode === 229 || composition) {
+        if (event.key === "Enter" || event.keyCode === 229) ignoreCompositionSubmit = true;
+        return;
+      }
+      ignoreCompositionSubmit = false;
+      if (event.key === "Enter" && field === "location") {
+        event.preventDefault();
+        go();
+      }
+    });
+    dialog.addEventListener("keyup", (event) => {
+      if (event.key === "Enter" || event.keyCode === 229) queueMicrotask(() => {
+        ignoreCompositionSubmit = false;
+      });
+    });
+    dialog.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (composition || ignoreCompositionSubmit) return;
+      if (inputField(document2.activeElement) === "location" && !event.submitter) go();
+      else onAction("save");
+    });
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      onAction(current?.result ? "done" : "cancel");
+    });
+    document2.body.append(dialog);
+    const view = {
+      render(model) {
+        current = model;
+        if (composition) return;
+        const focused = dialog.contains(document2.activeElement) ? document2.activeElement : null;
+        const focusField = focused?.dataset.exportField;
+        const selection = focused ? { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection } : null;
+        const locked = model.saving || model.uncertain || model.restartRequired;
+        const disabled = locked ? " disabled" : "";
+        if (model.result) {
+          dialog.innerHTML = '<section class="dialog-form"><header><h2 id="codex-export-title">Export saved</h2></header><p class="dialog-description">Saved to</p><output class="export-saved-path">' + escape3(model.result.path) + '</output><p class="field-hint">' + escape3(model.result.bytes.toLocaleString()) + ' bytes</p><footer><button type="button" class="button primary" data-export-action="done" autofocus>Done</button></footer></section>';
+        } else {
+          const locationList = model.locations.map((location2) => '<button type="button" class="export-place' + (location2.path === model.directory ? " is-selected" : "") + '" data-export-action="location" data-path="' + escape3(location2.path) + '" title="' + escape3(location2.path) + '"' + (locked || model.loading ? " disabled" : "") + ">" + escape3(location2.label) + "</button>").join("");
+          const breadcrumbs = directoryBreadcrumbs(model.directory).map((crumb, index, values) => '<button type="button" data-export-action="location" data-path="' + escape3(crumb.path) + '" title="' + escape3(crumb.path) + '"' + (locked || model.loading ? " disabled" : "") + (index === values.length - 1 ? ' aria-current="location"' : "") + ">" + escape3(crumb.name) + "</button>").join('<span aria-hidden="true">/</span>');
+          const folders = model.entries.map((entry) => '<button type="button" class="export-folder" data-export-action="location" data-path="' + escape3(entry.path) + '"' + (locked || model.loading ? " disabled" : "") + '><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5h7l2 2h9v13H3z"/></svg><span>' + escape3(entry.name) + "</span></button>").join("");
+          const collision = model.collision ? '<section class="export-collision" aria-labelledby="export-replace-title"><h3 id="export-replace-title">Replace existing file?</h3><p>' + (model.collisionChanged ? "The file changed since the previous confirmation. Review it before replacing." : "A file already exists at this location.") + '</p><p class="export-target-path">' + escape3(model.collision.path) + '</p><p class="field-hint">' + escape3(Number(model.collision.existing?.size || 0).toLocaleString()) + " bytes · " + escape3(model.collision.existing?.modifiedAt || "Unknown modification time") + '</p><div><button type="button" class="button secondary" data-export-action="rename"' + disabled + '>Choose another name</button><button type="button" class="button destructive" data-export-action="replace"' + disabled + ">Replace</button></div></section>" : "";
+          dialog.innerHTML = '<form class="dialog-form"><header><h2 id="codex-export-title">Save As</h2><button type="button" class="icon-button" data-export-action="cancel" aria-label="Close Save As"' + (model.saving ? " disabled" : "") + '>×</button></header><div class="export-location-row"><label for="export-location">Location</label><div><input id="export-location" data-export-field="location" value="' + escape3(model.locationInput) + '" spellcheck="false" autocomplete="off"' + disabled + '><button type="button" class="button secondary" data-export-action="go"' + (locked || model.loading ? " disabled" : "") + '>Go</button></div></div><div class="export-browser"><nav class="export-places" aria-label="Export locations">' + locationList + '</nav><section class="export-directory"><div class="export-directory-toolbar"><button type="button" class="button secondary" data-export-action="up"' + (!model.parent || locked || model.loading ? " disabled" : "") + '>Up</button><button type="button" class="button secondary" data-export-action="home"' + (!model.home || locked || model.loading ? " disabled" : "") + '>Home</button><nav class="export-breadcrumbs" aria-label="Current folder">' + breadcrumbs + '</nav></div><div class="export-folders" aria-label="Folders" aria-busy="' + model.loading + '">' + (model.loading ? '<p class="field-hint" role="status">Loading folders…</p>' : folders || '<p class="field-hint">No subfolders</p>') + "</div>" + (model.nextCursor ? '<button type="button" class="button secondary export-more" data-export-action="more"' + (locked || model.loading ? " disabled" : "") + ">More folders</button>" : "") + '</section></div><label class="export-filename" for="export-filename">File name<input id="export-filename" data-export-field="filename" value="' + escape3(model.filename) + '" spellcheck="false" autocomplete="off"' + disabled + "></label>" + collision + (model.uncertain ? '<p class="export-uncertain" role="status">The save result could not be confirmed. The file may already exist at the chosen location. Check save to retry this same operation safely.</p>' : "") + (model.error ? '<p class="dialog-error export-error" role="alert">' + escape3(model.error) + "</p>" : "") + '<footer><button type="button" class="button secondary" data-export-action="cancel"' + (model.saving ? " disabled" : "") + ">" + (model.uncertain || model.restartRequired ? "Close" : "Cancel") + "</button>" + (!model.collision && !model.restartRequired ? '<button type="submit" class="button primary"' + (model.saving || model.loading || !model.directory || !model.filename.trim() ? " disabled" : "") + ">" + (model.saving ? "Saving…" : model.uncertain ? "Check save" : "Save") + "</button>" : "") + "</footer></form>";
+        }
+        if (!dialog.open) dialog.showModal();
+        if (model.result) dialog.querySelector('[data-export-action="done"]')?.focus();
+        else if (focusField) {
+          const field = dialog.querySelector('[data-export-field="' + focusField + '"]');
+          field?.focus();
+          if (typeof selection?.start === "number") field?.setSelectionRange?.(selection.start, typeof selection.end === "number" ? selection.end : selection.start, selection.direction || "none");
+        }
+      },
+      close() {
+        if (dialog.open) dialog.close();
+      },
+      destroy() {
+        if (dialog.open) dialog.close();
+        dialog.remove();
+      }
+    };
+    return view;
+  }
+  function createExportDialog({ invoke, document: document2 = globalThis.document, createId = () => globalThis.crypto.randomUUID(), viewFactory = renderExportView } = {}) {
+    if (typeof invoke !== "function") throw new TypeError("An export API connection is required.");
+    const queue = [];
+    let active = null, disposed = false, view;
+    const current = (entry) => !disposed && active === entry;
+    const render = (entry) => {
+      if (current(entry)) view.render(structuredClone(entry.model));
+    };
+    const changeTarget = (entry) => {
+      entry.requestId = createId();
+      entry.retryToken = void 0;
+      entry.model.collision = null;
+      entry.model.collisionChanged = false;
+      entry.model.error = "";
+    };
+    const finish = (entry, result, error112) => {
+      if (active !== entry) return;
+      active = null;
+      view?.close();
+      error112 ? entry.reject(error112) : entry.resolve(result);
+      if (!disposed) queueMicrotask(pump);
+    };
+    const observe = (entry, promise3) => {
+      void promise3.catch((error112) => {
+        if (current(entry)) finish(entry, entry.model.result, entry.model.result ? null : error112);
+      });
+    };
+    const navigate = async (entry, requested, append = false) => {
+      if (!current(entry) || entry.model.saving || entry.model.uncertain || entry.model.restartRequired || entry.model.loading && append) return false;
+      const directory = String(requested ?? "").trim();
+      if (!absolute(directory)) {
+        entry.model.error = "Enter an absolute folder path.";
+        render(entry);
+        return false;
+      }
+      const sequence = ++entry.navigation;
+      entry.model.loading = true;
+      entry.model.error = "";
+      render(entry);
+      try {
+        const value = await invoke("export.listDirectory", { path: directory, ...append && entry.model.nextCursor ? { cursor: entry.model.nextCursor } : {} });
+        if (!current(entry) || sequence !== entry.navigation) return false;
+        if (!value || typeof value.path !== "string" || !Array.isArray(value.entries)) throw fail2("The folder response is invalid.", "EXPORT_DIRECTORY_INVALID");
+        if (!append && value.path !== entry.model.directory) changeTarget(entry);
+        const entries = append ? [...entry.model.entries, ...value.entries] : value.entries;
+        entry.model.directory = value.path;
+        entry.model.locationInput = value.path;
+        entry.model.parent = value.parent || null;
+        entry.model.entries = [...new Map(entries.filter((item) => typeof item?.name === "string" && typeof item?.path === "string").map((item) => [item.path, item])).values()];
+        entry.model.nextCursor = value.nextCursor || null;
+        return true;
+      } catch (error112) {
+        if (current(entry) && sequence === entry.navigation) entry.model.error = error112.message || "The folder could not be opened.";
+        return false;
+      } finally {
+        if (current(entry) && sequence === entry.navigation) {
+          entry.model.loading = false;
+          render(entry);
+        }
+      }
+    };
+    const initialize = async (entry) => {
+      entry.model.loading = true;
+      render(entry);
+      try {
+        const value = await invoke("export.locations", {});
+        if (!current(entry)) return;
+        if (!value || !Array.isArray(value.locations) || value.defaultDirectory !== null && typeof value.defaultDirectory !== "string") throw fail2("Export locations are unavailable.", "EXPORT_LOCATIONS_INVALID");
+        entry.model.locations = value.locations.filter((item) => typeof item?.id === "string" && typeof item?.label === "string" && typeof item?.path === "string");
+        entry.model.home = entry.model.locations.find((item) => item.id === "home")?.path || value.defaultDirectory || null;
+        entry.model.loading = false;
+        if (value.defaultDirectory) await navigate(entry, value.defaultDirectory);
+        else render(entry);
+      } catch (error112) {
+        if (current(entry)) {
+          entry.model.loading = false;
+          entry.model.error = error112.message || "Export locations could not be loaded.";
+          render(entry);
+        }
+      }
+    };
+    const save = async (entry, replace = false) => {
+      if (!current(entry) || entry.model.saving || entry.model.loading || entry.model.result || entry.model.restartRequired) return;
+      if (entry.model.collision && !replace) return;
+      if (!entry.model.uncertain && entry.model.locationInput.trim() !== entry.model.directory) {
+        if (!await navigate(entry, entry.model.locationInput) || !current(entry)) return;
+      }
+      if (!entry.model.directory || !entry.model.filename.trim()) {
+        entry.model.error = "Choose a folder and file name.";
+        render(entry);
+        return;
+      }
+      const token = replace ? entry.model.collision?.overwriteToken : entry.retryToken;
+      entry.retryToken = token;
+      entry.model.saving = true;
+      entry.model.error = "";
+      render(entry);
+      try {
+        const value = await invoke("export.save", {
+          ...entry.resource,
+          requestId: entry.requestId,
+          directory: entry.model.directory,
+          filename: entry.model.filename,
+          ...token ? { overwriteToken: token } : {}
+        });
+        if (!current(entry)) return;
+        if (value?.saved === true && typeof value.path === "string" && typeof value.filename === "string" && Number.isSafeInteger(value.bytes) && value.bytes >= 0) {
+          entry.model.result = value;
+          entry.model.uncertain = false;
+          entry.model.collision = null;
+        } else if (value?.saved === false && value.exists === true && typeof value.path === "string" && typeof value.overwriteToken === "string" && value.overwriteToken) {
+          entry.model.collision = value;
+          entry.model.collisionChanged = Boolean(token);
+          entry.model.uncertain = false;
+          entry.retryToken = void 0;
+        } else throw fail2("The save result could not be confirmed.", "EXPORT_UNCONFIRMED");
+      } catch (error112) {
+        if (current(entry)) {
+          entry.model.error = error112.message || "The export could not be saved.";
+          entry.model.restartRequired = ["EXPORT_REQUEST_CONFLICT", "EXPORT_RESULT_CHANGED", "EXPORT_INVALID_STATE"].includes(error112.code);
+          if (entry.model.restartRequired) entry.terminalError = error112;
+          entry.model.uncertain = !entry.model.restartRequired && !noWriteFailures.has(error112.code);
+          if (entry.model.uncertain) entry.model.collision = null;
+        }
+      } finally {
+        if (current(entry)) {
+          entry.model.saving = false;
+          render(entry);
+        }
+      }
+    };
+    const onAction = (action, path) => {
+      const entry = active;
+      if (!entry) return;
+      if (action === "done" && entry.model.result) return finish(entry, entry.model.result);
+      if (action === "cancel") {
+        if (entry.model.saving) return;
+        if (entry.model.result) return finish(entry, entry.model.result);
+        if (entry.model.restartRequired) return finish(entry, null, entry.terminalError);
+        return finish(entry, null, entry.model.uncertain ? fail2("The export may already have been saved. Check the selected folder.", "EXPORT_UNCONFIRMED") : fail2("Export cancelled.", "DOWNLOAD_CANCELLED"));
+      }
+      if (entry.model.result || entry.model.saving || entry.model.restartRequired) return;
+      if (action === "save" || action === "replace") return observe(entry, save(entry, action === "replace"));
+      if (entry.model.uncertain) return;
+      if (action === "rename") {
+        entry.model.collision = null;
+        entry.retryToken = void 0;
+        render(entry);
+        return;
+      }
+      if (action === "go") return observe(entry, navigate(entry, entry.model.locationInput));
+      if (action === "location") return observe(entry, navigate(entry, path));
+      if (action === "up" && entry.model.parent) return observe(entry, navigate(entry, entry.model.parent));
+      if (action === "home" && entry.model.home) return observe(entry, navigate(entry, entry.model.home));
+      if (action === "more" && entry.model.nextCursor) return observe(entry, navigate(entry, entry.model.directory, true));
+    };
+    function pump() {
+      if (disposed || active || !queue.length) return;
+      const entry = active = queue.shift();
+      try {
+        view ??= viewFactory({
+          document: document2,
+          onAction,
+          onFilename(value) {
+            if (active && !active.model.saving && !active.model.uncertain && !active.model.restartRequired && !active.model.result) {
+              active.model.filename = value;
+              changeTarget(active);
+              render(active);
+            }
+          },
+          onLocation(value) {
+            if (active && !active.model.saving && !active.model.uncertain && !active.model.restartRequired && !active.model.result) {
+              active.model.locationInput = value;
+              render(active);
+            }
+          }
+        });
+        observe(entry, initialize(entry));
+      } catch (error112) {
+        finish(entry, null, error112);
+      }
+    }
+    return {
+      save(resource) {
+        if (disposed) return Promise.reject(fail2("The export dialog has closed.", "BRIDGE_UNAVAILABLE"));
+        const same = [active, ...queue].find((entry2) => entry2 && ["filename", "mimeType", "text", "base64"].every((key) => entry2.resource[key] === resource[key]));
+        if (same) return same.promise;
+        if (queue.length + Number(Boolean(active)) >= 3) return Promise.reject(fail2("Finish the current exports before starting another.", "EXPORT_BUSY"));
+        const entry = { resource: Object.freeze({ ...resource }), navigation: 0, requestId: createId(), model: { filename: resource.filename, locations: [], directory: "", locationInput: "", parent: null, entries: [], nextCursor: null, home: null, loading: true, saving: false, uncertain: false, restartRequired: false, error: "", collision: null, collisionChanged: false, result: null } };
+        entry.promise = new Promise((resolve, reject) => {
+          entry.resolve = resolve;
+          entry.reject = reject;
+        });
+        queue.push(entry);
+        pump();
+        return entry.promise;
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (active) {
+          const entry = active;
+          active = null;
+          if (entry.model.result) entry.resolve(entry.model.result);
+          else entry.reject(entry.terminalError || (entry.model.saving || entry.model.uncertain ? fail2("The export save result could not be confirmed before the connection closed.", "EXPORT_UNCONFIRMED") : fail2("Export cancelled.", "DOWNLOAD_CANCELLED")));
+        }
+        for (const entry of queue.splice(0)) entry.reject(fail2("Export cancelled.", "DOWNLOAD_CANCELLED"));
+        view?.destroy();
+      }
+    };
+  }
+
   // source/server/ui-bridge.mjs
-  var fail2 = (message, code) => Object.assign(new Error(message), { code });
-  var changed = (action) => !READ_ACTIONS.includes(action) && !action.startsWith("editor.") && action !== "thumbnail.get";
+  var fail3 = (message, code) => Object.assign(new Error(message), { code });
+  var changed = (action) => !READ_ACTIONS.includes(action) && !action.startsWith("editor.") && !action.startsWith("export.") && action !== "thumbnail.get";
   var artifactRoute = /^\/artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?[^#]*)?$/i;
   var artifactId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  async function createMcpBridge({ timeoutMs = 8e3, onInitialResult, app = new i({ name: "codex-design", version: PLUGIN_UI_VERSION }) } = {}) {
+  async function createMcpBridge({ timeoutMs = 8e3, onInitialResult, exportDialogFactory = createExportDialog, app = new i({ name: "codex-design", version: PLUGIN_UI_VERSION }) } = {}) {
     const extensions = new OpenAIExtensions(app);
     const listeners = /* @__PURE__ */ new Set();
     let toolInput;
@@ -43451,6 +43866,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let latestViewState;
     let navigation = Promise.resolve();
     let pendingArtifact;
+    let exportDialog;
     const bridge = {
       available: true,
       transport: "mcp",
@@ -43464,8 +43880,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         return connected && !disposed && Boolean(extensions.message);
       },
       async invoke(action, payload = {}) {
-        if (disposed) throw fail2("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
-        if (action === "conversation.send") throw fail2("A verified per-artifact native conversation bridge is not available.", UNSUPPORTED_CHAT_CODE);
+        if (disposed) throw fail3("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (action === "conversation.send") throw fail3("A verified per-artifact native conversation bridge is not available.", UNSUPPORTED_CHAT_CODE);
         const result = await app.callServerTool({ name: READ_ACTIONS.includes(action) ? "design_read" : "design_action", arguments: { action, payload } });
         if (result.isError || result.structuredContent?.error) {
           let detail = result.structuredContent?.error;
@@ -43475,7 +43891,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
             } catch {
             }
           }
-          throw fail2(detail?.message || "The library request failed.", detail?.code || "DESIGN_LIBRARY_ERROR");
+          throw fail3(detail?.message || "The library request failed.", detail?.code || "DESIGN_LIBRARY_ERROR");
         }
         const value = result.structuredContent?.result;
         if (action.startsWith("view.") && changed(action)) {
@@ -43486,10 +43902,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         return value;
       },
       async draftComment(request) {
-        if (disposed) throw fail2("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
-        if (!bridge.canDraftComments) throw fail2("This host cannot add design comments to the active chat draft.", "NATIVE_COMMENT_DRAFT_UNAVAILABLE");
+        if (disposed) throw fail3("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (!bridge.canDraftComments) throw fail3("This host cannot add design comments to the active chat draft.", "NATIVE_COMMENT_DRAFT_UNAVAILABLE");
         if (!request || typeof request.requestId !== "string" || !artifactId.test(request.requestId) || typeof request.artifactId !== "string" || !artifactId.test(request.artifactId) || Object.hasOwn(request, "attemptId") && (typeof request.attemptId !== "string" || !artifactId.test(request.attemptId)) || request.uri !== `codex-design://edit-requests/${request.requestId}` || typeof request.title !== "string" || !request.title.trim() || request.title.length > 300 || typeof request.summary !== "string" || !request.summary.trim() || request.summary.length > 2e4) {
-          throw fail2("The immutable design comment request is invalid.", "INVALID_COMMENT_DRAFT");
+          throw fail3("The immutable design comment request is invalid.", "INVALID_COMMENT_DRAFT");
         }
         const result = await extensions.message.send({
           role: "user",
@@ -43501,20 +43917,19 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
           ],
           _meta: { "openai/message": { target: "active", send: false } }
         });
-        if (result.isError) throw fail2("The host could not add the design comment to the active chat draft.", "NATIVE_COMMENT_DRAFT_FAILED");
+        if (result.isError) throw fail3("The host could not add the design comment to the active chat draft.", "NATIVE_COMMENT_DRAFT_FAILED");
         return result;
       },
       async downloadArtifact({ filename, text }) {
         return bridge.downloadResource({ filename, mimeType: "application/json", text });
       },
       async downloadResource({ filename, mimeType, text, base64: base645 }) {
-        if (disposed) throw fail2("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
-        if (!app.getHostCapabilities()?.downloadFile) throw fail2("This host does not support artwork downloads.", "DOWNLOAD_UNAVAILABLE");
-        if (typeof filename !== "string" || !filename || filename.length > 300 || /[\\/\u0000-\u001f\u007f]/.test(filename) || typeof mimeType !== "string" || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(mimeType) || typeof text === "string" === (typeof base645 === "string")) throw fail2("Invalid artwork download.", "INVALID_DOWNLOAD");
-        if (typeof base645 === "string" && (base645.length > 180 * 1024 * 1024 || base645.length % 4 || /[^A-Za-z0-9+/=]/.test(base645))) throw fail2("Invalid artwork download encoding.", "INVALID_DOWNLOAD");
-        const resource = { uri: "file:///" + encodeURIComponent(filename), mimeType, ...text === void 0 ? { blob: base645 } : { text } };
-        const result = await app.downloadFile({ contents: [{ type: "resource", resource }] });
-        if (result.isError) throw fail2("The artwork download was cancelled or denied.", "DOWNLOAD_CANCELLED");
+        if (disposed) throw fail3("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (typeof filename !== "string" || !filename || filename.length > 300 || /[\\/\u0000-\u001f\u007f]/.test(filename) || typeof mimeType !== "string" || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(mimeType) || typeof text === "string" === (typeof base645 === "string")) throw fail3("Invalid artwork download.", "INVALID_DOWNLOAD");
+        if (typeof base645 === "string" && (base645.length > 180 * 1024 * 1024 || base645.length % 4 || /[^A-Za-z0-9+/=]/.test(base645))) throw fail3("Invalid artwork download encoding.", "INVALID_DOWNLOAD");
+        exportDialog ??= exportDialogFactory({ invoke: (action, payload) => bridge.invoke(action, payload) });
+        const result = await exportDialog.save({ filename, mimeType, ...text === void 0 ? { base64: base645 } : { text } });
+        if (result?.saved !== true || typeof result.path !== "string" || !result.path) throw fail3("The export save result could not be confirmed.", "EXPORT_UNCONFIRMED");
         return result;
       },
       diagnostics() {
@@ -43537,6 +43952,7 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
       },
       async dispose() {
         disposed = true;
+        exportDialog?.dispose?.();
         bridge.available = false;
         connected = false;
         bridge.capabilities.canDraftComments = false;
@@ -43615,10 +44031,10 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
           try {
             descriptor = JSON.parse(text);
           } catch {
-            throw fail2("The artwork descriptor is not valid JSON.", "INVALID_DESCRIPTOR");
+            throw fail3("The artwork descriptor is not valid JSON.", "INVALID_DESCRIPTOR");
           }
           if (descriptor?.format !== "codex-design-descriptor" || descriptor.version !== 1 || typeof descriptor.artifactId !== "string" || !artifactId.test(descriptor.artifactId)) {
-            throw fail2("Unsupported Codex Design artwork descriptor.", "INVALID_DESCRIPTOR");
+            throw fail3("Unsupported Codex Design artwork descriptor.", "INVALID_DESCRIPTOR");
           }
           await openArtifact(descriptor.artifactId);
         } catch (error112) {
@@ -43630,6 +44046,8 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
     app.addEventListener("hostcontextchanged", onHostContext);
     app.onteardown = async () => {
       await bridge.beforeNavigate?.({ action: "teardown" });
+      exportDialog?.dispose?.();
+      exportDialog = void 0;
       return {};
     };
     app.ontoolinput = ({ arguments: args }) => {
@@ -43648,7 +44066,7 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
     let timer;
     try {
       await Promise.race([app.connect(), new Promise((_2, reject) => {
-        timer = setTimeout(() => reject(fail2("The host did not establish the MCP App connection.", "BRIDGE_UNAVAILABLE")), timeoutMs);
+        timer = setTimeout(() => reject(fail3("The host did not establish the MCP App connection.", "BRIDGE_UNAVAILABLE")), timeoutMs);
       })]);
     } catch (error112) {
       await bridge.dispose().catch(() => {
