@@ -1,5 +1,24 @@
 # Codex Design library implementation
 
+## 0.5.0 global native draft workflow
+
+The confirmed design is a global Codex Design workspace with a host-managed
+selected/default local environment, without per-artwork user-chat binding or
+arbitrary historical-chat switching. Native Add to chat prepares an immutable
+request and appends to the native draft without sending or queueing. The user
+sends; the real parent reads/accepts received request IDs, dispatches through its
+actual native environment, and coordinates native children. Comments derive
+their status from request receipts and actual job/reply records. UI service
+bindings are separate from native execution identity. Old unconfirmed pending
+requests are retained for explicit review rather than replayed automatically.
+
+Trash adds confirmed single and visible-selection permanent deletion, with
+safe preflight and accurate partial-failure retries. Acceptance evidence and
+actual-host limits are recorded in [ACCEPTANCE-0.5.0.md](ACCEPTANCE-0.5.0.md).
+
+The host top toolbar/shared-sidebar gaps and cross-window ownership remain open;
+they are not replaced with private host patches or hidden duplicate editors.
+
 ## 0.4.3 menu regression hotfix
 
 Fix transient menus closing during their own focus transfer. The shared window

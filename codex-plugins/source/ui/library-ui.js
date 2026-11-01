@@ -69,7 +69,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     records: [], view: normalizeViewState(), category: 'all', favorites: false,
     query: '', sort: 'updated', layout: 'list', loading: true, error: null,
     menu: null, toast: null, mobileSidebar: false, sidebarCollapsed: false, destroyed: false,
-    busy: new Set(), chat: new Map(), drafts: new Map(), minimized: new Set(),
+    busy: new Set(), chat: new Map(), drafts: new Map(), minimized: new Set(), trashSelection: new Set(),
   };
   try { state.sidebarCollapsed = localStorage.getItem('codex-design.sidebar-collapsed') === 'true'; } catch {}
   let recordsSequence = 0;
@@ -83,6 +83,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let viewQueue = Promise.resolve();
   let toastTimer;
   let conversationTimer;
+  let purgeConfirmation = null;
   const abort = new AbortController();
   root.classList.add('codex-design-ui');
   root.innerHTML = '<div class="design-shell"><aside class="design-sidebar" id="design-category-navigation"></aside><section class="design-workspace"><div class="workspace-tabbar"><button type="button" class="icon-button sidebar-toggle" data-action="toggle-sidebar" aria-controls="design-category-navigation"></button><div class="workspace-tabs"></div></div><main id="design-workspace-panel" class="workspace-panel" role="tabpanel"></main></section><div class="sidebar-scrim" hidden></div><div class="floating-layer"></div><div class="menu-layer"></div><div class="toast-layer" aria-live="polite" aria-atomic="true"></div><dialog class="design-dialog"></dialog><span class="sr-only live-status" role="status"></span></div>';
@@ -286,7 +287,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
           : state.category !== 'trash' && !state.favorites ? '<button type="button" class="button primary" data-action="create"' + disabled('library.create') + '>' + icon('plus') + escape(t('newDesign')) + '</button>' : '') + '</section>';
   }
   function recordActions(record) {
-    if (isDeleted(record)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape(record.id) + '"' + disabled('library.restore') + '>' + icon('restore') + escape(t('restore')) + '</button>';
+    if (isDeleted(record)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape(record.id) + '"' + (busy('purge-trash') ? ' disabled' : disabled('library.restore')) + '>' + icon('restore') + escape(t('restore')) + '</button>'
+      + '<button type="button" class="button trash-delete-button" data-action="purge-dialog" data-id="' + escape(record.id) + '" aria-label="' + escape(t('deletePermanentlyTitle', { title: record.title })) + '"' + (busy('purge-trash') ? ' disabled' : disabled('library.purge')) + '>' + escape(t('deletePermanently')) + '</button>';
     return '<button type="button" class="icon-button favorite-button ' + (record.favorite ? 'is-favorite' : '') + '" data-action="favorite" data-id="' + escape(record.id) + '" data-focus-key="favorite-' + escape(record.id) + '" aria-label="' + escape(t(record.favorite ? 'unfavoriteDesign' : 'favoriteDesign', { title: record.title })) + '" aria-pressed="' + Boolean(record.favorite) + '"' + disabled('library.setFavorite') + '>' + icon('star') + '</button>'
       + '<button type="button" class="icon-button" data-action="item-menu" data-menu-trigger="true" data-id="' + escape(record.id) + '" aria-haspopup="menu" aria-label="' + escape(t('moreActions', { title: record.title })) + '">' + icon('more') + '</button>';
   }
@@ -298,19 +300,39 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const visual = className === 'card-open' ? thumbnail(record) : '<span class="record-type-icon" title="' + escape(t(record.kind)) + '" aria-hidden="true">' + icon(record.kind) + '</span>';
     return '<button type="button" class="record-open ' + className + '" data-action="open" data-id="' + escape(record.id) + '" aria-label="' + escape(t('openDesign', { title: record.title })) + '"' + (cannotOpen ? ' disabled' : '') + '>' + visual + '<span class="record-copy"><span class="record-title">' + escape(record.title) + '</span>' + recordStatus(record) + '</span></button>';
   }
+  function selectedTrashRecords(records = visibleRecords()) {
+    return state.category === 'trash' ? records.filter(record => isDeleted(record) && state.trashSelection.has(record.id)) : [];
+  }
+  function trashCheckbox(record, className = '') {
+    return '<label class="trash-checkbox ' + className + '"><input type="checkbox" data-action="trash-select" data-id="' + escape(record.id) + '" data-focus-key="trash-select-' + escape(record.id) + '" aria-label="' + escape(t('selectTrashDesign', { title: record.title })) + '"' + (state.trashSelection.has(record.id) ? ' checked' : '') + (busy('purge-trash') ? ' disabled' : '') + '></label>';
+  }
+  function renderTrashSelection(records) {
+    if (state.category !== 'trash') return;
+    const visible = new Set(records.map(record => record.id));
+    state.trashSelection = new Set([...state.trashSelection].filter(id => visible.has(id)));
+    const selected = selectedTrashRecords(records).length;
+    const controls = elements.panel.querySelector('.trash-selection-bar');
+    if (!controls) return;
+    controls.innerHTML = '<label class="trash-select-all"><input type="checkbox" data-action="trash-select-all" data-focus-key="trash-select-all"' + (records.length && selected === records.length ? ' checked' : '') + (!records.length || busy('purge-trash') ? ' disabled' : '') + '><span>' + escape(t('selectVisibleTrash', { count: records.length })) + '</span></label>'
+      + '<span class="trash-selection-count" role="status">' + escape(t('trashSelected', { count: selected })) + '</span><button type="button" class="button trash-delete-button" data-action="purge-selected"' + (!selected || busy('purge-trash') ? ' disabled' : disabled('library.purge')) + '>' + escape(t('deleteSelected')) + '</button>';
+    const checkbox = controls.querySelector('input');
+    if (checkbox) checkbox.indeterminate = selected > 0 && selected < records.length;
+  }
   function renderRecords() {
     const container = elements.panel.querySelector('.records-container');
     if (!container) return;
     const focused = focusKey();
     const records = visibleRecords();
+    const trash = state.category === 'trash';
+    renderTrashSelection(records);
     const counter = elements.panel.querySelector('.design-count');
     if (counter) counter.textContent = t('count', { count: records.length });
     container.className = 'records-container ' + (state.layout === 'grid' ? 'is-grid' : 'is-list');
     if (state.loading) container.innerHTML = '<div class="library-empty loading-state" role="status"><span class="spinner"></span><p>' + escape(t('loadingLibrary')) + '</p></div>';
     else if (!records.length || state.error) container.innerHTML = renderEmpty(records);
-    else if (state.layout === 'grid') container.innerHTML = '<div class="design-grid">' + records.map((record) => '<article class="design-card">' + recordOpen(record, 'card-open') + '<div class="card-bottom"><span>' + escape(formatTime(record.updatedAt)) + '</span><div class="record-actions">' + recordActions(record) + '</div></div></article>').join('') + '</div>';
-    else container.innerHTML = '<table class="design-table"><thead><tr><th scope="col">' + escape(t('name')) + '</th><th scope="col" class="kind-column">' + escape(t('kindColumn')) + '</th><th scope="col" class="edited-column">' + escape(t('lastEdited')) + '</th><th scope="col"><span class="sr-only">' + escape(t('actions')) + '</span></th></tr></thead><tbody>'
-      + records.map((record) => '<tr><th scope="row">' + recordOpen(record) + '</th><td class="kind-column">' + escape(t(record.kind)) + '</td><td class="edited-column"><time datetime="' + escape(record.updatedAt) + '">' + escape(formatTime(record.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record) + '</div></td></tr>').join('') + '</tbody></table>';
+    else if (state.layout === 'grid') container.innerHTML = '<div class="design-grid' + (trash ? ' trash-grid' : '') + '">' + records.map((record) => '<article class="design-card' + (trash && state.trashSelection.has(record.id) ? ' is-selected' : '') + '">' + (trash ? trashCheckbox(record, 'trash-card-selection') : '') + recordOpen(record, 'card-open') + '<div class="card-bottom"><span>' + escape(formatTime(record.updatedAt)) + '</span><div class="record-actions">' + recordActions(record) + '</div></div></article>').join('') + '</div>';
+    else container.innerHTML = '<table class="design-table' + (trash ? ' trash-table' : '') + '"><thead><tr>' + (trash ? '<th scope="col" class="trash-selection-column"><span class="sr-only">' + escape(t('selectDesigns')) + '</span></th>' : '') + '<th scope="col">' + escape(t('name')) + '</th><th scope="col" class="kind-column">' + escape(t('kindColumn')) + '</th><th scope="col" class="edited-column">' + escape(t('lastEdited')) + '</th><th scope="col"><span class="sr-only">' + escape(t('actions')) + '</span></th></tr></thead><tbody>'
+      + records.map((record) => '<tr' + (trash && state.trashSelection.has(record.id) ? ' class="is-selected"' : '') + '>' + (trash ? '<td class="trash-selection-column">' + trashCheckbox(record) + '</td>' : '') + '<th scope="row">' + recordOpen(record) + '</th><td class="kind-column">' + escape(t(record.kind)) + '</td><td class="edited-column"><time datetime="' + escape(record.updatedAt) + '">' + escape(formatTime(record.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record) + '</div></td></tr>').join('') + '</tbody></table>';
     restoreFocus(focused);
     hydrateThumbnails();
   }
@@ -319,7 +341,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     elements.panel.classList.add('library-panel');
     elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape(t('libraryNavigation')) + '" aria-expanded="' + state.mobileSidebar + '">' + icon('menu') + '</button><div><h1>' + escape(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon('search') + '<span class="sr-only">' + escape(t('search')) + '</span><input type="search" class="library-search" placeholder="' + escape(t('searchKind', { kind: categoryTitle })) + '" value="' + escape(state.query) + '" autocomplete="off"></label>'
       + (state.category !== 'trash' ? '<button type="button" class="button primary" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled('library.create') + '>' + escape(t('create')) + icon('chevron') + '</button>' : '') + '</div></header>'
-      + '<div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape(t('favorites')) + '"><button type="button" class="filter-tab ' + (!state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape(t('all')) + '</button><button type="button" class="filter-tab ' + (state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape(t('favorites')) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape(t('sort')) + '">' + icon('sort') + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === 'grid' ? 'is-selected' : '') + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === 'grid') + '" aria-label="' + escape(t('gridView')) + '">' + icon('grid') + '</button><button type="button" class="icon-button ' + (state.layout === 'list' ? 'is-selected' : '') + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === 'list') + '" aria-label="' + escape(t('listView')) + '">' + icon('list') + '</button></div></div><div class="records-container"></div></section>';
+      + '<div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape(t('favorites')) + '"><button type="button" class="filter-tab ' + (!state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape(t('all')) + '</button><button type="button" class="filter-tab ' + (state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape(t('favorites')) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape(t('sort')) + '">' + icon('sort') + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === 'grid' ? 'is-selected' : '') + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === 'grid') + '" aria-label="' + escape(t('gridView')) + '">' + icon('grid') + '</button><button type="button" class="icon-button ' + (state.layout === 'list' ? 'is-selected' : '') + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === 'list') + '" aria-label="' + escape(t('listView')) + '">' + icon('list') + '</button></div></div>' + (state.category === 'trash' ? '<div class="trash-selection-bar"></div>' : '') + '<div class="records-container"></div></section>';
     renderRecords();
   }
   async function openEditor(id, force = false) {
@@ -340,7 +362,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     try {
       const native = bridge.supportsInlineEditor === true;
       const channel = native ? crypto.randomUUID() : null;
-      const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: 'en', channel } : {}) });
+      const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: 'en', channel, canDraftComments: bridge.canDraftComments === true } : {}) });
       if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
       const iframe = document.createElement('iframe');
       iframe.className = 'design-editor-frame';
@@ -558,6 +580,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (!['all', 'recent', 'trash', ...KINDS].includes(category)) return;
     const previous = { category: state.category, favorites: state.favorites, query: state.query, sort: state.sort };
     state.category = category;
+    state.trashSelection.clear();
     state.favorites = false;
     state.query = '';
     state.mobileSidebar = false;
@@ -637,6 +660,68 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       if (dialog.querySelector('[data-history-id]')?.dataset.historyId === id) dialog.querySelector('.snapshot-list').innerHTML = '<p class="dialog-error">' + escape(errorMessage(error)) + '</p>';
     }
   }
+  function openPurgeDialog(records) {
+    if (busy('purge-trash') || !enabled('library.purge')) return;
+    const eligible = records.filter(record => record && isDeleted(record));
+    if (!eligible.length) return;
+    closeMenu();
+    purgeConfirmation = eligible.map(record => ({ id: record.id, title: record.title }));
+    elements.dialog.innerHTML = '<form class="dialog-form" data-dialog-type="purge"><header><h2 id="design-dialog-title">' + escape(t('purgeTitle', { count: eligible.length })) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><div class="dialog-fields"><p class="dialog-description">' + escape(t('purgeBody', { count: eligible.length })) + '</p><ul class="purge-title-list">' + eligible.map(record => '<li>' + escape(record.title) + '</li>').join('') + '</ul><p class="purge-warning">' + escape(t('purgeIrreversible')) + '</p></div><p class="dialog-error purge-error" role="alert" hidden></p><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape(t('cancel')) + '</button><button type="submit" class="button destructive">' + escape(t('deletePermanently')) + '</button></footer></form>';
+    elements.dialog.setAttribute('aria-labelledby', 'design-dialog-title');
+    if (!elements.dialog.open) elements.dialog.showModal();
+    // Keep the initial focus on the reversible choice in a destructive dialog.
+    elements.dialog.querySelector('footer [data-action="close-dialog"]')?.focus();
+  }
+  async function submitPurge(form) {
+    if (!purgeConfirmation?.length || !elements.dialog.open || busy('purge-trash')) return;
+    const confirmed = purgeConfirmation.map(record => ({ ...record }));
+    const deleted = new Set(), failed = [];
+    state.busy.add('purge-trash');
+    form.setAttribute('aria-busy', 'true');
+    form.querySelector('button[type="submit"]').disabled = true;
+    try {
+      // The service limit applies to a request, not to a user's visible selection.
+      for (let offset = 0; offset < confirmed.length; offset += 200) {
+        const batch = confirmed.slice(offset, offset + 200);
+        try {
+          const result = await invoke('library.purge', { ids: batch.map(record => record.id) });
+          if (!Array.isArray(result?.deleted) || !Array.isArray(result?.failed)) throw new BridgeError('The library returned an invalid deletion result.', 'INVALID_RESPONSE');
+          const expected = new Set(batch.map(record => record.id));
+          if (result.deleted.some(id => !expected.has(id)) || result.failed.some(item => !expected.has(item?.id))) throw new BridgeError('The library returned unrelated deletion results.', 'INVALID_RESPONSE');
+          const failures = new Map(result.failed.map(item => [item.id, item]));
+          for (const record of batch) {
+            if (result.deleted.includes(record.id) && !failures.has(record.id)) deleted.add(record.id);
+            else failed.push({ ...record, error: failures.get(record.id)?.error || { code: 'PURGE_UNCONFIRMED' }, removed: failures.get(record.id)?.removed });
+          }
+        } catch (error) {
+          for (const record of confirmed.slice(offset)) failed.push({ ...record, error });
+          break;
+        }
+      }
+      if (deleted.size) {
+        ++recordsSequence;
+        state.records = state.records.filter(record => !deleted.has(record.id));
+        for (const id of deleted) { state.trashSelection.delete(id); thumbnailCache.delete(id); }
+      }
+      await refreshRecords(true);
+      const summary = [deleted.size ? t('purgeDeleted', { count: deleted.size }) : '', failed.length ? t('purgeFailed', { count: failed.length }) : ''].filter(Boolean).join(' ');
+      if (failed.length) {
+        // Reconfirm only the remaining items before a retry; successful deletions
+        // never re-enter the next request or its confirmation count.
+        state.busy.delete('purge-trash');
+        openPurgeDialog(failed.map(record => ({ ...record, deleted: true })));
+        const errorNode = elements.dialog.querySelector('.dialog-error');
+        errorNode.hidden = false;
+        errorNode.textContent = summary + '\n' + failed.map(record => record.title + ': ' + (record.removed?.length ? t('purgePartiallyRemoved') + ' ' : '') + (record.error?.code === 'PURGE_UNCONFIRMED' ? t('purgeUnconfirmed') : errorMessage(record.error))).join('\n');
+      } else { purgeConfirmation = null; elements.dialog.close(); }
+      toast(summary, failed.length > 0);
+    } finally {
+      state.busy.delete('purge-trash');
+      form.removeAttribute('aria-busy');
+      elements.dialog.querySelector('button[type="submit"]').disabled = false;
+      if (state.view.activeTabId === 'library') renderRecords();
+    }
+  }
   function openDialog(type, record, details = {}) {
     closeMenu();
     const dialog = elements.dialog;
@@ -662,6 +747,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   async function submitDialog(form) {
     const type = form.dataset.dialogType;
     const id = form.dataset.id;
+    if (type === 'purge') { await submitPurge(form); return; }
     if (type === 'restore-snapshot') {
       if (!form.reportValidity() || form.getAttribute('aria-busy') === 'true') return;
       form.setAttribute('aria-busy', 'true');
@@ -765,9 +851,19 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'rename' || action === 'copy' || action === 'trash-dialog') {
       const record = recordFor(id);
       if (record) openDialog(action === 'trash-dialog' ? 'trash' : action, record);
-    } else if (action === 'close-dialog') elements.dialog.close();
+    } else if (action === 'purge-dialog') openPurgeDialog([recordFor(id)]);
+    else if (action === 'purge-selected') openPurgeDialog(selectedTrashRecords());
+    else if (action === 'trash-select' && !busy('purge-trash') && state.category === 'trash') {
+      if (visibleRecords().some(record => record.id === id && isDeleted(record))) {
+        if (button.checked) state.trashSelection.add(id); else state.trashSelection.delete(id);
+        renderRecords();
+      }
+    } else if (action === 'trash-select-all' && !busy('purge-trash') && state.category === 'trash') {
+      for (const record of visibleRecords()) { if (button.checked) state.trashSelection.add(record.id); else state.trashSelection.delete(record.id); }
+      renderRecords();
+    } else if (action === 'close-dialog') { if (!busy('purge-trash')) { purgeConfirmation = null; elements.dialog.close(); } }
     else if (action === 'category') await setCategory(button.dataset.category);
-    else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; renderLibrary(); }
+    else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; state.trashSelection.clear(); renderLibrary(); }
     else if (action === 'layout') { state.layout = button.dataset.layout; renderLibrary(); }
     else if (action === 'sort-menu') openMenu('sort', button, undefined, menuInputMode(event));
     else if (action === 'item-menu') openMenu('item', button, id, menuInputMode(event));
@@ -778,7 +874,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'favorite') await favoriteRecord(id);
     else if (action === 'restore') await restoreRecord(id);
     else if (action === 'refresh') await refreshRecords();
-    else if (action === 'clear-search') { state.query = ''; renderLibrary(); elements.panel.querySelector('.library-search')?.focus(); }
+    else if (action === 'clear-search') { state.query = ''; state.trashSelection.clear(); renderLibrary(); elements.panel.querySelector('.library-search')?.focus(); }
     else if (action === 'retry-editor') await openEditor(id, true);
     else if (action === 'toggle-conversation') {
       const artifactId = state.view.activeTabId;
@@ -800,7 +896,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   root.addEventListener('click', (event) => { handleAction(event).catch((error) => toast(errorMessage(error), true)); }, { signal: abort.signal });
   root.addEventListener('input', (event) => {
-    if (event.target.matches('.library-search')) { state.query = event.target.value; renderRecords(); }
+    if (event.target.matches('.library-search')) { state.query = event.target.value; state.trashSelection.clear(); renderRecords(); }
     if (event.target.matches('.conversation-composer textarea')) {
       state.drafts.set(state.view.activeTabId, event.target.value);
       const submit = elements.floating.querySelector('.send-button');
@@ -819,6 +915,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (event.target.matches('.dialog-form')) { event.preventDefault(); submitDialog(event.target); }
     if (event.target.matches('.conversation-composer')) { event.preventDefault(); sendConversation(); }
   }, { signal: abort.signal });
+  elements.dialog.addEventListener('cancel', event => { if (busy('purge-trash')) event.preventDefault(); else purgeConfirmation = null; }, { signal: abort.signal });
   root.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && state.mobileSidebar) { state.mobileSidebar = false; renderSidebar(); }
     if (event.target.matches('.conversation-composer textarea') && event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendConversation(); }

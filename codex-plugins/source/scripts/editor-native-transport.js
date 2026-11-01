@@ -65,7 +65,8 @@ export function installNativeEditorTransport(configuration, target) {
   }
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
-  target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId };
+  target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId,
+    canDraftComments: configuration.canDraftComments !== false };
   target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || 'system', systemLocale: configuration.locale };
   const bytesToBase64 = bytes => {
     let value = '';

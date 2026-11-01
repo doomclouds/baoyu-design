@@ -80,7 +80,7 @@ node skills/claude-slides/scripts/artifact.mjs list                             
 
 `codex design` 将上面的五个技能、完整本地编辑器，以及 Codex 批注和编辑器评论联动打包在一起。
 
-0.4.3 提供本地 MCP 作品库、可收缩分类栏、固定作品库 Tab、同一工作区内复用的作品 Tab、作品导入导出、版本恢复及英文编辑器界面。作品统一保存在 `~/.codex/CodexDesignLibrary`，默认进入原生 Codex Design 工作区；批注使用各编辑器已有工具位置。界面使用宿主字体和主题变量，原生视图通过内联编辑器及作品范围内的 MCP 读写运行。公开宿主接口尚未开放资料空间的中间侧栏插槽、顶部原生栏替换或每件作品独立绑定原生聊天，不能把内部分类栏视作已经接管宿主侧栏。验收方法见 [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md)。
+0.5.0 提供本地 MCP 作品库、可收缩分类栏、固定作品库 Tab、同一工作区内复用的作品 Tab、作品导入导出、版本恢复及英文编辑器界面。作品统一保存在 `~/.codex/CodexDesignLibrary`，默认进入原生 Codex Design 工作区；批注使用各编辑器已有工具位置。界面使用宿主字体和主题变量，原生视图通过内联编辑器及作品范围内的 MCP 读写运行。公开宿主接口尚未开放资料空间的中间侧栏插槽、顶部原生栏替换或每件作品独立绑定原生聊天，不能把内部分类栏视作已经接管宿主侧栏。验收方法见 [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md)。
 
 可编辑的完整示例见 [`codex-plugins/examples/`](codex-plugins/examples/README.md)：五页幻灯片、Bean Club 双画板、Nimbus 设计系统和年度 X 示例数据看板。
 
@@ -89,7 +89,7 @@ codex plugin marketplace add doomclouds/baoyu-design --ref codex/plugin
 codex plugin add codex-design@codex-design-marketplace
 ```
 
-安装和使用说明见 [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md)。在 Codex 内置浏览器中可使用原生批注，由用户确认后发送到当前聊天；编辑器自己的 **Send to agent** 则把评论交给该项目的独立设计 worker，并在编辑器中回写回复。
+安装和使用说明见 [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md)。原生批注由用户发送到当前聊天。在原生 Codex Design 中，**Add to chat** 将不可变的修改请求加入底部原生草稿；用户发送后，收到请求的原生主代理确认并分派任务，协调真实子代理处理，检查后将结果回写到评论。回收站支持确认后的单项和批量永久删除。
 
 插件从本仓库的 `skills/` 在本机生成，不使用 GitHub 流水线：`npm run build:codex-plugin` 构建，`npm run check:codex-plugin` 检查产物与源码一致，`npm run test:codex-plugin` 运行插件测试。GitHub 分支直接提供已构建的插件文件。
 

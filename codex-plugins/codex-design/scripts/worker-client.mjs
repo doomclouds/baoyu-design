@@ -5,8 +5,9 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BINDING_FILE, BridgeError, atomicJson, alive, readJson, withLock, normalizeEvent, deliveryKey, samePath } from './bridge-core.mjs';
-import { WORKER_FILE, WORKER_LOCK_FILE, WORKER_LOG_FILE, loadJobs, saveJobs, appendWorkerLog, matchingReply, publicJob, workerPrompt, userRevisionHash } from './worker-core.mjs';
+import { WORKER_FILE, WORKER_LOCK_FILE, WORKER_LOG_FILE, NATIVE_BINDING_FILE, loadJobs, saveJobs, appendWorkerLog, matchingReply, publicJob, workerPrompt, userRevisionHash } from './worker-core.mjs';
 import { createLibraryStore } from '../library/index.mjs';
+import { nativeArtworkForRoot } from './artifact-delivery.mjs';
 
 const nativeMode = (binding) => binding && ['native', 'worker'].includes(binding.deliveryMode);
 const registryFile = (root) => path.join(root, WORKER_FILE);
@@ -27,8 +28,10 @@ function callerThread(env) {
   return id;
 }
 
-function bindingFor(root) {
-  const binding = readJson(path.join(root, BINDING_FILE));
+const readNativeBinding = root => readJson(path.join(root, NATIVE_BINDING_FILE)) ?? readJson(path.join(root, BINDING_FILE));
+
+function bindingFor(root, { legacy = false } = {}) {
+  const binding = legacy ? readJson(path.join(root, BINDING_FILE)) : readNativeBinding(root);
   if (!nativeMode(binding) || !samePath(binding.root, root)) throw new BridgeError('NO_NATIVE_BINDING', 'Open this artifact with native delivery before registering its native subagent.');
   return binding;
 }
@@ -39,6 +42,7 @@ function registeredCaller(root, env, { allowPaused = false } = {}) {
   if (actor === binding.threadId) throw new BridgeError('PARENT_CANNOT_REGISTER', 'The origin parent chat cannot act as its own native design subagent. Use a real spawned child.');
   const registry = readRegistry(root);
   if (!registry || registry.nativeThreadId !== actor) throw new BridgeError('WRONG_NATIVE_WORKER', 'This command must run in the artifact’s registered native subagent. The parent decides whether to reuse, resume, or replace that subagent.');
+  if (binding.requestProtocol === 'native-draft-v1' && registry.originThreadId !== binding.threadId) throw new BridgeError('NATIVE_PARENT_CHANGED', 'The idle native parent changed. The new parent must explicitly register its chosen child before it may claim work.');
   if (!allowPaused && registry.status === 'paused') throw new BridgeError('WORKER_PAUSED', 'This native listener was paused. Its parent must decide when to resume it.');
   return { actor, binding, registry };
 }
@@ -56,9 +60,15 @@ function releaseJob(registry, job) {
   registry.status = 'waiting'; registry.lastSeenAt = now();
 }
 
+function holdActiveRequest(job, phase) {
+  job.phase = phase;
+  job.error = { code: 'NATIVE_REQUEST_CONFIRMATION_REQUIRED',
+    message: `The active request is held (${phase}). Stop content editing and end this listener turn with this reason for the parent. Ownership remains reserved until the parent explicitly handles it.` };
+}
+
 export async function submitWorkerJob(binding, event, jobId) {
   return await withJobs(binding.root, async () => {
-    const current = bindingFor(binding.root);
+    const current = bindingFor(binding.root, { legacy: true });
     if (current.token !== binding.token) throw new BridgeError('INVALID_BINDING', 'The artifact binding changed before accepting this comment.');
     readRegistry(binding.root); // Reject a live/unknown legacy process record.
     if (deliveryKey(binding, event) !== jobId) throw new BridgeError('INVALID_JOB', 'The native event does not match its content id.');
@@ -106,7 +116,7 @@ function waitForChange(root, timeoutMs) {
     const timer = setTimeout(finish, timeoutMs);
     try {
       watcher = fs.watch(root, (_event, filename) => {
-        if (filename && ['.codex-design-worker-jobs.json', BINDING_FILE, '.artifact-server.json'].includes(String(filename))) finish();
+        if (filename && ['.codex-design-worker-jobs.json', NATIVE_BINDING_FILE, BINDING_FILE, '.artifact-server.json'].includes(String(filename))) finish();
       });
       watcher.once('error', finish);
     } catch { /* Timeout still provides bounded polling. */ }
@@ -114,6 +124,9 @@ function waitForChange(root, timeoutMs) {
 }
 
 async function editorAvailable(root, binding) {
+  // Native artwork tabs do not need a separate web-editor process. The
+  // binding token and registration fence still govern this listener.
+  if (binding.requestProtocol === 'native-draft-v1') return true;
   const state = readJson(path.join(root, '.artifact-server.json'));
   if (!state || state.pid !== binding.serverPid) return false;
   try {
@@ -145,19 +158,49 @@ async function prepareRestorePoint(root, job, resumed) {
   return store.snapshot(id, { label: resumed ? 'Before resumed AI edit' : 'Before AI edit' });
 }
 
+async function requestClaimState(root, binding, job) {
+  try {
+    const libraryRoot = path.dirname(path.dirname(root));
+    const kind = path.basename(path.dirname(root));
+    // Do not initialize or repair an inferred library before its existing
+    // identity, real directories, manifest and active catalog are verified.
+    const artifact = nativeArtworkForRoot(root, kind, { libraryRoot });
+    if (!artifact) return 'awaiting-user-confirmation';
+    const store = createLibraryStore({ root: libraryRoot });
+    const record = await store.get(artifact.id);
+    if (record.deleted || record.kind !== kind || !samePath(record.path, root)) return 'awaiting-user-confirmation';
+    // The caller already holds the worker lock. Requests read takes only the
+    // library lock, preserving the controller's worker -> library order.
+    const { createEditRequestStore } = await import('../library/edit-requests.mjs');
+    const request = await createEditRequestStore({ store }).read(job.requestId);
+    if (request.status === 'superseded') return 'superseded';
+    if (request.artifactId !== artifact.id || request.artifact?.kind !== kind || request.commentId !== job.event?.data?.id
+      || request.commentRevision !== job.capturedUserRevision || userRevisionHash(job.event) !== request.commentRevision) return 'awaiting-user-confirmation';
+    if (!request.dispatch) return 'awaiting-dispatch-receipt';
+    if (request.status !== 'queued' || request.dispatch.jobId !== job.id || request.dispatch.originThreadId !== binding.threadId
+      || job.originThreadId !== binding.threadId) return 'awaiting-user-confirmation';
+    return 'ready';
+  } catch (error) {
+    // Missing, malformed or unsafe receipt state cannot authorize an edit.
+    // Keep the journal entry for an explicit parent decision or recovery.
+    appendWorkerLog(root, `native job ${job.id} receipt check held: ${error.code || 'REQUEST_READ_FAILED'}`);
+    return 'awaiting-user-confirmation';
+  }
+}
+
 export async function nextNativeJob(root, { env = process.env, timeoutSeconds = 60, verifyEditor = editorAvailable } = {}) {
   root = fs.realpathSync(root);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0 || timeoutSeconds > 300) throw new BridgeError('INVALID_TIMEOUT', 'worker-next timeout must be between 0 and 300 seconds.');
   const initialActor = callerThread(env), initialRegistry = readRegistry(root);
   if (!initialRegistry || initialRegistry.nativeThreadId !== initialActor) throw new BridgeError('WRONG_NATIVE_WORKER', 'Only the registered native subagent may wait for this artifact.');
-  if (!nativeMode(readJson(path.join(root, BINDING_FILE)))) return { closed: true, reason: 'editor-closed-or-binding-changed' };
+  if (!nativeMode(readNativeBinding(root))) return { closed: true, reason: 'editor-closed-or-binding-changed' };
   const initial = registeredCaller(root, env, { allowPaused: true });
   const registrationId = initial.registry.registrationId;
   const listenerId = randomUUID();
   const deadline = Date.now() + timeoutSeconds * 1000;
   try {
     for (;;) {
-      const currentBinding = readJson(path.join(root, BINDING_FILE));
+      const currentBinding = readNativeBinding(root);
       if (!nativeMode(currentBinding) || currentBinding.token !== initial.binding.token || !await verifyEditor(root, currentBinding)) return { closed: true, reason: 'editor-closed-or-binding-changed' };
       const result = await withJobs(root, async () => {
         const currentRegistry = readRegistry(root);
@@ -169,6 +212,22 @@ export async function nextNativeJob(root, { env = process.env, timeoutSeconds = 
         const state = loadJobs(root);
         let job = state.order.map((id) => state.jobs[id]).find((job) => job?.status === 'active');
         if (job && job.ownerThreadId !== actor) throw new BridgeError('NATIVE_ACTIVE_OWNER_CONFLICT', 'An unfinished job still belongs to another native worker; its parent must coordinate replacement.');
+        if (job && binding.requestProtocol === 'native-draft-v1' && job.requestId) {
+          const authorization = await requestClaimState(root, binding, job);
+          if (authorization !== 'ready') {
+            job.phase = authorization;
+            if (authorization === 'superseded') {
+              job.status = 'superseded'; job.completedAt = now(); releaseJob(registry, job); job = null; saveJobs(root, state);
+            } else {
+              // An unverified receipt does not transfer this active job to a
+              // second writer. Its existing owner must await a parent decision.
+              holdActiveRequest(job, authorization);
+              registry.status = 'active'; registry.activeJobId = job.id; registry.lastSeenAt = now(); delete registry.listener;
+              saveJobs(root, state); saveRegistry(root, registry);
+              return { closed: false, held: true, needsConfirmation: true, reason: authorization, error: job.error, job: publicJob(job) };
+            }
+          }
+        }
         if (job && !currentRevision(root, job.event)) { job.status = 'superseded'; job.completedAt = now(); releaseJob(registry, job); job = null; saveJobs(root, state); }
         if (job && matchingReply(root, job)) {
           job.status = job.resultFailed ? 'failed' : 'completed'; job.completedAt = now(); job.repliedAt ??= job.completedAt;
@@ -180,6 +239,15 @@ export async function nextNativeJob(root, { env = process.env, timeoutSeconds = 
             const candidate = state.jobs[id];
             if (candidate?.status !== 'pending') continue;
             if (!currentRevision(root, candidate.event)) { candidate.status = 'superseded'; candidate.completedAt = now(); continue; }
+            if (binding.requestProtocol === 'native-draft-v1' && !candidate.requestId) { candidate.phase = 'awaiting-user-confirmation'; continue; }
+            if (binding.requestProtocol === 'native-draft-v1') {
+              const authorization = await requestClaimState(root, binding, candidate);
+              if (authorization !== 'ready') {
+                candidate.phase = authorization;
+                if (authorization === 'superseded') { candidate.status = 'superseded'; candidate.completedAt = now(); }
+                continue;
+              }
+            }
             job = candidate; break;
           }
         }
@@ -204,7 +272,7 @@ export async function nextNativeJob(root, { env = process.env, timeoutSeconds = 
           }
           job.phase = 'editing'; job.startedAt ??= now(); job.lastClaimedAt = now(); delete job.error;
           saveJobs(root, state); saveRegistry(root, registry);
-          return { closed: false, job: publicJob(job), request: workerPrompt(binding, job.event, job.id), event: job.event, capturedUserRevision: job.capturedUserRevision,
+          return { closed: false, job: publicJob(job), request: workerPrompt(binding, job.event, job.id, job.capturedRequest), event: job.event, capturedUserRevision: job.capturedUserRevision,
             resumed, ...(job.resultText ? { savedResultText: job.resultText, resume: 'complete-saved-result' } : {}) };
         }
         saveJobs(root, state);
@@ -264,13 +332,24 @@ function resultInput(input) {
 
 export async function completeNativeJob(root, jobId, input, { env = process.env, postReply = postNativeReply } = {}) {
   root = fs.realpathSync(root);
-  const submitted = resultInput(input);
   return await withJobs(root, async () => {
     const { actor, binding, registry } = registeredCaller(root, env);
     const state = loadJobs(root); const job = state.jobs[jobId];
     if (!job || job.ownerThreadId !== actor || job.registrationId !== registry.registrationId) throw new BridgeError('WRONG_JOB_OWNER', 'Only the native worker that claimed this job may complete it.');
     if (['completed', 'superseded'].includes(job.status)) return { completed: job.status === 'completed', duplicate: true, jobId, status: job.status };
     if (job.status !== 'active') throw new BridgeError('JOB_NOT_ACTIVE', 'Claim or retry this job before completing it.');
+    if (binding.requestProtocol === 'native-draft-v1' && job.requestId) {
+      const authorization = await requestClaimState(root, binding, job);
+      if (authorization !== 'ready') {
+        job.phase = authorization;
+        if (authorization === 'superseded') { job.status = 'superseded'; job.completedAt = now(); releaseJob(registry, job); }
+        else holdActiveRequest(job, authorization);
+        saveJobs(root, state); saveRegistry(root, registry);
+        return { completed: false, jobId, status: job.status, phase: job.phase,
+          ...(authorization === 'superseded' ? {} : { held: true, needsConfirmation: true, reason: authorization, error: job.error }) };
+      }
+    }
+    const submitted = resultInput(input);
     job.resultText = submitted.text; job.fullResultText = submitted.fullText; job.resultFailed = submitted.failed; job.phase = 'replying';
     if (submitted.failed) job.resultError = submitted.error; else delete job.resultError;
     saveJobs(root, state);
@@ -292,7 +371,7 @@ export async function completeNativeJob(root, jobId, input, { env = process.env,
 }
 
 export async function getWorkerStatus(root) {
-  const registry = readRegistry(root); const binding = readJson(path.join(root, BINDING_FILE)); const state = loadJobs(root);
+  const registry = readRegistry(root); const binding = readNativeBinding(root); const state = loadJobs(root);
   const jobs = state.order.map((id) => state.jobs[id]).filter(Boolean).map(publicJob);
   const counts = Object.fromEntries(['pending', 'active', 'completed', 'failed', 'superseded'].map((status) => [status, jobs.filter((job) => job.status === status).length]));
   const listening = Boolean(registry?.listener && registry.listener.expiresAt > Date.now() && alive(registry.listener.pid));

@@ -9,6 +9,25 @@ const RESPONSE_HEADERS = ['content-type', 'content-disposition', 'etag', 'last-m
 const MAX_BODY = 32 * 1024 * 1024;
 const MAX_RESPONSE = 64 * 1024 * 1024;
 
+/** Validate intercepted requests with exactly the same contract as HTTP forwarding. */
+export function validateEditorRequest(request = {}) {
+  const method = String(request.method || 'GET').toUpperCase();
+  if (!METHODS.has(method)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request method.');
+  const headers = new Headers();
+  if (request.headers && (typeof request.headers !== 'object' || Array.isArray(request.headers))) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request headers.');
+  for (const [name, value] of Object.entries(request.headers || {})) {
+    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request header.');
+    headers.set(name, value);
+  }
+  let body;
+  if (request.body !== undefined) {
+    if (typeof request.body !== 'string' || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
+    body = Buffer.from(request.body, 'base64');
+    if (body.length > MAX_BODY || method === 'GET' || method === 'HEAD') throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
+  }
+  return { method, headers, body };
+}
+
 export function editorRequestUrl(base, relative) {
   const root = new URL(base);
   if (root.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(root.hostname)
@@ -81,21 +100,8 @@ export function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 120
   return {
     async request(id, request = {}) {
       const { url } = await get(id, request.path);
-      const method = String(request.method || 'GET').toUpperCase();
-      if (!METHODS.has(method)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request method.');
-      const headers = new Headers();
-      if (request.headers && (typeof request.headers !== 'object' || Array.isArray(request.headers))) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request headers.');
-      for (const [name, value] of Object.entries(request.headers || {})) {
-        if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request header.');
-        headers.set(name, value);
-      }
+      const { method, headers, body } = validateEditorRequest(request);
       headers.set('origin', url.origin);
-      let body;
-      if (request.body !== undefined) {
-        if (typeof request.body !== 'string' || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
-        body = Buffer.from(request.body, 'base64');
-        if (body.length > MAX_BODY || method === 'GET' || method === 'HEAD') throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
-      }
       const response = await fetcher(url, { method, headers, body, redirect: 'error', signal: AbortSignal.timeout(30_000) });
       if (response.headers.get('content-type')?.includes('text/event-stream')) { await response.body?.cancel(); throw fail('INVALID_EDITOR_REQUEST', 'Use the editor event subscription for a live stream.'); }
       const bytes = await limitedBody(response, MAX_RESPONSE);

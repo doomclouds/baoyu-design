@@ -10,6 +10,7 @@ import { createLibraryStore } from '../library/index.mjs';
 import { UUID } from '../library/safety.mjs';
 import { WORKER_LOCK_FILE } from './worker-core.mjs';
 import { artworkAppUrl, openArtworkInApp, checkedArtworkDelivery, normalizeControlHints } from './artifact-delivery.mjs';
+import { dispatchEditRequest } from './edit-request-dispatch.mjs';
 
 const BRIDGE_FLAGS = new Map([
   ['thread', 'threadId'], ['remote', 'remote'], ['remote-auth-token-env', 'remoteAuthTokenEnv'], ['codex-path', 'codexPath'],
@@ -171,6 +172,7 @@ function publicHelp(skillDir) {
   open <library-root>     request the native Codex Design artwork tab
   preview <root>          explicitly start an independent local web editor
   checkpoint <root>       save a recovery point before independent AI edits
+  request-dispatch <root> <requestId>  native parent: queue one accepted edit request
   open-service <root>     internal: start/reuse the local data service for MCP
   serve-service <root>    internal: run that data service in the foreground
   stop <root>             explicitly stop a verified local editor service
@@ -257,6 +259,11 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       process.exitCode = 0;
       return 0;
+    }
+    if (command === 'request-dispatch') {
+      if (forwarded.length !== 3 || Object.keys(options).length || forwarded.slice(1).some(arg => arg.startsWith('--'))) throw new BridgeError('INVALID_REQUEST_DISPATCH_ARGUMENTS', 'Use request-dispatch <library-artifact-root> <requestId> in the real native parent environment.');
+      const result = await dispatchEditRequest(skillDir, forwarded[1], forwarded[2], { env, ...(libraryStore ? { store: libraryStore } : {}) });
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exitCode = 0; return 0;
     }
     if (command === 'list') env = designSystemSearchEnvironment(env);
     const customHook = forwarded.some((arg) => arg === '--agent-hook' || arg.startsWith('--agent-hook='));

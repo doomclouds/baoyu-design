@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { readJson, alive } from '../scripts/bridge-core.mjs';
 import { verifyEditorInstance } from '../scripts/artifact-command.mjs';
 import { createArtifactThumbnail } from '../library/thumbnail.mjs';
+import { createEditRequestStore } from '../library/edit-requests.mjs';
+import { readJson as safeJson } from '../library/safety.mjs';
 import { createEditorTransport, editorRequestUrl, isValidBase64 } from './editor-transport.mjs';
+import { createNativeComments } from './native-comments.mjs';
 import { buildEditorDocument } from './editor-document.mjs';
 import { installNativeEditorTransport } from '../scripts/editor-native-transport.js';
 import { stopWorker } from '../scripts/worker-client.mjs';
@@ -89,6 +92,21 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
     return await opening.get(record.id);
   };
   const transport = createEditorTransport({ editorFor });
+  const requests = createEditRequestStore({ store });
+  const nativeComments = createNativeComments({ requests, transport, editorFor });
+  const modelRequest = async requestId => {
+    const value = await requests.requestForModel(idOf(requestId));
+    if (value.status === 'superseded') return value;
+    const comments = await safeJson(value.artifactRoot, 'comments.json', { version: 1, threads: [] });
+    const projected = await requests.project(value.artifactId, { threads: comments.threads });
+    const reported = projected.threads.find(thread => thread.agent?.nativeRequest?.requestId === value.id)?.agent.nativeRequest;
+    const cli = path.join(pluginRoot, 'skills', `codex-${value.artifact.kind}`, 'scripts', 'codex-artifact.mjs');
+    return { ...value, ...(reported ? { status: reported.status, phase: reported.phase } : {}),
+      skillFile: path.join(pluginRoot, 'skills', `codex-${value.artifact.kind}`, 'SKILL.md'),
+      dispatchCommand: { executable: process.execPath, args: [cli, 'request-dispatch', value.artifactRoot, value.id] },
+      workerStatus: { executable: process.execPath, args: [cli, 'worker-status', value.artifactRoot] },
+      executionPolicy: 'Dispatch only requests attached to the user message you actually received. Run the dispatch command in your own native parent environment. Inspect the real native worker before choosing reuse, resume or a new child; only the registered native child runs worker-register/worker-next/worker-complete. Never invent thread IDs, start an independent model process, or replay legacy unconfirmed jobs.' };
+  };
   const reference = async id => {
     await initialize();
     const artifact = await requireRecord(id);
@@ -110,6 +128,16 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
       return { items: (await store.list({ query: String(query).slice(0, 200) })).filter(record => !record.deletedAt && record.contentStatus === 'ok').slice(0, 50).map(resourceLink) };
     },
     reference,
+    readEditRequest: modelRequest,
+    async operateEditRequests(action, ids) {
+      if (!['read', 'accept'].includes(action) || !Array.isArray(ids) || ids.length < 1 || ids.length > 25) throw failure('INVALID_ARGUMENTS', 'Read or accept between 1 and 25 immutable request IDs.');
+      const results = [], errors = [];
+      for (const id of [...new Set(ids.map(idOf))]) {
+        try { if (action === 'accept') await requests.accept(id); results.push(await modelRequest(id)); }
+        catch (error) { errors.push({ requestId: id, code: error.code || 'REQUEST_FAILED', message: String(error.message).slice(0, 2000) }); }
+      }
+      return { requests: results, errors };
+    },
     async readReferenceFile(id, relative, encoding = 'utf8') {
       await initialize(); await requireRecord(id);
       if (!['utf8', 'base64'].includes(encoding)) throw failure('INVALID_ENCODING', 'Choose utf8 or base64.');
@@ -143,6 +171,10 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
           } finally { trashing.delete(id); }
         }
         case 'library.restore': return await store.restore(idOf(payload.id));
+        case 'library.purge': {
+          if (!Array.isArray(payload.ids) || payload.ids.length < 1 || payload.ids.length > 200) throw failure('INVALID_ARGUMENTS', 'Choose between 1 and 200 trashed artworks.');
+          return await store.purge(payload.ids.map(idOf));
+        }
         case 'library.snapshot': return await store.snapshot(idOf(payload.id), payload.label === undefined ? {} : { label: titleOf(payload.label) });
         case 'library.listSnapshots': return await store.listSnapshots(idOf(payload.id));
         case 'library.restoreSnapshot': return await store.restoreSnapshot(idOf(payload.id), payload.snapshotId);
@@ -159,13 +191,16 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'view.closeTab': return await store.closeTab(payload.id === 'library' ? 'library' : idOf(payload.id));
         case 'view.reorderTabs': if (!Array.isArray(payload.ids)) throw failure('INVALID_ARGUMENTS', 'ids must be an array.'); return await store.reorderTabs(payload.ids.map(id => id === 'library' ? 'library' : idOf(id)));
         case 'editor.open': return await editorFor(payload.id);
+        case 'request.draftAdded': return await requests.markDraftAdded(idOf(payload.requestId));
+        case 'request.draftFailed': return await requests.markDraftFailed(idOf(payload.requestId), payload.error);
         case 'editor.document': {
           const id = idOf(payload.id);
           if (typeof payload.channel !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure('INVALID_EDITOR_REQUEST', 'A unique editor channel is required.');
           const language = 'en';
           const editor = await editorFor(id);
           const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
-          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };
+          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2,
+            canDraftComments: payload.canDraftComments === true };
           if (editor.kind === 'design-system') {
             configuration.previewVendors = await Promise.all([
               ['react.production.min.js', 'd949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd'],
@@ -198,7 +233,7 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
           const document = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap } });
           return { ...editor, ...document, artifactId: id, channel: payload.channel, transport: 'mcp' };
         }
-        case 'editor.request': return await transport.request(idOf(payload.id), payload.request);
+        case 'editor.request': return await nativeComments.request(idOf(payload.id), payload.request);
         case 'editor.digest': {
           await requireRecord(payload.id);
           if (payload.algorithm !== 'SHA-256' || typeof payload.base64 !== 'string' || payload.base64.length > 44_739_244
@@ -207,9 +242,9 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
           if (bytes.length > 32 * 1024 * 1024) throw failure('INVALID_EDITOR_DIGEST', 'The digest input exceeds the transfer limit.');
           return { base64: createHash('sha256').update(bytes).digest('base64') };
         }
-        case 'editor.events.open': return await transport.openEvents(idOf(payload.id), payload.path);
-        case 'editor.events.poll': return await transport.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
-        case 'editor.events.close': return await transport.closeEvents(idOf(payload.id), payload.subscriptionId);
+        case 'editor.events.open': return await nativeComments.openEvents(idOf(payload.id), payload.path);
+        case 'editor.events.poll': return await nativeComments.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
+        case 'editor.events.close': return await nativeComments.closeEvents(idOf(payload.id), payload.subscriptionId);
         case 'conversation.get': {
           const record = await requireRecord(payload.id);
           return { artifactId: record.id, binding: await store.getBinding(record.id), messages: [], status: 'unsupported',

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import { OpenAIExtensions } from '@openai/mcp-extensions/server';
 import { z } from 'zod/v4';
-import { createLibraryStore } from '../library/index.mjs';
+import { createLibraryStore, nativeTrashActivity } from '../library/index.mjs';
 import { getWorkerStatus } from '../scripts/worker-client.mjs';
 import { createDesignService } from './service.mjs';
 import { ACTIONS, READ_ACTIONS, LIBRARY_UI_URI, FILE_UI_URI, UI_MIME_TYPE, PLUGIN_UI_VERSION } from './contract.mjs';
@@ -13,6 +13,7 @@ const appOnly = uri => ({ ui: { resourceUri: uri, visibility: ['app'] } });
 const briefError = error => ({ code: error.code || 'DESIGN_LIBRARY_ERROR', message: String(error.message || error).slice(0, 2_000) });
 
 export async function nativeActivity(record) {
+  if (record.deleted) return await nativeTrashActivity(record);
   try {
     const status = await getWorkerStatus(record.path);
     return status.counts.active > 0 ? { busy: true, reason: 'An unfinished native design job is recorded for this artwork. Its parent must coordinate ownership before changing library content.' } : false;
@@ -84,6 +85,22 @@ export async function createDesignServer({ store = createLibraryStore({ isBusy: 
     });
   }
   extensions.mentions.setHandler(({ query }) => service.mentions(query));
+  server.registerTool('design_request', {
+    title: 'Read or accept design requests',
+    description: 'Read immutable Codex Design requests attached to the user message, or confirm that you actually received them. Accept does not start a model or queue a worker. Follow the returned native-parent dispatch command, then use real native agent tools to coordinate execution. Do not accept requests found only in an unsent draft.',
+    inputSchema: z.object({ action: z.enum(['read', 'accept']), ids: z.array(z.string().uuid()).min(1).max(25) }).strict(),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    _meta: { ui: { visibility: ['model'] } },
+  }, async ({ action, ids }) => {
+    const result = await service.operateEditRequests(action, ids);
+    return { ...(result.errors.length && !result.requests.length ? { isError: true } : {}),
+      content: [{ type: 'text', text: JSON.stringify({ action, requests: result.requests.map(item => ({ requestId: item.id, artifactId: item.artifactId, title: item.artifact.title, status: item.status })), errors: result.errors }) }],
+      structuredContent: result };
+  });
+  server.registerResource('design-edit-request', new ResourceTemplate('codex-design://edit-requests/{id}', { list: undefined }), {
+    title: 'User-prepared design request', mimeType: 'application/json',
+    description: 'An immutable user comment, artwork identity and location. Reading does not start editing. The parent accepts only references received in an actual user message.',
+  }, async (uri, { id }) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(await service.readEditRequest(id)) }] }));
   server.registerResource('design-reference', new ResourceTemplate('codex-design://artifacts/{id}/reference', { list: undefined }), {
     title: 'Read-only design reference', mimeType: 'application/json', description: 'Metadata and content-resource links; edit the source in its artwork tab.',
   }, async (uri, { id }) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(await service.reference(id)) }] }));

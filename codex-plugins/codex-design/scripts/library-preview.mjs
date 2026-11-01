@@ -68,18 +68,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker2 = markers[0];
+  const marker3 = markers[0];
   let owner;
-  if (marker2) {
+  if (marker3) {
     try {
-      owner = readJson(path.join(directory, marker2));
+      owner = readJson(path.join(directory, marker3));
     } catch (error3) {
       if (error3.code !== "INVALID_BRIDGE_STATE") throw error3;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker2) fs.rmSync(path.join(directory, marker2), { force: true });
+  if (marker3) fs.rmSync(path.join(directory, marker3), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error3) {
@@ -88,12 +88,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker2 = `owner-${token}.json`;
+  const marker3 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker2), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker3), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -104,7 +104,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error3;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker2), { force: true });
+      fs.rmSync(path.join(directory, marker3), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error3) {
@@ -113,7 +113,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker2), { force: true });
+      fs.rmSync(path.join(staging, marker3), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error3) {
@@ -191,6 +191,24 @@ async function withLock(lockPath, action, { timeoutMs = 45e3, staleMs = 12e4, in
     }
     if (!acquired) removeInitializing();
   }
+}
+function normalizeEvent(payload) {
+  if (!payload || typeof payload !== "object") throw new BridgeError("INVALID_COMMENT", "Expected a comment or {request} JSON object.");
+  const event = payload.request ?? payload;
+  if (typeof event.id !== "string" || !event.id || event.id.length > 200) throw new BridgeError("INVALID_COMMENT", "The comment/request id is missing or invalid.");
+  if (payload.request) {
+    if (typeof event.text !== "string" || !event.text.trim()) throw new BridgeError("INVALID_COMMENT", "The request has no text.");
+    return { kind: "request", data: { id: event.id, text: event.text, label: event.label, selection: event.selection, sentAt: event.sentAt } };
+  }
+  if (!Array.isArray(event.messages)) throw new BridgeError("INVALID_COMMENT", "The comment has no messages.");
+  const messages = event.messages.filter((message) => (message.from ?? message.author?.kind) === "user").map((message) => ({
+    from: "user",
+    text: message.text,
+    at: message.at,
+    editedAt: message.editedAt
+  }));
+  if (!messages.length || messages.some((message) => typeof message.text !== "string")) throw new BridgeError("INVALID_COMMENT", "The comment has no valid user messages.");
+  return { kind: "comment", data: { id: event.id, file: event.file ?? event.location?.file, where: event.where ?? event.label, detail: event.detail, location: event.location, messages } };
 }
 var BINDING_FILE, BridgeError, sleep;
 var init_bridge_core = __esm({
@@ -436,11 +454,11 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker2 = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker2, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker2, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker3 = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker3, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker3, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker2, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker3, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
@@ -459,11 +477,80 @@ var init_content = __esm({
   }
 });
 
+// source/scripts/worker-core.mjs
+import path4 from "node:path";
+import { createHash as createHash2 } from "node:crypto";
+function loadJobs(root) {
+  const state = readJson(path4.join(root, WORKER_JOBS_FILE), { version: 1, jobs: {}, order: [] });
+  if (state.version !== 1 || !state.jobs || typeof state.jobs !== "object" || Array.isArray(state.jobs) || !Array.isArray(state.order)) {
+    throw new BridgeError("INVALID_WORKER_JOBS", "The design worker job journal is invalid; preserve it and inspect it before retrying.");
+  }
+  return state;
+}
+function publicJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    kind: job.event.kind,
+    commentId: job.event.data.id,
+    queuedAt: job.queuedAt,
+    ...job.startedAt ? { startedAt: job.startedAt } : {},
+    ...job.completedAt ? { completedAt: job.completedAt } : {},
+    ...job.repliedAt ? { repliedAt: job.repliedAt } : {},
+    ...job.error ? { error: job.error } : {},
+    ...job.restorePoint ? { restorePoint: job.restorePoint } : {},
+    ...job.ownerThreadId ? { ownerThreadId: job.ownerThreadId } : {},
+    ...job.requestId ? { requestId: job.requestId } : {},
+    ...job.phase ? { phase: job.phase } : {}
+  };
+}
+function userRevisionHash(event) {
+  const messages = event.data.messages?.map((message) => ({ text: message.text, at: message.at, editedAt: message.editedAt }));
+  return event.kind === "comment" ? createHash2("sha256").update(JSON.stringify(messages)).digest("hex") : null;
+}
+var WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOG_FILE, WORKER_LOCK_FILE, NATIVE_BINDING_FILE, saveJobs;
+var init_worker_core = __esm({
+  "source/scripts/worker-core.mjs"() {
+    init_bridge_core();
+    WORKER_FILE = ".codex-design-worker.json";
+    WORKER_JOBS_FILE = ".codex-design-worker-jobs.json";
+    WORKER_LOG_FILE = ".codex-design-worker.log";
+    WORKER_LOCK_FILE = ".codex-design-worker.lock";
+    NATIVE_BINDING_FILE = ".codex-design-native-binding.json";
+    saveJobs = (root, state) => atomicJson(path4.join(root, WORKER_JOBS_FILE), state);
+  }
+});
+
 // source/library/index.mjs
 import fs4 from "node:fs/promises";
 import os from "node:os";
-import path4 from "node:path";
-import { createHash as createHash2, randomUUID as randomUUID3 } from "node:crypto";
+import path5 from "node:path";
+import { createHash as createHash3, randomUUID as randomUUID3 } from "node:crypto";
+async function nativeTrashActivity(record) {
+  const busy = (reason) => ({ busy: true, reason });
+  try {
+    const id = artifactId(record.id), kind = artifactKind(record.kind), root = path5.resolve(record.path);
+    const libraryRoot = path5.dirname(path5.dirname(root));
+    const expected = path5.join(libraryRoot, "_trash", id);
+    const same = (a, b) => typeof a === "string" && (process.platform === "win32" ? path5.resolve(a).toLowerCase() === path5.resolve(b).toLowerCase() : path5.resolve(a) === path5.resolve(b));
+    if (!same(root, expected)) return busy("The trash task location cannot be verified.");
+    const target = await safePath(libraryRoot, `_trash/${id}`, { mustExist: false });
+    if (!await statOrNull(target)) {
+      const progress = await readJson2(libraryRoot, `_state/purge-progress/${id}.json`, null);
+      const active = await safePath(libraryRoot, `${kind}/${id}`, { mustExist: false });
+      return progress?.version === 1 && progress.artifactId === id && progress.kind === kind && !await statOrNull(active) ? false : busy("The missing trash task location cannot be verified.");
+    }
+    await safePath(libraryRoot, `_trash/${id}`, { type: "directory" });
+    const registry = await readJson2(root, WORKER_FILE, null);
+    const state = await readJson2(root, WORKER_JOBS_FILE, { version: 1, jobs: {}, order: [] });
+    if (registry && (registry.version !== 1 || registry.url || registry.token || !UUID.test(registry.nativeThreadId ?? "") || !same(registry.root, root) && !same(registry.root, path5.join(libraryRoot, kind, id)) || !["waiting", "paused", "active"].includes(registry.status))) return busy("The native owner is unknown; permanent deletion was refused.");
+    if (!state || state.version !== 1 || !state.jobs || typeof state.jobs !== "object" || Array.isArray(state.jobs) || !Array.isArray(state.order) || Object.values(state.jobs).some((job) => !job || !["pending", "active", "completed", "failed", "superseded"].includes(job.status))) return busy("The native job journal cannot be verified; permanent deletion was refused.");
+    if (Object.values(state.jobs).some((job) => job.status === "active") || registry?.activeJobId || registry?.status === "active" || registry?.listener && (!Number.isFinite(registry.listener.expiresAt) || !Number.isInteger(registry.listener.pid) || registry.listener.expiresAt > Date.now() && alive(registry.listener.pid))) return busy("An unfinished native job or listener still owns this artwork. Its parent must coordinate it before permanent deletion.");
+    return false;
+  } catch {
+    return busy("The native task state cannot be verified; permanent deletion was refused.");
+  }
+}
 function createLibraryStore(options) {
   return new LibraryStore(options);
 }
@@ -472,6 +559,8 @@ var init_library = __esm({
   "source/library/index.mjs"() {
     init_safety();
     init_content();
+    init_bridge_core();
+    init_worker_core();
     BUNDLE_FORMAT = "codex-design-artifact";
     catalogFile = "_state/catalog.json";
     viewFile = "_state/view.json";
@@ -495,10 +584,10 @@ var init_library = __esm({
       };
     };
     LibraryStore = class {
-      constructor({ root = path4.join(os.homedir(), ".codex", "CodexDesignLibrary"), isBusy = async () => false, limits = {} } = {}) {
+      constructor({ root = path5.join(os.homedir(), ".codex", "CodexDesignLibrary"), isBusy = async () => false, limits = {} } = {}) {
         if (typeof root !== "string" || !root.trim()) throw new LibraryError("INVALID_PATH", "A library root is required.");
         if (typeof isBusy !== "function") throw new LibraryError("INVALID_OPTION", "isBusy must be a function.");
-        this.root = path4.resolve(root);
+        this.root = path5.resolve(root);
         this.isBusy = isBusy;
         this.limits = { ...DEFAULT_LIMITS, ...limits };
         if (Object.values(this.limits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError("INVALID_OPTION", "Content limits must be positive integers.");
@@ -587,7 +676,7 @@ var init_library = __esm({
         return { record, catalog };
       }
       async _inspect(record) {
-        const result = { ...metadata(record), path: path4.join(this.root, ...this._relative(record).split("/")), contentStatus: "ok", deleted: record.location === "trash" };
+        const result = { ...metadata(record), path: path5.join(this.root, ...this._relative(record).split("/")), contentStatus: "ok", deleted: record.location === "trash" };
         try {
           const root = await this._artifactPath(record);
           const manifest = metadata(await readJson2(root, "artifact.json"));
@@ -596,9 +685,9 @@ var init_library = __esm({
           const needed = /* @__PURE__ */ new Set([INDEX_FILES[record.kind], "project/tokens.json", "db/files/index.html.json"]);
           const files = [];
           for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, this.limits.maxFileBytes)).toString("base64") : "" });
-          const native2 = validateFiles(record.kind, files);
+          const native3 = validateFiles(record.kind, files);
           const changedAt = listed.reduce((latest, file) => file.modifiedAt > latest ? file.modifiedAt : latest, manifest.updatedAt);
-          Object.assign(result, manifest, { title: native2.title, updatedAt: changedAt });
+          Object.assign(result, manifest, { title: native3.title, updatedAt: changedAt });
         } catch (error3) {
           result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error3.code) ? "missing" : "invalid";
           result.contentError = { code: error3.code || "INVALID_CONTENT", message: error3.message };
@@ -636,7 +725,7 @@ var init_library = __esm({
       }
       async _removeStage(stage) {
         const absolute = await safePath(this.root, stage.relative, { mustExist: false });
-        within(path4.join(this.root, "_state/staging"), absolute);
+        within(path5.join(this.root, "_state/staging"), absolute);
         await fs4.rm(absolute, { recursive: true, force: true });
       }
       _retitle(kind, files, title) {
@@ -706,8 +795,8 @@ var init_library = __esm({
         await this._busy(record);
         const root = await this._artifactPath(record);
         const files = await collectContent(root, record.kind, this.limits);
-        const native2 = validateFiles(record.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native2.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
+        const native3 = validateFiles(record.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native3.title, files: files.map(({ path: path13, encoding, data }) => ({ path: path13, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -754,17 +843,17 @@ var init_library = __esm({
           if (bytes.toString("base64") !== file.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
           files.push({ path: relative, encoding: "base64", data: file.data });
         }
-        const native2 = validateFiles(bundle.kind, files);
-        return { kind: bundle.kind, title: native2.title, files };
+        const native3 = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native3.title, files };
       }
       async _source(sourcePath, kind) {
-        if (typeof sourcePath !== "string" || !path4.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
+        if (typeof sourcePath !== "string" || !path5.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
         const info = await fs4.lstat(sourcePath).catch((error3) => {
           if (error3.code === "ENOENT") throw new LibraryError("NOT_FOUND", "The import source is missing.");
           throw error3;
         });
         if (info.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The import source cannot be a symbolic link.");
-        if (info.isFile()) return this._bundle(await readBytes(path4.dirname(sourcePath), path4.basename(sourcePath), this.limits.maxBundleBytes), kind);
+        if (info.isFile()) return this._bundle(await readBytes(path5.dirname(sourcePath), path5.basename(sourcePath), this.limits.maxBundleBytes), kind);
         if (!info.isDirectory()) throw new LibraryError("INVALID_CONTENT", "The import source is not a native folder or bundle.");
         const matches = [];
         for (const candidate of KINDS) if (await statOrNull(await safePath(sourcePath, INDEX_FILES[candidate], { mustExist: false }))) matches.push(candidate);
@@ -777,8 +866,8 @@ var init_library = __esm({
         const busy = await this.isBusy({ id: null, kind, path: sourcePath });
         if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
         const files = await collectContent(sourcePath, kind, this.limits);
-        const native2 = validateFiles(kind, files);
-        return { kind, title: native2.title, files };
+        const native3 = validateFiles(kind, files);
+        return { kind, title: native3.title, files };
       }
       async importArtifact({ bundle, sourcePath, kind, title } = {}) {
         await this._checkRoot();
@@ -808,7 +897,7 @@ var init_library = __esm({
           path: relative,
           contentType: type,
           bytes: bytes.length,
-          revision: { sha256: createHash2("sha256").update(bytes).digest("hex"), observedAt: at() },
+          revision: { sha256: createHash3("sha256").update(bytes).digest("hex"), observedAt: at() },
           ...encoding === "base64" ? { encoding, data: bytes.toString("base64") } : { text: bytes.toString("utf8") }
         };
       }
@@ -846,6 +935,140 @@ var init_library = __esm({
           catalog.artifacts[record.id] = { ...next, location: "active" };
           await this._saveCatalog(catalog);
           return this._inspect(catalog.artifacts[record.id]);
+        });
+      }
+      async _purgeTree(relative, { inspectOnly = true } = {}) {
+        if (!/^(?:_trash|_state\/snapshots)\/[0-9a-f-]{36}$/.test(relative) || !UUID.test(relative.split("/").at(-1))) throw new LibraryError("INVALID_PATH", "Permanent deletion requires an exact trash or snapshot identity.");
+        if (await fs4.realpath(this.root) !== this.realRoot || (await fs4.lstat(this.root)).isSymbolicLink()) throw new LibraryError("ROOT_CHANGED", "The library root changed before permanent deletion.");
+        const absolute = await safePath(this.root, relative, { mustExist: false });
+        const expected = path5.resolve(this.root, ...relative.split("/"));
+        within(this.root, absolute);
+        if (path5.resolve(absolute) !== expected) throw new LibraryError("INVALID_PATH", "The permanent deletion target changed.");
+        if (!await statOrNull(absolute)) return false;
+        const walk = async (child) => {
+          const target = await safePath(this.root, child);
+          const info = await fs4.lstat(target);
+          if (info.isSymbolicLink() || !info.isDirectory() && !info.isFile()) throw new LibraryError("SYMLINK_REFUSED", "Permanent deletion refuses links and special files.");
+          if (info.isDirectory()) for (const entry2 of await fs4.readdir(target)) await walk(`${child}/${entry2}`);
+        };
+        await safePath(this.root, relative, { type: "directory" });
+        await walk(relative);
+        if (!inspectOnly) {
+          const checked = await safePath(this.root, relative, { type: "directory" });
+          if (path5.resolve(checked) !== expected || await fs4.realpath(this.root) !== this.realRoot) throw new LibraryError("ROOT_CHANGED", "The permanent deletion target changed.");
+          await fs4.rm(checked, { recursive: true, force: false });
+        }
+        return true;
+      }
+      async _purgeNativeIdle(record, root) {
+        const inspected = record.title ? await this._inspect(record) : { ...record, path: root, deleted: true, contentStatus: "missing" };
+        const native3 = await nativeTrashActivity({ ...inspected, path: root });
+        if (native3?.busy) throw new LibraryError("ARTIFACT_BUSY", native3.reason);
+        const external = await this.isBusy(inspected);
+        if (external === true || external?.busy) throw new LibraryError("ARTIFACT_BUSY", external?.reason || "An external artwork task still owns this trash item.");
+      }
+      async purge(ids) {
+        if (!Array.isArray(ids) || ids.length < 1 || ids.length > 200) throw new LibraryError("INVALID_ARGUMENTS", "Choose between 1 and 200 trash artifact ids.");
+        ids = [...new Set(ids.map(artifactId))];
+        await this._checkRoot();
+        return locked(this.root, async () => {
+          const catalog = await this._catalog(), bindings = await this._bindings();
+          const legacy = await readJson2(this.root, "_state/legacy-imports.json", null);
+          if (legacy && (legacy.version !== 1 || !legacy.sources || typeof legacy.sources !== "object" || Array.isArray(legacy.sources))) throw new LibraryError("INVALID_STATE", "The legacy registration state is invalid.");
+          const requestFiles = new Map(ids.map((id) => [id, []]));
+          const requests = await safePath(this.root, "_state/edit-requests", { mustExist: false });
+          if (await statOrNull(requests)) {
+            await safePath(this.root, "_state/edit-requests", { type: "directory" });
+            for (const name of await fs4.readdir(requests)) if (/^[0-9a-f-]{36}\.json$/i.test(name)) {
+              const relative = `_state/edit-requests/${name}`;
+              let request;
+              try {
+                request = JSON.parse((await readBytes(this.root, relative, 512 * 1024)).toString("utf8"));
+              } catch (error3) {
+                if (error3 instanceof LibraryError) throw error3;
+                throw new LibraryError("INVALID_STATE", "An edit request record is malformed.");
+              }
+              if (request.version !== 1 || !UUID.test(request.id ?? "") || request.id.toLowerCase() !== name.slice(0, -5).toLowerCase() || !UUID.test(request.artifactId ?? "")) throw new LibraryError("INVALID_STATE", "An edit request identity is invalid.");
+              requestFiles.get(request.artifactId.toLowerCase())?.push(relative);
+            }
+          }
+          const plans = [];
+          for (const id of ids) {
+            const progressPath = `_state/purge-progress/${id}.json`;
+            const progress = await readJson2(this.root, progressPath, null);
+            if (progress && (progress.version !== 1 || progress.artifactId !== id || !KINDS.includes(progress.kind))) throw new LibraryError("INVALID_STATE", "A permanent deletion receipt is invalid.");
+            const record = catalog.artifacts[id] || (progress ? { id, kind: progress.kind, location: "trash" } : null);
+            if (!record) throw new LibraryError("NOT_FOUND", "No such trash artifact.");
+            if (record.location !== "trash") throw new LibraryError("NOT_IN_TRASH", "Only artifacts currently in the trash can be permanently deleted.");
+            if (progress && progress.kind !== record.kind) throw new LibraryError("INVALID_STATE", "A permanent deletion receipt has a different artifact kind.");
+            const active = await safePath(this.root, `${record.kind}/${id}`, { mustExist: false });
+            if (await statOrNull(active)) throw new LibraryError("NOT_IN_TRASH", "An active artifact occupies this identity; permanent deletion was refused.");
+            const present = await this._purgeTree(`_trash/${id}`);
+            if (!present && !progress) throw new LibraryError("NOT_FOUND", "The selected trash directory is missing.");
+            if (present) {
+              const root = await safePath(this.root, `_trash/${id}`, { type: "directory" });
+              const manifestFile = await safePath(root, "artifact.json", { mustExist: false });
+              if (await statOrNull(manifestFile)) {
+                const manifest = metadata(await readJson2(root, "artifact.json"));
+                if (manifest.id !== id || manifest.kind !== record.kind || !manifest.deletedAt) throw new LibraryError("NOT_IN_TRASH", "The trash directory does not contain this deleted artwork identity.");
+              } else if (!progress) throw new LibraryError("NOT_FOUND", "The selected trash manifest is missing.");
+            }
+            await this._purgeNativeIdle(record, await safePath(this.root, `_trash/${id}`, { mustExist: false }));
+            await this._purgeTree(`_state/snapshots/${id}`);
+            const snapshots = await safePath(this.root, `_state/snapshots/${id}`, { mustExist: false });
+            if (await statOrNull(snapshots)) {
+              for (const name of await fs4.readdir(snapshots)) if (/^[0-9a-f-]{36}\.json$/i.test(name)) {
+                const saved = await readJson2(this.root, `_state/snapshots/${id}/${name}`);
+                if (saved.artifactId !== id || saved.id !== name.slice(0, -5)) throw new LibraryError("INVALID_STATE", "A recovery point belongs to a different artifact identity.");
+              }
+            }
+            plans.push({ id, record, progressPath, progress, requestFiles: requestFiles.get(id) });
+          }
+          const deleted = [], failed = [];
+          for (const plan of plans) {
+            const { id } = plan, removed = [];
+            let stage = "prepare";
+            try {
+              if (catalog.artifacts[id] && catalog.artifacts[id].location !== "trash") throw new LibraryError("NOT_IN_TRASH", "The selected artwork is no longer in the trash.");
+              await atomicJson2(this.root, plan.progressPath, plan.progress || { version: 1, artifactId: id, kind: plan.record.kind, startedAt: at() });
+              const trashRoot = await safePath(this.root, `_trash/${id}`, { mustExist: false });
+              await this._purgeNativeIdle(plan.record, trashRoot);
+              stage = "artwork";
+              if (await this._purgeTree(`_trash/${id}`, { inspectOnly: false })) removed.push("artwork");
+              stage = "snapshots";
+              if (await this._purgeTree(`_state/snapshots/${id}`, { inspectOnly: false })) removed.push("snapshots");
+              stage = "requests";
+              for (const relative of plan.requestFiles) {
+                const file = await safePath(this.root, relative, { mustExist: false });
+                if (await statOrNull(file)) await fs4.unlink(await safePath(this.root, relative, { type: "file" }));
+              }
+              if (plan.requestFiles.length) removed.push("requests");
+              stage = "metadata";
+              const nextBindings = structuredClone(bindings);
+              delete nextBindings.artifacts[id];
+              await atomicJson2(this.root, bindingsFile, nextBindings);
+              delete bindings.artifacts[id];
+              if (legacy) {
+                const nextLegacy = structuredClone(legacy);
+                for (const [key, value] of Object.entries(nextLegacy.sources)) if (value === id) delete nextLegacy.sources[key];
+                await atomicJson2(this.root, "_state/legacy-imports.json", nextLegacy);
+                legacy.sources = nextLegacy.sources;
+              }
+              const nextCatalog = structuredClone(catalog);
+              delete nextCatalog.artifacts[id];
+              await atomicJson2(this.root, viewFile, await this._view(nextCatalog));
+              await this._saveCatalog(nextCatalog);
+              delete catalog.artifacts[id];
+              removed.push("metadata");
+              stage = "receipt";
+              await fs4.unlink(await safePath(this.root, plan.progressPath, { type: "file" }));
+              deleted.push(id);
+            } catch (error3) {
+              const message = (stage === "prepare" ? "" : "Permanent deletion was incomplete; some local data may already be removed. ") + String(error3.message || error3);
+              failed.push({ id, error: { code: error3.code || "PURGE_FAILED", message: message.slice(0, 1e3) }, removed, stage });
+            }
+          }
+          return { deleted, failed };
         });
       }
       async snapshot(id, { label = "Snapshot" } = {}) {
@@ -889,7 +1112,7 @@ var init_library = __esm({
           const root = await this._artifactPath(record), current = await collectContent(root, record.kind, this.limits, { includeBytes: false }), stage = await this._stage();
           const originalManifest = await readJson2(root, "artifact.json");
           let manifestWritten = false;
-          const before = path4.join(stage.absolute, "before"), after = path4.join(stage.absolute, "after");
+          const before = path5.join(stage.absolute, "before"), after = path5.join(stage.absolute, "after");
           await fs4.mkdir(before);
           await fs4.mkdir(after);
           await writeContent(after, bundle.files);
@@ -897,14 +1120,14 @@ var init_library = __esm({
           try {
             for (const file of current) {
               const from = await safePath(root, file.path, { type: "file" }), to = await safePath(before, file.path, { mustExist: false });
-              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.mkdir(path5.dirname(to), { recursive: true });
               await fs4.rename(from, to);
               moved.push(file.path);
             }
             for (const file of bundle.files) {
               const from = await safePath(after, file.path, { type: "file" }), to = await safePath(root, file.path, { mustExist: false });
               if (await statOrNull(to)) throw new LibraryError("CONTENT_CHANGED", "A file changed while restoring a snapshot.");
-              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.mkdir(path5.dirname(to), { recursive: true });
               await fs4.rename(from, to);
               added.push(file.path);
             }
@@ -918,7 +1141,7 @@ var init_library = __esm({
             for (const relative of added) await fs4.unlink(await safePath(root, relative, { type: "file" }));
             for (const relative of moved) {
               const from = await safePath(before, relative, { type: "file" }), to = await safePath(root, relative, { mustExist: false });
-              await fs4.mkdir(path4.dirname(to), { recursive: true });
+              await fs4.mkdir(path5.dirname(to), { recursive: true });
               await fs4.rename(from, to);
             }
             if (manifestWritten) await atomicJson2(root, "artifact.json", originalManifest);
@@ -938,7 +1161,7 @@ var init_library = __esm({
             if (entry2.name.startsWith(".")) continue;
             const relative = `${kind}/${entry2.name}`;
             if (entry2.isSymbolicLink()) {
-              results.push({ kind, path: path4.join(this.root, relative), status: "invalid", code: "SYMLINK_REFUSED" });
+              results.push({ kind, path: path5.join(this.root, relative), status: "invalid", code: "SYMLINK_REFUSED" });
               continue;
             }
             if (!entry2.isDirectory()) continue;
@@ -1061,39 +1284,12 @@ var init_library = __esm({
   }
 });
 
-// source/scripts/worker-core.mjs
-import path5 from "node:path";
-function loadJobs(root) {
-  const state = readJson(path5.join(root, WORKER_JOBS_FILE), { version: 1, jobs: {}, order: [] });
-  if (state.version !== 1 || !state.jobs || typeof state.jobs !== "object" || Array.isArray(state.jobs) || !Array.isArray(state.order)) {
-    throw new BridgeError("INVALID_WORKER_JOBS", "The design worker job journal is invalid; preserve it and inspect it before retrying.");
-  }
-  return state;
-}
-function publicJob(job) {
-  return {
-    id: job.id,
-    status: job.status,
-    kind: job.event.kind,
-    commentId: job.event.data.id,
-    queuedAt: job.queuedAt,
-    ...job.startedAt ? { startedAt: job.startedAt } : {},
-    ...job.completedAt ? { completedAt: job.completedAt } : {},
-    ...job.repliedAt ? { repliedAt: job.repliedAt } : {},
-    ...job.error ? { error: job.error } : {},
-    ...job.restorePoint ? { restorePoint: job.restorePoint } : {},
-    ...job.ownerThreadId ? { ownerThreadId: job.ownerThreadId } : {}
-  };
-}
-var WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOG_FILE, WORKER_LOCK_FILE, saveJobs;
-var init_worker_core = __esm({
-  "source/scripts/worker-core.mjs"() {
+// source/scripts/artifact-delivery.mjs
+var init_artifact_delivery = __esm({
+  "source/scripts/artifact-delivery.mjs"() {
+    init_library();
+    init_safety();
     init_bridge_core();
-    WORKER_FILE = ".codex-design-worker.json";
-    WORKER_JOBS_FILE = ".codex-design-worker-jobs.json";
-    WORKER_LOG_FILE = ".codex-design-worker.log";
-    WORKER_LOCK_FILE = ".codex-design-worker.lock";
-    saveJobs = (root, state) => atomicJson(path5.join(root, WORKER_JOBS_FILE), state);
   }
 });
 
@@ -1107,7 +1303,7 @@ function readRegistry(root) {
 }
 async function getWorkerStatus(root) {
   const registry = readRegistry(root);
-  const binding = readJson(path6.join(root, BINDING_FILE));
+  const binding = readNativeBinding(root);
   const state = loadJobs(root);
   const jobs = state.order.map((id) => state.jobs[id]).filter(Boolean).map(publicJob);
   const counts = Object.fromEntries(["pending", "active", "completed", "failed", "superseded"].map((status) => [status, jobs.filter((job) => job.status === status).length]));
@@ -1156,16 +1352,18 @@ async function stopWorker(root, { onlyWhenIdle = false } = {}) {
     };
   });
 }
-var registryFile, withJobs, saveRegistry, now;
+var registryFile, withJobs, saveRegistry, now, readNativeBinding;
 var init_worker_client = __esm({
   "source/scripts/worker-client.mjs"() {
     init_bridge_core();
     init_worker_core();
     init_library();
+    init_artifact_delivery();
     registryFile = (root) => path6.join(root, WORKER_FILE);
     withJobs = (root, action) => withLock(path6.join(root, WORKER_LOCK_FILE), action, { timeoutMs: 1e4, staleMs: 0 });
     saveRegistry = (root, registry) => atomicJson(registryFile(root), registry);
     now = () => (/* @__PURE__ */ new Date()).toISOString();
+    readNativeBinding = (root) => readJson(path6.join(root, NATIVE_BINDING_FILE)) ?? readJson(path6.join(root, BINDING_FILE));
   }
 });
 
@@ -1175,29 +1373,377 @@ var init_design_system_search = __esm({
   }
 });
 
-// source/scripts/artifact-delivery.mjs
-var init_artifact_delivery = __esm({
-  "source/scripts/artifact-delivery.mjs"() {
-    init_library();
+// source/library/edit-requests.mjs
+import fs5 from "node:fs/promises";
+import path7 from "node:path";
+import { createHash as createHash4, randomUUID as randomUUID4 } from "node:crypto";
+function eventFor(thread, kind) {
+  const event = normalizeEvent(thread);
+  const canonicalFile = (value) => {
+    relativePath(value);
+    if (kind === "dashboard" && !contentPath(kind, value) && !value.startsWith("db/") && !value.startsWith("_blobs/")) {
+      return /^(?:files|datasets)\//.test(value) ? `db/${value}.json` : `db/files/${value}.json`;
+    }
+    return value;
+  };
+  if (event.data.file !== void 0) event.data.file = canonicalFile(event.data.file);
+  if (event.data.location?.file !== void 0) event.data.location.file = canonicalFile(event.data.location.file);
+  if (event.data.file !== void 0) {
+    relativePath(event.data.file);
+    if (!contentPath(kind, event.data.file)) throw new LibraryError("CONTENT_ONLY", "A comment location must identify artwork content.");
+  }
+  if (event.data.location?.file !== void 0) {
+    relativePath(event.data.location.file);
+    if (!contentPath(kind, event.data.location.file)) throw new LibraryError("CONTENT_ONLY", "A comment location must identify artwork content.");
+    if (event.data.file !== event.data.location.file) throw new LibraryError("INVALID_COMMENT", "The comment file and location disagree.");
+  }
+  if (Buffer.byteLength(JSON.stringify(event)) > MAX_EVENT_BYTES) throw new LibraryError("LIMIT_EXCEEDED", "The comment request context is too large.");
+  return JSON.parse(JSON.stringify(event));
+}
+function stateError(record, thread, kind) {
+  if (!thread || thread.status !== "open") return new LibraryError("COMMENT_RESOLVED", "This comment is no longer open. Prepare a current open comment instead.");
+  try {
+    if (userRevisionHash(eventFor(thread, kind)) === record.commentRevision) return null;
+  } catch {
+  }
+  return new LibraryError("COMMENT_REVISION_CHANGED", "The user changed this comment after the request was prepared. Prepare the current revision instead.");
+}
+function validateRecord(record, id) {
+  if (!record || record.version !== 1 || requestId(record.id) !== id || artifactId(record.artifactId) !== record.artifactId || typeof record.commentRevision !== "string" || !/^[a-f0-9]{64}$/.test(record.commentRevision) || !record.artifact || record.artifact.id !== record.artifactId || !Array.isArray(record.fileRevisions) || !record.event || record.event.kind !== "comment" || record.event.data?.id !== record.commentId || !["draft_ready", "prepared", "needs_attention", "accepted", "queued", "superseded"].includes(record.status)) {
+    throw new LibraryError("INVALID_STATE", "The edit request record is invalid.");
+  }
+  commentId(record.commentId);
+  eventFor(record.event.data, record.artifact.kind);
+  for (const file of record.fileRevisions) {
+    relativePath(file.path);
+    if (!contentPath(record.artifact.kind, file.path)) throw new LibraryError("INVALID_STATE", "An edit request includes a non-content file.");
+  }
+  return record;
+}
+function publicRequest(record, status = record.status) {
+  return structuredClone({
+    id: record.id,
+    requestId: record.id,
+    requestUri: requestUri(record.id),
+    artifactId: record.artifactId,
+    commentId: record.commentId,
+    artifact: record.artifact,
+    event: record.event,
+    commentRevision: record.commentRevision,
+    fileRevisions: record.fileRevisions,
+    artifactRevision: record.artifactRevision,
+    createdAt: record.createdAt,
+    status,
+    ...record.draftAddedAt ? { draftAddedAt: record.draftAddedAt } : {},
+    ...record.draftError ? { error: record.draftError } : {},
+    ...record.acceptedAt ? { acceptedAt: record.acceptedAt } : {},
+    ...record.dispatch ? { dispatch: record.dispatch } : {}
+  });
+}
+function projection(record, thread, worker, rawJobs) {
+  const base = { requestId: record?.id ?? null };
+  const revision = record?.commentRevision ?? (() => {
+    try {
+      return userRevisionHash(normalizeEvent(thread));
+    } catch {
+      return null;
+    }
+  })();
+  const job = record ? worker?.jobs.find((job2) => (record.dispatch ? job2.id === record.dispatch.jobId : job2.requestId === record.id) && rawJobs[job2.id]?.requestId === record.id && rawJobs[job2.id]?.capturedUserRevision === revision) : worker?.jobs.findLast((job2) => job2.commentId === thread.id && rawJobs[job2.id]?.capturedUserRevision === revision);
+  const currentRevision = (() => {
+    try {
+      return userRevisionHash(normalizeEvent(thread));
+    } catch {
+      return null;
+    }
+  })();
+  if (job?.status === "completed" && job.repliedAt && currentRevision === revision) return { ...base, status: "completed", ...job.phase ? { phase: job.phase } : {} };
+  if (record && (record.status === "superseded" || stateError(record, thread, record.artifact.kind))) return { ...base, status: "superseded", message: "The comment changed or was resolved. Add its current revision to a draft." };
+  if (job && (record || job.status !== "pending")) {
+    const phase = job.phase ?? rawJobs[job.id]?.phase;
+    const detail2 = phase ? { phase } : {};
+    if (phase?.startsWith("awaiting-")) return {
+      ...base,
+      status: "needs_attention",
+      ...detail2,
+      message: job.error?.message || "The native request needs confirmation before editing can continue."
+    };
+    if (job.status === "active") return { ...base, status: "working", ...detail2 };
+    if (job.status === "pending") return { ...base, status: "queued", ...detail2 };
+    if (job.status === "failed") return { ...base, status: "failed", ...detail2, ...job.error?.message ? { message: String(job.error.message).slice(0, 1e3) } : {} };
+    if (job.status === "superseded") return { ...base, status: "superseded" };
+    if (job.status === "completed" && job.repliedAt) return { ...base, status: "completed", ...detail2 };
+    return { ...base, status: "needs_attention", message: "The worker has not recorded a completed comment reply." };
+  }
+  if (record?.dispatch) return { ...base, status: "needs_attention", message: "The dispatched native job could not be found. Retry from the accepting chat." };
+  if (record) {
+    if (record.status === "needs_attention") return { ...base, status: "needs_attention", message: record.draftError?.message || "The native draft could not be updated. Try adding this request again." };
+    return { ...base, status: record.status, ...record.status === "draft_ready" ? { message: "Ready to add to a native draft." } : {} };
+  }
+  return { ...base, status: "needs_attention", message: "This earlier submission has no accepted native request. Add it to a draft to continue." };
+}
+function createEditRequestStore({ store } = {}) {
+  if (!store || typeof store._checkRoot !== "function" || typeof store._raw !== "function") throw new LibraryError("INVALID_OPTION", "An initialized library store is required.");
+  const ready = () => store._checkRoot();
+  const location = async (id) => {
+    const { record } = await store._raw(artifactId(id));
+    return { record, root: await store._artifactPath(record) };
+  };
+  const comments = async (root) => {
+    const file = await safePath(root, "comments.json", { mustExist: false });
+    if (!await statOrNull(file)) return { version: 1, threads: [] };
+    let value;
+    try {
+      value = JSON.parse((await readBytes(root, "comments.json", MAX_COMMENTS_BYTES)).toString("utf8"));
+    } catch (error3) {
+      if (error3 instanceof LibraryError) throw error3;
+      throw new LibraryError("INVALID_STATE", "The canonical comment document is malformed.");
+    }
+    if (!value || !Array.isArray(value.threads)) throw new LibraryError("INVALID_STATE", "The canonical comment document has no threads.");
+    return value;
+  };
+  const recordPath = (id) => `${DIRECTORY}/${requestId(id)}.json`;
+  const load = async (id) => {
+    id = requestId(id);
+    let value;
+    try {
+      value = JSON.parse((await readBytes(store.root, recordPath(id), MAX_REQUEST_BYTES)).toString("utf8"));
+    } catch (error3) {
+      if (error3 instanceof LibraryError) throw error3;
+      throw new LibraryError("INVALID_STATE", "The edit request record is malformed.");
+    }
+    return validateRecord(value, id);
+  };
+  const save = async (value) => {
+    if (Buffer.byteLength(JSON.stringify(value)) > MAX_REQUEST_BYTES) throw new LibraryError("LIMIT_EXCEEDED", "The edit request snapshot is too large.");
+    await atomicJson2(store.root, recordPath(value.id), value);
+  };
+  const all = async () => {
+    const directory = await safePath(store.root, DIRECTORY, { mustExist: false });
+    if (!await statOrNull(directory)) return [];
+    await safePath(store.root, DIRECTORY, { type: "directory" });
+    const records = [];
+    for (const entry2 of await fs5.readdir(directory)) if (/^[0-9a-f-]{36}\.json$/i.test(entry2)) records.push(await load(entry2.slice(0, -5)));
+    return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  };
+  const current = async (record) => {
+    try {
+      const found = await location(record.artifactId);
+      const document2 = await comments(found.root);
+      return { ...found, thread: document2.threads.find((thread) => thread.id === record.commentId) };
+    } catch (error3) {
+      if (error3.code === "NOT_FOUND") return null;
+      throw error3;
+    }
+  };
+  const stale = async (record) => {
+    const found = await current(record);
+    const error3 = found ? stateError(record, found.thread, found.record.kind) : new LibraryError("COMMENT_RESOLVED", "This artifact or comment is no longer active.");
+    return { found, error: error3 };
+  };
+  const mutateCurrent = async (id, action) => {
+    await ready();
+    let failure3;
+    const result = await locked(store.root, async () => {
+      const record = await load(id);
+      const check = await stale(record);
+      if (check.error || record.status === "superseded") {
+        record.status = "superseded";
+        record.supersededAt ??= now2();
+        await save(record);
+        failure3 = check.error || new LibraryError("COMMENT_REVISION_CHANGED", "This superseded request cannot be accepted again. Prepare a new user revision.");
+        return null;
+      }
+      await action(record, check.found);
+      await save(record);
+      return publicRequest(record);
+    });
+    if (failure3) throw failure3;
+    return result;
+  };
+  const api = {
+    async prepare({ artifactId: id, commentId: idOfComment } = {}) {
+      id = artifactId(id);
+      idOfComment = commentId(idOfComment);
+      await ready();
+      return locked(store.root, async () => {
+        const found = await location(id);
+        const document2 = await comments(found.root);
+        const thread = document2.threads.find((thread2) => thread2.id === idOfComment);
+        if (!thread || thread.status !== "open") throw new LibraryError("COMMENT_RESOLVED", "Prepare an existing open comment.");
+        const event = eventFor(thread, found.record.kind);
+        const commentRevision = userRevisionHash(event);
+        const existing = (await all()).findLast((record2) => record2.artifactId === id && record2.commentId === idOfComment && record2.commentRevision === commentRevision && record2.status !== "superseded");
+        if (existing) return publicRequest(existing);
+        const observedAt = now2(), fileRevisions = [];
+        for (const relative of [...new Set([INDEX_FILES[found.record.kind], event.data.file].filter(Boolean))]) {
+          const file = await safePath(found.root, relative, { mustExist: false });
+          if (!await statOrNull(file)) {
+            fileRevisions.push({ path: relative, missing: true, observedAt });
+            continue;
+          }
+          const bytes = await readBytes(found.root, relative, store.limits.maxFileBytes);
+          fileRevisions.push({ path: relative, sha256: sha(bytes), bytes: bytes.length, observedAt });
+        }
+        const artifact = { id, kind: found.record.kind, title: found.record.title };
+        const record = {
+          version: 1,
+          id: randomUUID4(),
+          artifactId: id,
+          commentId: idOfComment,
+          artifact,
+          event,
+          commentRevision,
+          fileRevisions,
+          artifactRevision: sha(JSON.stringify({ artifact, files: fileRevisions.map(({ observedAt: _at, ...file }) => file) })),
+          createdAt: observedAt,
+          status: "draft_ready"
+        };
+        await save(record);
+        return publicRequest(record);
+      });
+    },
+    async read(id) {
+      requestId(id);
+      await ready();
+      return locked(store.root, async () => {
+        const record = await load(id);
+        if ((await stale(record)).error && record.status !== "superseded") {
+          record.status = "superseded";
+          record.supersededAt ??= now2();
+          await save(record);
+        }
+        return publicRequest(record);
+      });
+    },
+    async requestForModel(id) {
+      const result = await api.read(id);
+      if (result.status === "superseded") return result;
+      const found = await location(result.artifactId);
+      return { ...result, artifactRoot: found.root };
+    },
+    markDraftAdded: (id) => mutateCurrent(id, (record) => {
+      if (record.acceptedAt || record.dispatch) return;
+      record.draftAddedAt ??= now2();
+      record.status = "prepared";
+      delete record.draftError;
+    }),
+    markDraftFailed: (id, error3) => mutateCurrent(id, (record) => {
+      if (record.acceptedAt || record.dispatch || record.draftAddedAt) return;
+      record.status = "needs_attention";
+      record.draftError = errorSummary(error3);
+    }),
+    accept: (id) => mutateCurrent(id, async (record, found) => {
+      for (const file of record.fileRevisions) await safePath(found.root, file.path, { type: "file" });
+      record.acceptedAt ??= now2();
+      if (!record.dispatch) record.status = "accepted";
+    }),
+    // The native parent integration holds binding/worker locks when calling
+    // this method. Only take the library lock here, in that established order.
+    markDispatched: (id, { jobId, originThreadId } = {}) => mutateCurrent(id, async (record, found) => {
+      if (!record.acceptedAt) throw new LibraryError("REQUEST_NOT_ACCEPTED", "The real parent must accept this request before dispatch.");
+      if (typeof jobId !== "string" || !/^[A-Za-z0-9:_-]{1,200}$/.test(jobId) || typeof originThreadId !== "string" || !UUID.test(originThreadId)) throw new LibraryError("INVALID_JOB", "Expected a native job id and a verified origin thread UUID.");
+      if (record.dispatch) {
+        if (record.dispatch.jobId !== jobId || record.dispatch.originThreadId !== originThreadId) throw new LibraryError("DISPATCH_CONFLICT", "This request already belongs to another native dispatch.");
+        return;
+      }
+      const binding = await readJson2(found.root, NATIVE_BINDING_FILE2, null);
+      const state = await readJson2(found.root, WORKER_JOBS_FILE, null);
+      const job = state?.jobs?.[jobId];
+      if (binding?.threadId !== originThreadId || !["native", "worker"].includes(binding?.deliveryMode) || !job || job.requestId !== record.id || job.event?.kind !== "comment" || job.event.data?.id !== record.commentId || job.capturedUserRevision !== record.commentRevision) throw new LibraryError("INVALID_JOB", "The native journal does not contain this accepted request and origin.");
+      record.dispatch = { jobId, originThreadId, dispatchedAt: now2() };
+      record.status = "queued";
+    }),
+    async project(id, canonicalSnapshot) {
+      id = artifactId(id);
+      await ready();
+      if (!canonicalSnapshot || !Array.isArray(canonicalSnapshot.threads)) throw new LibraryError("INVALID_COMMENT", "Expected a canonical comment snapshot.");
+      const found = await location(id);
+      const lockPath = path7.join(found.root, WORKER_LOCK_FILE);
+      if ((await statOrNull(lockPath))?.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The worker lock must be a real directory.");
+      let worker, rawJobs = {};
+      try {
+        for (const file of [WORKER_FILE, WORKER_JOBS_FILE, BINDING_FILE, NATIVE_BINDING_FILE2]) await safePath(found.root, file, { mustExist: false });
+        worker = await getWorkerStatus(found.root);
+        rawJobs = (await readJson2(found.root, WORKER_JOBS_FILE, { jobs: {} })).jobs || {};
+      } catch (error3) {
+        if (error3.code === "SYMLINK_REFUSED" || error3.code === "INVALID_PATH") throw error3;
+      }
+      return locked(store.root, async () => {
+        const records = (await all()).filter((record) => record.artifactId === id);
+        const snapshot = structuredClone(canonicalSnapshot);
+        for (const thread of snapshot.threads) {
+          const related = records.filter((record2) => record2.commentId === thread.id);
+          for (const old of related) if (old.status !== "superseded" && stateError(old, thread, found.record.kind)) {
+            old.status = "superseded";
+            old.supersededAt ??= now2();
+            await save(old);
+          }
+          const record = related.findLast((record2) => !stateError(record2, thread, found.record.kind)) ?? related.at(-1);
+          const legacy = ["delivered", "pending", "working", "queued", "failed"].includes(thread.agent?.status);
+          if (!record && !legacy) continue;
+          thread.agent = { ...thread.agent, ...record ? { sentAt: record.createdAt } : {}, nativeRequest: projection(record, thread, worker, rawJobs) };
+        }
+        return snapshot;
+      });
+    }
+  };
+  return api;
+}
+var DIRECTORY, NATIVE_BINDING_FILE2, MAX_COMMENTS_BYTES, MAX_REQUEST_BYTES, MAX_EVENT_BYTES, sha, now2, requestId, commentId, errorSummary, requestUri;
+var init_edit_requests = __esm({
+  "source/library/edit-requests.mjs"() {
     init_safety();
+    init_content();
     init_bridge_core();
+    init_worker_core();
+    init_worker_client();
+    DIRECTORY = "_state/edit-requests";
+    NATIVE_BINDING_FILE2 = ".codex-design-native-binding.json";
+    MAX_COMMENTS_BYTES = 4 * 1024 * 1024;
+    MAX_REQUEST_BYTES = 512 * 1024;
+    MAX_EVENT_BYTES = 256 * 1024;
+    sha = (value) => createHash4("sha256").update(value).digest("hex");
+    now2 = () => (/* @__PURE__ */ new Date()).toISOString();
+    requestId = (value) => {
+      if (typeof value !== "string" || !UUID.test(value)) throw new LibraryError("INVALID_ID", "Expected an edit request UUID.");
+      return value.toLowerCase();
+    };
+    commentId = (value) => {
+      if (typeof value !== "string" || !value || value.length > 200 || /[\u0000-\u001f\u007f]/.test(value)) throw new LibraryError("INVALID_COMMENT", "Expected a comment id.");
+      return value;
+    };
+    errorSummary = (error3) => ({ code: String(error3?.code || "DRAFT_FAILED").slice(0, 100), message: String(error3?.message || error3 || "The native draft could not be updated.").slice(0, 1e3) });
+    requestUri = (id) => `codex-design://edit-requests/${requestId(id)}`;
+  }
+});
+
+// source/scripts/edit-request-dispatch.mjs
+var init_edit_request_dispatch = __esm({
+  "source/scripts/edit-request-dispatch.mjs"() {
+    init_library();
+    init_edit_requests();
+    init_safety();
+    init_artifact_delivery();
+    init_bridge_core();
+    init_worker_core();
   }
 });
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail2 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
-  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail2();
+  const fail3 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail3();
   try {
     const url = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail2();
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail3();
     const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
-    if (!response.ok) throw fail2();
+    if (!response.ok) throw fail3();
     const session = await response.json();
-    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail2();
+    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail3();
     return session;
   } catch {
-    throw fail2();
+    throw fail3();
   }
 }
 var init_artifact_command = __esm({
@@ -1209,14 +1755,15 @@ var init_artifact_command = __esm({
     init_safety();
     init_worker_core();
     init_artifact_delivery();
+    init_edit_request_dispatch();
   }
 });
 
 // source/scripts/library-preview.mjs
 init_library();
 init_safety();
-import fs7 from "node:fs";
-import path11 from "node:path";
+import fs8 from "node:fs";
+import path12 from "node:path";
 import { spawn as spawn3 } from "node:child_process";
 import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
 
@@ -1225,24 +1772,24 @@ init_library();
 init_safety();
 init_worker_client();
 import http from "node:http";
-import fs6 from "node:fs/promises";
-import path10 from "node:path";
-import { randomBytes, randomUUID as randomUUID5 } from "node:crypto";
+import fs7 from "node:fs/promises";
+import path11 from "node:path";
+import { randomBytes, randomUUID as randomUUID7 } from "node:crypto";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // source/server/service.mjs
 init_bridge_core();
 init_artifact_command();
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import path9 from "node:path";
+import path10 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // source/library/thumbnail.mjs
 init_safety();
-import path7 from "node:path";
-import { createHash as createHash3 } from "node:crypto";
+import path8 from "node:path";
+import { createHash as createHash5 } from "node:crypto";
 var LIMITS = { maxSourceBytes: 512 * 1024, maxAssetBytes: 2 * 1024 * 1024, maxTotalBytes: 4 * 1024 * 1024, maxDocumentBytes: 6 * 1024 * 1024 };
 var escape2 = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 var decode = (value) => String(value).replace(/&(?:#(x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (match, number) => {
@@ -1460,7 +2007,7 @@ async function createArtifactThumbnail(store, id, options = {}) {
   const record = await store.get(id);
   if (record.contentStatus !== "ok") throw new LibraryError(record.contentError?.code || "ARTIFACT_CONTENT_UNAVAILABLE", "Artwork content is unavailable for a real preview.");
   const listed = await store.listFiles(id), files = new Map(listed.map((file) => [file.path, file]));
-  const hash = createHash3("sha256");
+  const hash = createHash5("sha256");
   hash.update(JSON.stringify({ artifactId: record.id, kind: record.kind, title: record.title, files: listed.map((file) => ({ path: file.path, bytes: file.bytes })).sort((a, b) => a.path < b.path ? -1 : 1) }));
   const read = /* @__PURE__ */ new Map(), assets = /* @__PURE__ */ new Map(), visiting = /* @__PURE__ */ new Set(), notes = [];
   let total = 0;
@@ -1491,7 +2038,7 @@ async function createArtifactThumbnail(store, id, options = {}) {
         return [...files.keys()].find((file) => file.startsWith((record.kind === "design-system" ? "project/_blobs/" : "project/assets/") + blob + ".")) || null;
       }
       if (!value || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(value) || /[\\\u0000-\u001f]/.test(value)) return null;
-      const relative = path7.posix.normalize(path7.posix.join(path7.posix.dirname(base), value.split(/[?#]/)[0]));
+      const relative = path8.posix.normalize(path8.posix.join(path8.posix.dirname(base), value.split(/[?#]/)[0]));
       return files.has(relative) ? relative : null;
     },
     async asset(value, base, purpose) {
@@ -1596,8 +2143,12 @@ async function createArtifactThumbnail(store, id, options = {}) {
   return { artifactId: record.id, id: record.id, kind: record.kind, title: record.title, revision, cacheKey: record.id + ":" + revision, srcdoc, previewWidth: width, previewHeight: height, fidelity, sourceFile, notes };
 }
 
+// source/server/service.mjs
+init_edit_requests();
+init_safety();
+
 // source/server/editor-transport.mjs
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 
 // source/scripts/base64.mjs
 function isValidBase64(value) {
@@ -1613,14 +2164,31 @@ var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-mat
 var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control"];
 var MAX_BODY = 32 * 1024 * 1024;
 var MAX_RESPONSE = 64 * 1024 * 1024;
+function validateEditorRequest(request = {}) {
+  const method = String(request.method || "GET").toUpperCase();
+  if (!METHODS.has(method)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
+  const headers = new Headers();
+  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
+  for (const [name, value] of Object.entries(request.headers || {})) {
+    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+    headers.set(name, value);
+  }
+  let body;
+  if (request.body !== void 0) {
+    if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    body = Buffer.from(request.body, "base64");
+    if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+  }
+  return { method, headers, body };
+}
 function editorRequestUrl(base, relative) {
   const root = new URL(base);
   if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
   if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
-  const path12 = relative.split(/[?#]/, 1)[0];
+  const path13 = relative.split(/[?#]/, 1)[0];
   let decoded;
   try {
-    decoded = decodeURIComponent(path12);
+    decoded = decodeURIComponent(path13);
   } catch {
     throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
   }
@@ -1699,21 +2267,8 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
   return {
     async request(id, request = {}) {
       const { url } = await get(id, request.path);
-      const method = String(request.method || "GET").toUpperCase();
-      if (!METHODS.has(method)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
-      const headers = new Headers();
-      if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
-      for (const [name, value] of Object.entries(request.headers || {})) {
-        if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
-        headers.set(name, value);
-      }
+      const { method, headers, body } = validateEditorRequest(request);
       headers.set("origin", url.origin);
-      let body;
-      if (request.body !== void 0) {
-        if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
-        body = Buffer.from(request.body, "base64");
-        if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
-      }
       const response = await fetcher(url, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
       if (response.headers.get("content-type")?.includes("text/event-stream")) {
         await response.body?.cancel();
@@ -1722,8 +2277,8 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       const bytes = await limitedBody(response, MAX_RESPONSE);
       return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
     },
-    async openEvents(id, path12) {
-      const { url } = await get(id, path12);
+    async openEvents(id, path13) {
+      const { url } = await get(id, path13);
       if (!/(?:^|\/)events$/.test(url.pathname)) throw fail("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
       const abort = new AbortController();
       let response;
@@ -1737,7 +2292,7 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
         abort.abort();
         throw fail("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
       }
-      const stream = { id: randomUUID4(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
+      const stream = { id: randomUUID5(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
       streams.set(stream.id, stream);
       touch(stream);
       void pump(stream);
@@ -1770,8 +2325,158 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
   };
 }
 
+// source/server/native-comments.mjs
+import { createHash as createHash6, randomUUID as randomUUID6 } from "node:crypto";
+var fail2 = (code, message) => Object.assign(new Error(message), { code });
+var encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64");
+var jsonResult = (value, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Accepted", headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, body: encode(value) });
+var parseResult = (result) => {
+  try {
+    return JSON.parse(Buffer.from(result.body, "base64").toString("utf8"));
+  } catch {
+    throw fail2("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
+  }
+};
+function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, idleMs = 12e4 } = {}) {
+  const streams = /* @__PURE__ */ new Map();
+  const route = async (id, relative) => {
+    const editor = await editorFor(id);
+    const url = editorRequestUrl(editor.url, relative);
+    const base = new URL(editor.url);
+    const path13 = decodeURIComponent(url.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
+    return { editor, path: path13, url };
+  };
+  const project = async (id, snapshot2) => {
+    const value = await requests.project(id, snapshot2);
+    value.agent = {
+      ...value.agent,
+      available: true,
+      listening: false,
+      busy: value.threads.some((thread) => thread.agent?.nativeRequest?.status === "working"),
+      hook: false
+    };
+    return value;
+  };
+  const snapshot = async (id) => {
+    const result = await transport.request(id, { path: "__comments", method: "GET" });
+    if (result.status < 200 || result.status >= 300) throw fail2("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
+    return project(id, parseResult(result));
+  };
+  const prepared = async (id, threadId, response) => {
+    const request = await requests.prepare({ artifactId: id, commentId: threadId });
+    const title = `${request.artifact.title} · ${request.event.data.where || request.event.data.location?.file || "Comment"}`;
+    const summary = request.event.data.messages.map((message) => message.text).join("\n\n");
+    const body = parseResult(response);
+    if (body.thread) {
+      const value = await project(id, { threads: [body.thread] });
+      body.thread = value.threads[0];
+    }
+    return { ...response, body: encode(body), nativeDraft: {
+      requestId: request.id,
+      attemptId: randomUUID6(),
+      savedCommentId: threadId,
+      artifactId: id,
+      uri: request.requestUri,
+      title: title.slice(0, 300),
+      summary: summary.slice(0, 12e3)
+    } };
+  };
+  const close = (stream) => {
+    clearTimeout(stream.expiry);
+    streams.delete(stream.id);
+  };
+  const touch = (stream) => {
+    clearTimeout(stream.expiry);
+    stream.expiry = setTimeout(() => close(stream), idleMs);
+    stream.expiry.unref?.();
+  };
+  return {
+    async request(id, request) {
+      const { path: path13 } = await route(id, request.path);
+      const { method, body } = validateEditorRequest(request);
+      if (path13 === "__comments" && ["GET", "HEAD"].includes(method)) {
+        const result = jsonResult(await snapshot(id));
+        return method === "HEAD" ? { ...result, body: "" } : result;
+      }
+      const send = /^__comments\/([^/]+)\/send$/.exec(path13);
+      if (send && method === "POST") {
+        const current = await snapshot(id);
+        const matches = current.threads.filter((item) => item.id === send[1]);
+        if (!matches.length && send[1].length >= 3) matches.push(...current.threads.filter((item) => item.id.startsWith(send[1])));
+        if (matches.length !== 1) throw fail2(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
+        const thread = matches[0];
+        return prepared(id, thread.id, jsonResult({ thread }));
+      }
+      const mutation = path13 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path13) && ["POST", "PATCH"].includes(method);
+      const adHoc = path13 === "__comments/agent/requests" && method === "POST";
+      if ((mutation || adHoc) && body) {
+        if (body.length > 256 * 1024) throw fail2("INVALID_COMMENT", "The comment exceeds its transfer limit.");
+        let input;
+        try {
+          input = JSON.parse(body.toString("utf8"));
+        } catch {
+          throw fail2("INVALID_COMMENT", "The comment request is not valid JSON.");
+        }
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw fail2("INVALID_COMMENT", "Expected a comment object.");
+        if (input.send === true || adHoc) {
+          const normal = adHoc ? {
+            anchor: "request:" + randomUUID6(),
+            label: input.label || "Artwork request",
+            text: input.text,
+            ...input.selection ? { detail: input.selection } : {},
+            send: false
+          } : { ...input, send: false };
+          const result = await transport.request(id, { ...request, path: adHoc ? "__comments" : request.path, body: encode(normal) });
+          if (result.status < 200 || result.status >= 300) return result;
+          const saved = parseResult(result);
+          if (!saved.thread?.id) throw fail2("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
+          return prepared(id, saved.thread.id, adHoc ? { ...result, body: encode({ ...saved, request: { id: saved.thread.id } }) } : result);
+        }
+      }
+      return transport.request(id, request);
+    },
+    async openEvents(id, path13) {
+      const found = await route(id, path13);
+      if (found.path !== "__comments/events") return transport.openEvents(id, path13);
+      const stream = { id: randomUUID6(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
+      streams.set(stream.id, stream);
+      touch(stream);
+      return { subscriptionId: stream.id, cursor: 0 };
+    },
+    async pollEvents(id, subscriptionId, cursor = 0) {
+      const stream = streams.get(subscriptionId);
+      if (!stream) return transport.pollEvents(id, subscriptionId, cursor);
+      if (stream.artifactId !== id) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail2("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
+      touch(stream);
+      const delay = Math.max(0, pollMs - (Date.now() - stream.lastPoll));
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (!streams.has(subscriptionId)) return { events: [], cursor: stream.cursor, ended: true };
+      const value = await snapshot(id);
+      const data = JSON.stringify(value), fingerprint = createHash6("sha256").update(data).digest("hex");
+      if (fingerprint !== stream.fingerprint) {
+        stream.fingerprint = fingerprint;
+        stream.events.push({ cursor: ++stream.cursor, event: "comments", data });
+        if (stream.events.length > 128) stream.events.shift();
+      }
+      stream.lastPoll = Date.now();
+      return { events: stream.events.filter((item) => item.cursor > cursor), cursor: stream.cursor, ended: false };
+    },
+    async closeEvents(id, subscriptionId) {
+      const stream = streams.get(subscriptionId);
+      if (!stream) return transport.closeEvents(id, subscriptionId);
+      if (stream.artifactId !== id) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      close(stream);
+      return { closed: true };
+    },
+    dispose() {
+      for (const stream of streams.values()) close(stream);
+    }
+  };
+}
+
 // source/server/editor-document.mjs
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 
 // source/scripts/editor-runtime-adapter.mjs
 function repairEditorRuntime(source) {
@@ -1858,6 +2563,174 @@ function adaptCommentToolbar(source) {
   return changed ? marker + "\n" + source : source;
 }
 
+// source/scripts/comment-draft-adapter.mjs
+var native2 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker2 = "/* codex-design:native-comment-drafts */";
+var rowPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+),current:[\w$]+\}\)\{/;
+var threadPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+)\}\)\{/;
+var composerPattern = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,win:[\w$]+,pinSide:[\w$]+\}\)\{/;
+var escape4 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function nativeCommentPresentation(thread) {
+  const request = thread?.agent?.nativeRequest;
+  const replied = thread?.messages?.at(-1)?.author?.kind === "agent";
+  if (!request) {
+    if (!thread?.agent) return null;
+    if (replied) return { status: "completed", label: "Completed", activity: false };
+    return {
+      status: "needs_attention",
+      label: "Needs attention",
+      activity: thread.status === "open",
+      message: "This comment has no confirmed native chat request. Add it to chat to continue."
+    };
+  }
+  const status = request.status;
+  const message = typeof request.message === "string" ? request.message.trim() : "";
+  const activity = thread.status === "open";
+  switch (status) {
+    case "draft_ready":
+      return { status, label: "Ready to add to chat", message, activity };
+    case "prepared":
+      return { status, label: "Added to chat", message, activity };
+    case "accepted":
+      return { status, label: "Waiting for the agent", message, activity };
+    case "queued":
+      return { status, label: "Queued", message, activity };
+    case "working":
+      return { status, label: "Working…", message: message || request.phase || "", working: "working", activity };
+    case "completed":
+      return replied ? { status, label: "Completed", activity: false } : {
+        status: "needs_attention",
+        label: "Needs attention",
+        activity,
+        message: message || "The completed request has no saved agent reply."
+      };
+    case "failed":
+      return {
+        status,
+        label: "Failed",
+        activity,
+        message: message || "The request failed. Add the comment to chat again to retry."
+      };
+    case "superseded":
+      return {
+        status,
+        label: "Draft replaced",
+        activity,
+        message: message || "A newer draft replaced this request."
+      };
+    default:
+      return {
+        status: "needs_attention",
+        label: "Needs attention",
+        activity,
+        message: message || "The request needs attention. Add the comment to chat again to retry."
+      };
+  }
+}
+function nativeCommentCanAdd(thread) {
+  const last = thread?.messages?.at(-1);
+  if (thread?.status !== "open" || last?.author?.kind !== "user") return false;
+  const request = thread.agent?.nativeRequest;
+  const status = nativeCommentPresentation(thread)?.status;
+  if (!request || ["draft_ready", "prepared", "failed", "needs_attention", "superseded"].includes(status)) return true;
+  const sentAt = thread.agent.sentAt ?? request.sentAt;
+  return typeof sentAt === "string" && (last.editedAt ?? last.at) > sentAt;
+}
+function nativeCommentActions(controller, thread, state) {
+  if (!controller.agentAvailable() || state.busy[thread.id] || !nativeCommentCanAdd(thread)) return [];
+  const presentation = nativeCommentPresentation(thread);
+  const retry = ["failed", "needs_attention"].includes(presentation?.status);
+  return [{
+    label: retry ? "Retry add to chat" : presentation?.status === "prepared" ? "Add again to chat" : "Add to chat",
+    icon: "ArrowUp",
+    onSelect: () => controller.act(thread.id, () => controller.request("/" + encodeURIComponent(thread.id) + "/send", "POST"))
+  }];
+}
+function replaceRequired(source, pattern, replacement, count, label) {
+  let changed = 0;
+  const result = source.replace(pattern, (...args) => {
+    changed++;
+    return typeof replacement === "function" ? replacement(...args) : replacement;
+  });
+  if (changed !== count) throw new Error(`The canonical ${label} anchor changed; native comment adaptation was refused.`);
+  return result;
+}
+function addActions(text, component) {
+  const [, , controller, state, thread] = component.match;
+  return replaceRequired(
+    text,
+    /items:([\w$]+)(?=\})/g,
+    (_, items) => `items:${native2}?[...${items},...__codexNativeCommentActions(${controller},${thread},${state})]:${items}`,
+    1,
+    "comment action menu"
+  );
+}
+function addPresentation(text, component) {
+  return text.replace(component.match[0], component.match[0] + `const __codexComment=${native2}?__codexNativeCommentPresentation(${component.match[4]}):null;`);
+}
+function adaptCommentDrafts(source) {
+  if (source.includes(marker2)) return source;
+  const row = readCommentComponent(source, rowPattern);
+  const thread = readCommentComponent(source, threadPattern);
+  const composer = readCommentComponent(source, composerPattern);
+  if (!row && !thread && !composer) {
+    if (/agentAvailable\(\)\{return this\.state\.status===/.test(source)) {
+      throw new Error("The canonical comment components changed; native comment adaptation was refused.");
+    }
+    return source;
+  }
+  if (!row || !thread || !composer) throw new Error("The canonical comment components are incomplete; native comment adaptation was refused.");
+  const label = /label:([\w$]+),checked:/.exec(thread.text)?.[1];
+  if (!label || !new RegExp(`\\b${escape4(label)}="Send to agent"`).test(source)) {
+    throw new Error("The canonical send-to-agent label changed; native comment adaptation was refused.");
+  }
+  let rowText = addActions(addPresentation(row.text, row), row);
+  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native2}?"Add to chat":"Send to agent"`, 1, "comment edit label");
+  rowText = replaceRequired(
+    rowText,
+    /"aria-label":"Sent to agent"/g,
+    `"aria-label":${native2}?(__codexComment?.label??"Added to chat"):"Sent to agent"`,
+    1,
+    "comment sent indicator"
+  );
+  const jsx = /((?:[\w$]+\.jsx|\(0,[\w$]+\.jsx\)))\(/.exec(row.text)?.[1];
+  if (!jsx) throw new Error("The canonical comment JSX runtime changed; native comment adaptation was refused.");
+  rowText = replaceRequired(
+    rowText,
+    /,([\w$]+)>0&&!([\w$]+)&&!([\w$]+)&&/g,
+    (_, replies, editing, deleting) => `,${native2}&&__codexComment&&${jsx}("span",{role:"status","data-codex-comment-status":__codexComment.status,className:"text-caption text-muted",children:__codexComment.label+(__codexComment.message?": "+__codexComment.message:"")}),${replies}>0&&!${editing}&&!${deleting}&&`,
+    1,
+    "comment list status"
+  );
+  let threadText = addActions(addPresentation(thread.text, thread), thread);
+  const labels = new RegExp(`label:${escape4(label)},checked:`, "g");
+  threadText = replaceRequired(threadText, labels, `label:${native2}?"Add to chat":${label},checked:`, 2, "comment reply/edit labels");
+  const pending = /([\w$]+)=([\w$]+)==="pending"\?"queued":\2==="delivered"\?"working":void 0/.exec(threadText);
+  if (!pending) throw new Error("The canonical comment delivery state changed; native comment adaptation was refused.");
+  const activity = pending[1];
+  threadText = threadText.replace(pending[0], `${activity}=${native2}?(__codexComment?.activity?__codexComment:void 0):(${pending[0].slice(activity.length + 1)})`);
+  threadText = replaceRequired(
+    threadText,
+    new RegExp(`working:${escape4(activity)},footnote:(${escape4(activity)}==="queued"\\?"Waiting for the agent":"Working(?:…|\\\\u2026)")`, "g"),
+    (_, footnote) => `working:${native2}?__codexComment.working:${activity},footnote:${native2}?__codexComment.label+(__codexComment.message?": "+__codexComment.message:""):${footnote}`,
+    1,
+    "comment activity label"
+  );
+  const composerText = replaceRequired(composer.text, labels, `label:${native2}?"Add to chat":${label},checked:`, 1, "new comment label");
+  for (const part of [{ ...row, replacement: rowText }, { ...thread, replacement: threadText }, { ...composer, replacement: composerText }].sort((a, b) => b.start - a.start)) {
+    source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
+  }
+  source = replaceRequired(
+    source,
+    /agentAvailable\(\)\{return /g,
+    `agentAvailable(){if(${native2}?.canDraftComments===false)return false;return `,
+    1,
+    "native draft capability"
+  );
+  const helpers = [nativeCommentPresentation, nativeCommentCanAdd, nativeCommentActions].map((fn) => fn.toString().replace(/\bnativeCommentPresentation\b/g, "__codexNativeCommentPresentation").replace(/\bnativeCommentCanAdd\b/g, "__codexNativeCommentCanAdd").replace(/\bnativeCommentActions\b/g, "__codexNativeCommentActions")).join("\n");
+  return marker2 + "\n" + helpers + "\n" + source;
+}
+
 // source/server/editor-document.mjs
 var error = (code, message) => Object.assign(new Error(message), { code });
 var scriptText = (value) => value.replace(/<\/script/gi, "<\\/script");
@@ -1875,6 +2748,7 @@ async function replaceAsync2(source, expression, transform) {
 function adaptInlineEditorScript(source, scriptUrl) {
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
+  source = adaptCommentDrafts(source);
   source = source.replace(/\bwindow\.parent===window\b/g, "(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)");
   source = source.replace(
     /function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
@@ -1999,7 +2873,7 @@ ${scriptText(body)}
 <script>${scriptText(bootstrap)}</script>`);
   const outputBytes = Buffer.byteLength(html);
   if (outputBytes > maxBytes) throw error("EDITOR_DOCUMENT_TOO_LARGE", "The assembled native editor exceeds its content limit.");
-  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash4("sha256").update(html).digest("hex"), virtualBase: virtual.href };
+  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash7("sha256").update(html).digest("hex"), virtualBase: virtual.href };
 }
 
 // source/scripts/editor-native-transport.js
@@ -2077,17 +2951,21 @@ function installNativeEditorTransport(configuration, target) {
   const assetIds = /* @__PURE__ */ new Set();
   let assetBytes = 0;
   if (target.crypto && typeof target.crypto.randomUUID !== "function" && typeof target.crypto.getRandomValues === "function") {
-    const randomUUID6 = () => {
+    const randomUUID8 = () => {
       const bytes = target.crypto.getRandomValues(new Uint8Array(16));
       bytes[6] = bytes[6] & 15 | 64;
       bytes[8] = bytes[8] & 63 | 128;
       return Array.from(bytes, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
     };
-    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID6, configurable: true });
+    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID8, configurable: true });
   }
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
-  target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId };
+  target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = {
+    baseUrl: base.href,
+    artifactId: configuration.artifactId,
+    canDraftComments: configuration.canDraftComments !== false
+  };
   target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || "system", systemLocale: configuration.locale };
   const bytesToBase64 = (bytes) => {
     let value = "";
@@ -2100,11 +2978,11 @@ function installNativeEditorTransport(configuration, target) {
       reject(signal.reason || new DOMException("Aborted", "AbortError"));
       return;
     }
-    const requestId = String(++sequence);
+    const requestId2 = String(++sequence);
     const cleanup = () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
-      pending.delete(requestId);
+      pending.delete(requestId2);
     };
     const abort = () => {
       cleanup();
@@ -2114,7 +2992,7 @@ function installNativeEditorTransport(configuration, target) {
       cleanup();
       reject(Object.assign(new Error("The artwork editor connection timed out."), { code: "EDITOR_TRANSPORT_TIMEOUT" }));
     }, 45e3);
-    pending.set(requestId, { resolve: (value) => {
+    pending.set(requestId2, { resolve: (value) => {
       cleanup();
       resolve(value);
     }, reject: (error3) => {
@@ -2122,7 +3000,7 @@ function installNativeEditorTransport(configuration, target) {
       reject(error3);
     } });
     signal?.addEventListener("abort", abort, { once: true });
-    target.parent.postMessage({ type: "codex-design:editor-request", channel, requestId, action, payload }, "*");
+    target.parent.postMessage({ type: "codex-design:editor-request", channel, requestId: requestId2, action, payload }, "*");
   });
   if (target.crypto && !target.crypto.subtle) {
     Object.defineProperty(target.crypto, "subtle", { configurable: true, value: {
@@ -2269,15 +3147,15 @@ function installNativeEditorTransport(configuration, target) {
   };
   target.fetch = async (input, init) => {
     const url = typeof input === "string" || input instanceof URL ? new URL(String(input), base).href : input.url;
-    const path12 = relative(url);
-    if (path12 === null) return originalFetch(input, init);
+    const path13 = relative(url);
+    if (path13 === null) return originalFetch(input, init);
     const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
     const headers = {};
     for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
     let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
-    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path12.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
+    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path13.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
     const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
-    const responseTask = rpc("editor.request", { request: { path: path12, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
+    const responseTask = rpc("editor.request", { request: { path: path13, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
     const writing = !["GET", "HEAD"].includes(request.method);
     if (writing) pendingWrites.add(responseTask);
     let response;
@@ -2399,7 +3277,7 @@ function installNativeEditorTransport(configuration, target) {
         for (const vendor of configuration.previewVendors || []) {
           const relative2 = "artifact-type/vendor/" + vendor.file;
           const url = new URL(relative2, base);
-          for (const path12 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path12).join(vendor.url);
+          for (const path13 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path13).join(vendor.url);
         }
         const runtime = "<script data-codex-native-preview-transport>(" + installPreviewTransport.toString() + ")();</script>";
         srcdoc.set.call(this, /<head\b[^>]*>/i.test(preview) ? preview.replace(/<head\b[^>]*>/i, (head) => head + runtime) : runtime + preview);
@@ -2519,17 +3397,17 @@ init_worker_client();
 // source/server/editor-lifecycle.mjs
 init_bridge_core();
 import { spawn } from "node:child_process";
-import fs5 from "node:fs";
-import path8 from "node:path";
+import fs6 from "node:fs";
+import path9 from "node:path";
 var failure = (code, message) => Object.assign(new Error(message), { code });
 async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 15e3 } = {}) {
-  const stateFile = path8.join(record.path, ".artifact-server.json");
-  if (!fs5.existsSync(stateFile)) return { stopped: false };
+  const stateFile = path9.join(record.path, ".artifact-server.json");
+  if (!fs6.existsSync(stateFile)) return { stopped: false };
   const state = readJson(stateFile);
   if (!state || state.kind !== record.kind || !samePath(state.root, record.path)) {
     throw failure("EDITOR_IDENTITY_UNVERIFIED", "The selected artwork editor record is invalid. Its process and files were preserved.");
   }
-  const cli = path8.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
+  const cli = path9.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, "stop", record.path], {
       cwd: pluginRoot,
@@ -2580,7 +3458,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.4.3";
+var PLUGIN_UI_VERSION = "0.5.0";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
@@ -2593,6 +3471,7 @@ var ACTIONS = Object.freeze([
   "library.duplicate",
   "library.trash",
   "library.restore",
+  "library.purge",
   "library.snapshot",
   "library.listSnapshots",
   "library.restoreSnapshot",
@@ -2609,7 +3488,9 @@ var ACTIONS = Object.freeze([
   "editor.digest",
   "editor.events.open",
   "editor.events.poll",
-  "editor.events.close"
+  "editor.events.close",
+  "request.draftAdded",
+  "request.draftFailed"
 ]);
 var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 var referenceUri = (id) => `codex-design://artifacts/${encodeURIComponent(id)}/reference`;
@@ -2631,7 +3512,7 @@ function kindOf(value) {
   return value;
 }
 function relativeOf(value) {
-  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path9.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
+  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path10.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
   return value;
 }
 var capabilityState = () => ({
@@ -2642,10 +3523,10 @@ var capabilityState = () => ({
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
 async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
-  const current = readJson(path9.join(record.path, ".artifact-server.json"));
+  const current = readJson(path10.join(record.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record.path, record.kind);
-    const binding = readJson(path9.join(record.path, ".codex-design-bridge.json"));
+    const binding = readJson(path10.join(record.path, ".codex-design-bridge.json"));
     return {
       url: current.url,
       artifactId: record.id,
@@ -2656,7 +3537,7 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     };
   }
   const skill = `codex-${record.kind}`;
-  const cli = path9.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
+  const cli = path10.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [cli, "open-service", record.path, "--delivery", "native"], {
       cwd: record.path,
@@ -2736,6 +3617,24 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
     return await opening.get(record.id);
   };
   const transport = createEditorTransport({ editorFor });
+  const requests = createEditRequestStore({ store });
+  const nativeComments = createNativeComments({ requests, transport, editorFor });
+  const modelRequest = async (requestId2) => {
+    const value = await requests.requestForModel(idOf(requestId2));
+    if (value.status === "superseded") return value;
+    const comments = await readJson2(value.artifactRoot, "comments.json", { version: 1, threads: [] });
+    const projected = await requests.project(value.artifactId, { threads: comments.threads });
+    const reported = projected.threads.find((thread) => thread.agent?.nativeRequest?.requestId === value.id)?.agent.nativeRequest;
+    const cli = path10.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
+    return {
+      ...value,
+      ...reported ? { status: reported.status, phase: reported.phase } : {},
+      skillFile: path10.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
+      dispatchCommand: { executable: process.execPath, args: [cli, "request-dispatch", value.artifactRoot, value.id] },
+      workerStatus: { executable: process.execPath, args: [cli, "worker-status", value.artifactRoot] },
+      executionPolicy: "Dispatch only requests attached to the user message you actually received. Run the dispatch command in your own native parent environment. Inspect the real native worker before choosing reuse, resume or a new child; only the registered native child runs worker-register/worker-next/worker-complete. Never invent thread IDs, start an independent model process, or replay legacy unconfirmed jobs."
+    };
+  };
   const reference = async (id) => {
     await initialize();
     const artifact = await requireRecord(id);
@@ -2765,6 +3664,20 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
       return { items: (await store.list({ query: String(query).slice(0, 200) })).filter((record) => !record.deletedAt && record.contentStatus === "ok").slice(0, 50).map(resourceLink) };
     },
     reference,
+    readEditRequest: modelRequest,
+    async operateEditRequests(action, ids) {
+      if (!["read", "accept"].includes(action) || !Array.isArray(ids) || ids.length < 1 || ids.length > 25) throw failure2("INVALID_ARGUMENTS", "Read or accept between 1 and 25 immutable request IDs.");
+      const results = [], errors = [];
+      for (const id of [...new Set(ids.map(idOf))]) {
+        try {
+          if (action === "accept") await requests.accept(id);
+          results.push(await modelRequest(id));
+        } catch (error3) {
+          errors.push({ requestId: id, code: error3.code || "REQUEST_FAILED", message: String(error3.message).slice(0, 2e3) });
+        }
+      }
+      return { requests: results, errors };
+    },
     async readReferenceFile(id, relative, encoding = "utf8") {
       await initialize();
       await requireRecord(id);
@@ -2808,6 +3721,10 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
         }
         case "library.restore":
           return await store.restore(idOf(payload.id));
+        case "library.purge": {
+          if (!Array.isArray(payload.ids) || payload.ids.length < 1 || payload.ids.length > 200) throw failure2("INVALID_ARGUMENTS", "Choose between 1 and 200 trashed artworks.");
+          return await store.purge(payload.ids.map(idOf));
+        }
         case "library.snapshot":
           return await store.snapshot(idOf(payload.id), payload.label === void 0 ? {} : { label: titleOf(payload.label) });
         case "library.listSnapshots":
@@ -2835,20 +3752,31 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
           return await store.reorderTabs(payload.ids.map((id) => id === "library" ? "library" : idOf(id)));
         case "editor.open":
           return await editorFor(payload.id);
+        case "request.draftAdded":
+          return await requests.markDraftAdded(idOf(payload.requestId));
+        case "request.draftFailed":
+          return await requests.markDraftFailed(idOf(payload.requestId), payload.error);
         case "editor.document": {
           const id = idOf(payload.id);
           if (typeof payload.channel !== "string" || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure2("INVALID_EDITOR_REQUEST", "A unique editor channel is required.");
           const language = "en";
           const editor = await editorFor(id);
           const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
-          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };
+          const configuration = {
+            artifactId: id,
+            channel: payload.channel,
+            baseUrl: virtualBase,
+            language,
+            hostDepth: 2,
+            canDraftComments: payload.canDraftComments === true
+          };
           if (editor.kind === "design-system") {
             configuration.previewVendors = await Promise.all([
               ["react.production.min.js", "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"],
               ["react-dom.production.min.js", "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"]
             ].map(async ([file, expected]) => {
-              const bytes = await readFile(path9.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
-              if (bytes.length > 256 * 1024 || createHash5("sha256").update(bytes).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
+              const bytes = await readFile(path10.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
+              if (bytes.length > 256 * 1024 || createHash8("sha256").update(bytes).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
               return { file, url: "data:text/javascript;base64," + bytes.toString("base64") };
             }));
           }
@@ -2860,10 +3788,10 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
             const relative = url.pathname.slice(root.pathname.length);
             editorRequestUrl(root.href, relative + url.search);
             let asset;
-            if (!relative) asset = path9.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
-            else if (relative === "__codex/annotations.js") asset = path9.join(pluginRoot, "scripts/browser-annotations.js");
+            if (!relative) asset = path10.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
+            else if (relative === "__codex/annotations.js") asset = path10.join(pluginRoot, "scripts/browser-annotations.js");
             else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
-              asset = path9.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
+              asset = path10.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
             } else throw failure2("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
             const bytes = await readFile(asset);
             return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
@@ -2872,20 +3800,20 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
           return { ...editor, ...document2, artifactId: id, channel: payload.channel, transport: "mcp" };
         }
         case "editor.request":
-          return await transport.request(idOf(payload.id), payload.request);
+          return await nativeComments.request(idOf(payload.id), payload.request);
         case "editor.digest": {
           await requireRecord(payload.id);
           if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase64(payload.base64)) throw failure2("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");
           const bytes = Buffer.from(payload.base64, "base64");
           if (bytes.length > 32 * 1024 * 1024) throw failure2("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
-          return { base64: createHash5("sha256").update(bytes).digest("base64") };
+          return { base64: createHash8("sha256").update(bytes).digest("base64") };
         }
         case "editor.events.open":
-          return await transport.openEvents(idOf(payload.id), payload.path);
+          return await nativeComments.openEvents(idOf(payload.id), payload.path);
         case "editor.events.poll":
-          return await transport.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
+          return await nativeComments.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);
         case "editor.events.close":
-          return await transport.closeEvents(idOf(payload.id), payload.subscriptionId);
+          return await nativeComments.closeEvents(idOf(payload.id), payload.subscriptionId);
         case "conversation.get": {
           const record = await requireRecord(payload.id);
           return {
@@ -2921,7 +3849,7 @@ var alive2 = (pid) => {
   }
 };
 var detail = (cause) => ({ code: cause.code || "PREVIEW_ERROR", message: String(cause.message || cause).slice(0, 2e3) });
-var samePath2 = (a, b) => process.platform === "win32" ? path10.resolve(a).toLowerCase() === path10.resolve(b).toLowerCase() : path10.resolve(a) === path10.resolve(b);
+var samePath2 = (a, b) => process.platform === "win32" ? path11.resolve(a).toLowerCase() === path11.resolve(b).toLowerCase() : path11.resolve(a) === path11.resolve(b);
 async function previewNativeActivity(record) {
   try {
     const status = await getWorkerStatus(record.path);
@@ -2942,7 +3870,7 @@ function verifiedState(state, root) {
   return url;
 }
 async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutMs = 2e3 } = {}) {
-  root = path10.resolve(root);
+  root = path11.resolve(root);
   if (!await statOrNull(root)) return { running: false, root };
   const state = await readJson2(root, PREVIEW_STATE, null);
   if (!state) return { running: false, root };
@@ -3012,10 +3940,10 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
   store ||= createLibraryStore({ ...root === void 0 ? {} : { root }, isBusy: previewNativeActivity });
   await store.initialize();
   root = store.root;
-  pluginRoot = path10.resolve(pluginRoot);
+  pluginRoot = path11.resolve(pluginRoot);
   service ||= createDesignService({ store, pluginRoot });
-  if (html === void 0) html = await fs6.readFile(path10.join(pluginRoot, "ui", "index.html"), "utf8");
-  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID5(), nonce = randomBytes(18).toString("base64");
+  if (html === void 0) html = await fs7.readFile(path11.join(pluginRoot, "ui", "index.html"), "utf8");
+  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID7(), nonce = randomBytes(18).toString("base64");
   const prefix = `/${token}/`, subscribers = /* @__PURE__ */ new Set(), timers = /* @__PURE__ */ new Map();
   let origin, servedHtml, state, closed = false;
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; connect-src 'self'; frame-src 'self' http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'self'`;
@@ -3044,7 +3972,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("
     });
     await locked(root, async () => {
       const recorded = await readJson2(root, PREVIEW_STATE, null);
-      if (recorded?.instanceId === instanceId) await fs6.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
+      if (recorded?.instanceId === instanceId) await fs7.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
     });
   };
   server = http.createServer({ maxHeaderSize: 8192 }, async (request, response) => {
@@ -3150,7 +4078,7 @@ function parse(argv) {
     if (!match) throw new Error("Use --root, --plugin-root, or --port.");
     const value = match[2] ?? arguments_[++i];
     if (!value || value.startsWith("--")) throw new Error("Missing option value.");
-    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path11.resolve(value);
+    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path12.resolve(value);
   }
   return { command, options };
 }
@@ -3188,11 +4116,11 @@ async function main(argv = process.argv.slice(2)) {
     const store = createLibraryStore({ root });
     await store.initialize();
     const log = await safePath(root, "_state/library-preview.log", { mustExist: false });
-    const fd = fs7.openSync(log, "a");
+    const fd = fs8.openSync(log, "a");
     const entrypoint = fileURLToPath3(import.meta.url), childArgs = [entrypoint, "serve", "--root", root, "--plugin-root", options.pluginRoot || fileURLToPath3(new URL("../", import.meta.url)), ...options.port === void 0 ? [] : ["--port", String(options.port)]];
     const child = spawn3(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
     child.unref();
-    fs7.closeSync(fd);
+    fs8.closeSync(fd);
     let childError;
     child.once("error", (cause) => {
       childError = cause;
@@ -3211,7 +4139,7 @@ async function main(argv = process.argv.slice(2)) {
   }
   console.log("Usage: node scripts/library-preview.mjs open|serve|status|stop [--root <library>] [--plugin-root <built-plugin>] [--port <number>]");
 }
-if (process.argv[1] && pathToFileURL(path11.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
+if (process.argv[1] && pathToFileURL(path12.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
   console.error(JSON.stringify({ error: cause.code || "LIBRARY_PREVIEW_ERROR", message: cause.message }));
   process.exitCode = 1;
 });

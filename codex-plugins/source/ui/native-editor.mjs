@@ -1,4 +1,45 @@
 const ALLOWED = new Set(['editor.request', 'editor.digest', 'editor.events.open', 'editor.events.poll', 'editor.events.close', 'editor.download']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REQUEST_LIMIT = 128;
+const errorDetail = error => ({ code: error?.code || 'EDITOR_REQUEST_FAILED', message: String(error?.message || error).slice(0, 2000) });
+
+// A failed draft append must not make the composer repeat a successful comment
+// mutation. Keep its saved identity and let the existing thread retry only Send.
+function savedCommentFailure(result, request, error) {
+  if (!Number.isInteger(result.status) || result.status < 200 || result.status >= 300 || typeof result.body !== 'string') return;
+  try {
+    const body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(result.body), character => character.charCodeAt(0))));
+    const thread = body?.thread;
+    if (!thread || typeof thread.id !== 'string' || !/^c_[A-Za-z0-9_-]{1,100}$/.test(thread.id)
+      || typeof request.requestId !== 'string' || !UUID.test(request.requestId)
+      || Object.hasOwn(request, 'savedCommentId') && request.savedCommentId !== thread.id) return;
+    const detail = errorDetail(error);
+    const message = (error?.nativeDraftAdded
+      ? 'Your comment was saved and added to the chat draft, but confirming the draft failed. Check the existing draft before adding it again. '
+      : 'Your comment was saved, but adding it to the chat draft failed. Use "Retry add to chat" on this comment. ') + detail.message;
+    body.thread = { ...thread, agent: { ...thread.agent, nativeRequest: { ...thread.agent?.nativeRequest,
+      requestId: request.requestId, status: 'needs_attention', message } } };
+    const bytes = new TextEncoder().encode(JSON.stringify(body));
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 16_384) binary += String.fromCharCode(...bytes.subarray(offset, offset + 16_384));
+    return { result: { ...result, body: btoa(binary) }, warning: { code: detail.code, message } };
+  } catch { /* Without a verified saved identity, preserve the transport error. */ }
+}
+
+function reuseRequest(cache, requestId, execute) {
+  const existing = cache.get(requestId);
+  if (existing) return existing.promise;
+  if (cache.size >= REQUEST_LIMIT) {
+    for (const [id, entry] of cache) {
+      if (entry.settled) { cache.delete(id); break; }
+    }
+  }
+  if (cache.size >= REQUEST_LIMIT) throw Object.assign(new Error('The artwork editor has too many pending requests.'), { code: 'EDITOR_REQUEST_BUSY' });
+  const entry = { settled: false };
+  entry.promise = Promise.resolve().then(execute).finally(() => { entry.settled = true; });
+  cache.set(requestId, entry);
+  return entry.promise;
+}
 
 function loadEditorDocument(channel) {
   let accepted = false;
@@ -32,6 +73,7 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
   if (typeof editorDocument?.html !== 'string' || !editorDocument.html.trim()) throw new TypeError('The editor document is missing.');
   const ownerWindow = iframe.ownerDocument?.defaultView || window;
   const subscriptions = new Set();
+  const requests = new Map(), drafts = new Map();
   let disposed = false;
   let appReady = false;
   let flush;
@@ -44,6 +86,52 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
   };
   const reply = (requestId, value) => {
     if (!disposed) iframe.contentWindow?.postMessage({ type: 'codex-design:editor-response', channel, requestId, ...value }, '*');
+  };
+  const draftComment = request => {
+    if (!request || request.artifactId !== artifactId || typeof request.requestId !== 'string' || !UUID.test(request.requestId)
+      || Object.hasOwn(request, 'attemptId') && (typeof request.attemptId !== 'string' || !UUID.test(request.attemptId))
+      || request.uri !== `codex-design://edit-requests/${request.requestId}`) {
+      throw Object.assign(new Error('The comment draft does not belong to this artwork.'), { code: 'INVALID_COMMENT_DRAFT' });
+    }
+    const draftKey = request.attemptId === undefined ? request.requestId : `${request.requestId}:${request.attemptId}`;
+    return reuseRequest(drafts, draftKey, async () => {
+      let appended = false;
+      try {
+        if (disposed) throw Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' });
+        if (typeof bridge.draftComment !== 'function') throw Object.assign(new Error('This host cannot add design comments to the active chat draft.'), { code: 'NATIVE_COMMENT_DRAFT_UNAVAILABLE' });
+        await bridge.draftComment(request);
+        appended = true;
+        await bridge.invoke('request.draftAdded', { requestId: request.requestId });
+      } catch (error) {
+        const failure = appended ? Object.assign(new Error('The chat draft was added, but confirming it failed. ' + errorDetail(error).message), {
+          code: error?.code || 'NATIVE_COMMENT_DRAFT_ACK_FAILED', nativeDraftAdded: true,
+        }) : error;
+        await bridge.invoke('request.draftFailed', { requestId: request.requestId, error: errorDetail(failure) }).catch(() => {});
+        // A new RPC may explicitly retry the same immutable request after an
+        // append failure. The original RPC still retains its error response.
+        if (!appended) drafts.delete(draftKey);
+        throw failure;
+      }
+    });
+  };
+  const execute = async message => {
+    let result;
+    try {
+      result = message.action === 'editor.download'
+        ? await bridge.downloadResource(message.payload)
+        : await bridge.invoke(message.action, { ...message.payload, id: artifactId });
+      if (message.action === 'editor.events.open' && result?.subscriptionId) {
+        if (disposed) { void bridge.invoke('editor.events.close', { id: artifactId, subscriptionId: result.subscriptionId }).catch(() => {}); return; }
+        subscriptions.add(result.subscriptionId);
+      }
+      if (message.action === 'editor.events.close') subscriptions.delete(message.payload.subscriptionId);
+      if (message.action === 'editor.request' && result?.nativeDraft) await draftComment(result.nativeDraft);
+      return { result };
+    } catch (error) {
+      const saved = message.action === 'editor.request' && result?.nativeDraft && savedCommentFailure(result, result.nativeDraft, error);
+      if (saved) { onError?.(saved.warning); return { result: saved.result }; }
+      return { error: errorDetail(error) };
+    }
   };
   const listener = async event => {
     const message = event.data;
@@ -62,18 +150,11 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     }
     if (message.type === 'codex-design:editor-diagnostic') { onError?.({ code: 'EDITOR_RUNTIME_ERROR', message: message.message }); return; }
     if (message.type !== 'codex-design:editor-request' || !ALLOWED.has(message.action)
-      || typeof message.requestId !== 'string' || message.requestId.length > 80 || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) return;
+      || typeof message.requestId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$/.test(message.requestId)
+      || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) return;
     try {
-      const result = message.action === 'editor.download'
-        ? await bridge.downloadResource(message.payload)
-        : await bridge.invoke(message.action, { ...message.payload, id: artifactId });
-      if (message.action === 'editor.events.open' && result?.subscriptionId) {
-        if (disposed) { void bridge.invoke('editor.events.close', { id: artifactId, subscriptionId: result.subscriptionId }).catch(() => {}); return; }
-        subscriptions.add(result.subscriptionId);
-      }
-      if (message.action === 'editor.events.close') subscriptions.delete(message.payload.subscriptionId);
-      reply(message.requestId, { result });
-    } catch (error) { reply(message.requestId, { error: { code: error.code || 'EDITOR_REQUEST_FAILED', message: String(error.message || error).slice(0, 2000) } }); }
+      reply(message.requestId, await reuseRequest(requests, message.requestId, () => execute(message)));
+    } catch (error) { reply(message.requestId, { error: errorDetail(error) }); }
   };
   let url;
   ownerWindow.addEventListener('message', listener);
@@ -123,6 +204,7 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
       if (flush) { clearTimeout(flush.timer); flush.reject(Object.assign(new Error('The editor closed before saving was confirmed.'), { code: 'EDITOR_UNSAVED_CHANGES' })); flush = undefined; }
       for (const subscriptionId of subscriptions) void bridge.invoke('editor.events.close', { id: artifactId, subscriptionId }).catch(() => {});
       subscriptions.clear();
+      requests.clear(); drafts.clear();
     },
   };
 }

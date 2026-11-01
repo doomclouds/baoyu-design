@@ -4,6 +4,8 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { LibraryError, KINDS, UUID, artifactId, artifactKind, titleText, relativePath, within, statOrNull, safePath, readJson, atomicJson, readBytes, locked } from './safety.mjs';
 import { INDEX_FILES, DEFAULT_LIMITS, contentPath, contentType, collectContent, validateFiles, writeContent, blankContent } from './content.mjs';
+import { alive } from '../scripts/bridge-core.mjs';
+import { WORKER_FILE, WORKER_JOBS_FILE } from '../scripts/worker-core.mjs';
 
 export { LibraryError, KINDS };
 export const BUNDLE_FORMAT = 'codex-design-artifact';
@@ -21,6 +23,35 @@ const metadata = value => {
   ...(typeof value.deletedAt === 'string' ? { deletedAt: value.deletedAt } : {}),
   };
 };
+
+/** A moved trash registry may retain its exact former active root. */
+export async function nativeTrashActivity(record) {
+  const busy = reason => ({ busy: true, reason });
+  try {
+    const id = artifactId(record.id), kind = artifactKind(record.kind), root = path.resolve(record.path);
+    const libraryRoot = path.dirname(path.dirname(root));
+    const expected = path.join(libraryRoot, '_trash', id);
+    const same = (a, b) => typeof a === 'string' && (process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
+    if (!same(root, expected)) return busy('The trash task location cannot be verified.');
+    const target = await safePath(libraryRoot, `_trash/${id}`, { mustExist: false });
+    if (!await statOrNull(target)) {
+      const progress = await readJson(libraryRoot, `_state/purge-progress/${id}.json`, null);
+      const active = await safePath(libraryRoot, `${kind}/${id}`, { mustExist: false });
+      return progress?.version === 1 && progress.artifactId === id && progress.kind === kind && !await statOrNull(active)
+        ? false : busy('The missing trash task location cannot be verified.');
+    }
+    await safePath(libraryRoot, `_trash/${id}`, { type: 'directory' });
+    const registry = await readJson(root, WORKER_FILE, null);
+    const state = await readJson(root, WORKER_JOBS_FILE, { version: 1, jobs: {}, order: [] });
+    if (registry && (registry.version !== 1 || registry.url || registry.token || !UUID.test(registry.nativeThreadId ?? '')
+      || !same(registry.root, root) && !same(registry.root, path.join(libraryRoot, kind, id)) || !['waiting', 'paused', 'active'].includes(registry.status))) return busy('The native owner is unknown; permanent deletion was refused.');
+    if (!state || state.version !== 1 || !state.jobs || typeof state.jobs !== 'object' || Array.isArray(state.jobs) || !Array.isArray(state.order)
+      || Object.values(state.jobs).some(job => !job || !['pending', 'active', 'completed', 'failed', 'superseded'].includes(job.status))) return busy('The native job journal cannot be verified; permanent deletion was refused.');
+    if (Object.values(state.jobs).some(job => job.status === 'active') || registry?.activeJobId || registry?.status === 'active'
+      || registry?.listener && (!Number.isFinite(registry.listener.expiresAt) || !Number.isInteger(registry.listener.pid) || registry.listener.expiresAt > Date.now() && alive(registry.listener.pid))) return busy('An unfinished native job or listener still owns this artwork. Its parent must coordinate it before permanent deletion.');
+    return false;
+  } catch { return busy('The native task state cannot be verified; permanent deletion was refused.'); }
+}
 
 /** User data lives here independently of CODEX_HOME, plugin caches, projects, or chats. */
 export class LibraryStore {
@@ -251,6 +282,124 @@ export class LibraryStore {
       if (await statOrNull(destination)) throw new LibraryError('ID_CONFLICT', 'An active directory already occupies this identity.');
       await fs.rename(source, destination); const { deletedAt, ...old } = record; const next = metadata({ ...old, updatedAt: at() }); await atomicJson(destination, 'artifact.json', next);
       catalog.artifacts[record.id] = { ...next, location: 'active' }; await this._saveCatalog(catalog); return this._inspect(catalog.artifacts[record.id]);
+    });
+  }
+  async _purgeTree(relative, { inspectOnly = true } = {}) {
+    // Every recursive deletion is confined to one explicit artifact identity.
+    if (!/^(?:_trash|_state\/snapshots)\/[0-9a-f-]{36}$/.test(relative) || !UUID.test(relative.split('/').at(-1))) throw new LibraryError('INVALID_PATH', 'Permanent deletion requires an exact trash or snapshot identity.');
+    if (await fs.realpath(this.root) !== this.realRoot || (await fs.lstat(this.root)).isSymbolicLink()) throw new LibraryError('ROOT_CHANGED', 'The library root changed before permanent deletion.');
+    const absolute = await safePath(this.root, relative, { mustExist: false });
+    const expected = path.resolve(this.root, ...relative.split('/'));
+    within(this.root, absolute);
+    if (path.resolve(absolute) !== expected) throw new LibraryError('INVALID_PATH', 'The permanent deletion target changed.');
+    if (!await statOrNull(absolute)) return false;
+    const walk = async child => {
+      const target = await safePath(this.root, child);
+      const info = await fs.lstat(target);
+      if (info.isSymbolicLink() || !info.isDirectory() && !info.isFile()) throw new LibraryError('SYMLINK_REFUSED', 'Permanent deletion refuses links and special files.');
+      if (info.isDirectory()) for (const entry of await fs.readdir(target)) await walk(`${child}/${entry}`);
+    };
+    await safePath(this.root, relative, { type: 'directory' }); await walk(relative);
+    if (!inspectOnly) {
+      // Recheck the absolute target immediately before the recursive operation.
+      const checked = await safePath(this.root, relative, { type: 'directory' });
+      if (path.resolve(checked) !== expected || await fs.realpath(this.root) !== this.realRoot) throw new LibraryError('ROOT_CHANGED', 'The permanent deletion target changed.');
+      await fs.rm(checked, { recursive: true, force: false });
+    }
+    return true;
+  }
+  async _purgeNativeIdle(record, root) {
+    const inspected = record.title ? await this._inspect(record) : { ...record, path: root, deleted: true, contentStatus: 'missing' };
+    const native = await nativeTrashActivity({ ...inspected, path: root });
+    if (native?.busy) throw new LibraryError('ARTIFACT_BUSY', native.reason);
+    const external = await this.isBusy(inspected);
+    if (external === true || external?.busy) throw new LibraryError('ARTIFACT_BUSY', external?.reason || 'An external artwork task still owns this trash item.');
+  }
+  async purge(ids) {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 200) throw new LibraryError('INVALID_ARGUMENTS', 'Choose between 1 and 200 trash artifact ids.');
+    ids = [...new Set(ids.map(artifactId))]; await this._checkRoot();
+    return locked(this.root, async () => {
+      const catalog = await this._catalog(), bindings = await this._bindings();
+      const legacy = await readJson(this.root, '_state/legacy-imports.json', null);
+      if (legacy && (legacy.version !== 1 || !legacy.sources || typeof legacy.sources !== 'object' || Array.isArray(legacy.sources))) throw new LibraryError('INVALID_STATE', 'The legacy registration state is invalid.');
+      const requestFiles = new Map(ids.map(id => [id, []]));
+      const requests = await safePath(this.root, '_state/edit-requests', { mustExist: false });
+      if (await statOrNull(requests)) {
+        await safePath(this.root, '_state/edit-requests', { type: 'directory' });
+        for (const name of await fs.readdir(requests)) if (/^[0-9a-f-]{36}\.json$/i.test(name)) {
+          const relative = `_state/edit-requests/${name}`;
+          let request;
+          try { request = JSON.parse((await readBytes(this.root, relative, 512 * 1024)).toString('utf8')); }
+          catch (error) { if (error instanceof LibraryError) throw error; throw new LibraryError('INVALID_STATE', 'An edit request record is malformed.'); }
+          if (request.version !== 1 || !UUID.test(request.id ?? '') || request.id.toLowerCase() !== name.slice(0, -5).toLowerCase() || !UUID.test(request.artifactId ?? '')) throw new LibraryError('INVALID_STATE', 'An edit request identity is invalid.');
+          requestFiles.get(request.artifactId.toLowerCase())?.push(relative);
+        }
+      }
+      const plans = [];
+      // Complete the whole batch preflight before writing progress or removing
+      // any artwork. A restored, busy or unsafe selection preserves all items.
+      for (const id of ids) {
+        const progressPath = `_state/purge-progress/${id}.json`;
+        const progress = await readJson(this.root, progressPath, null);
+        if (progress && (progress.version !== 1 || progress.artifactId !== id || !KINDS.includes(progress.kind))) throw new LibraryError('INVALID_STATE', 'A permanent deletion receipt is invalid.');
+        const record = catalog.artifacts[id] || (progress ? { id, kind: progress.kind, location: 'trash' } : null);
+        if (!record) throw new LibraryError('NOT_FOUND', 'No such trash artifact.');
+        if (record.location !== 'trash') throw new LibraryError('NOT_IN_TRASH', 'Only artifacts currently in the trash can be permanently deleted.');
+        if (progress && progress.kind !== record.kind) throw new LibraryError('INVALID_STATE', 'A permanent deletion receipt has a different artifact kind.');
+        const active = await safePath(this.root, `${record.kind}/${id}`, { mustExist: false });
+        if (await statOrNull(active)) throw new LibraryError('NOT_IN_TRASH', 'An active artifact occupies this identity; permanent deletion was refused.');
+        const present = await this._purgeTree(`_trash/${id}`);
+        if (!present && !progress) throw new LibraryError('NOT_FOUND', 'The selected trash directory is missing.');
+        if (present) {
+          const root = await safePath(this.root, `_trash/${id}`, { type: 'directory' });
+          const manifestFile = await safePath(root, 'artifact.json', { mustExist: false });
+          if (await statOrNull(manifestFile)) {
+            const manifest = metadata(await readJson(root, 'artifact.json'));
+            if (manifest.id !== id || manifest.kind !== record.kind || !manifest.deletedAt) throw new LibraryError('NOT_IN_TRASH', 'The trash directory does not contain this deleted artwork identity.');
+          } else if (!progress) throw new LibraryError('NOT_FOUND', 'The selected trash manifest is missing.');
+        }
+        await this._purgeNativeIdle(record, await safePath(this.root, `_trash/${id}`, { mustExist: false }));
+        await this._purgeTree(`_state/snapshots/${id}`);
+        const snapshots = await safePath(this.root, `_state/snapshots/${id}`, { mustExist: false });
+        if (await statOrNull(snapshots)) for (const name of await fs.readdir(snapshots)) if (/^[0-9a-f-]{36}\.json$/i.test(name)) {
+          const saved = await readJson(this.root, `_state/snapshots/${id}/${name}`);
+          if (saved.artifactId !== id || saved.id !== name.slice(0, -5)) throw new LibraryError('INVALID_STATE', 'A recovery point belongs to a different artifact identity.');
+        }
+        plans.push({ id, record, progressPath, progress, requestFiles: requestFiles.get(id) });
+      }
+      const deleted = [], failed = [];
+      for (const plan of plans) {
+        const { id } = plan, removed = []; let stage = 'prepare';
+        try {
+          if (catalog.artifacts[id] && catalog.artifacts[id].location !== 'trash') throw new LibraryError('NOT_IN_TRASH', 'The selected artwork is no longer in the trash.');
+          await atomicJson(this.root, plan.progressPath, plan.progress || { version: 1, artifactId: id, kind: plan.record.kind, startedAt: at() });
+          const trashRoot = await safePath(this.root, `_trash/${id}`, { mustExist: false });
+          await this._purgeNativeIdle(plan.record, trashRoot);
+          stage = 'artwork';
+          if (await this._purgeTree(`_trash/${id}`, { inspectOnly: false })) removed.push('artwork');
+          stage = 'snapshots';
+          if (await this._purgeTree(`_state/snapshots/${id}`, { inspectOnly: false })) removed.push('snapshots');
+          stage = 'requests';
+          for (const relative of plan.requestFiles) {
+            const file = await safePath(this.root, relative, { mustExist: false });
+            if (await statOrNull(file)) await fs.unlink(await safePath(this.root, relative, { type: 'file' }));
+          }
+          if (plan.requestFiles.length) removed.push('requests');
+          stage = 'metadata';
+          const nextBindings = structuredClone(bindings); delete nextBindings.artifacts[id]; await atomicJson(this.root, bindingsFile, nextBindings); delete bindings.artifacts[id];
+          if (legacy) { const nextLegacy = structuredClone(legacy); for (const [key, value] of Object.entries(nextLegacy.sources)) if (value === id) delete nextLegacy.sources[key]; await atomicJson(this.root, '_state/legacy-imports.json', nextLegacy); legacy.sources = nextLegacy.sources; }
+          const nextCatalog = structuredClone(catalog); delete nextCatalog.artifacts[id];
+          await atomicJson(this.root, viewFile, await this._view(nextCatalog));
+          await this._saveCatalog(nextCatalog); delete catalog.artifacts[id]; removed.push('metadata');
+          stage = 'receipt';
+          await fs.unlink(await safePath(this.root, plan.progressPath, { type: 'file' }));
+          deleted.push(id);
+        } catch (error) {
+          const message = (stage === 'prepare' ? '' : 'Permanent deletion was incomplete; some local data may already be removed. ') + String(error.message || error);
+          failed.push({ id, error: { code: error.code || 'PURGE_FAILED', message: message.slice(0, 1000) }, removed, stage });
+        }
+      }
+      return { deleted, failed };
     });
   }
   async snapshot(id, { label = 'Snapshot' } = {}) {

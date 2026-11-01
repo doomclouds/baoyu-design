@@ -20,7 +20,8 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
   let pendingArtifact;
   const bridge = {
     available: true, transport: 'mcp', uiVersion: PLUGIN_UI_VERSION, supportsInlineEditor: true,
-    language: 'en', hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS] },
+    language: 'en', hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS], canDraftComments: false },
+    get canDraftComments() { return connected && !disposed && Boolean(extensions.message); },
     async invoke(action, payload = {}) {
       if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
       if (action === 'conversation.send') throw fail('A verified per-artifact native conversation bridge is not available.', UNSUPPORTED_CHAT_CODE);
@@ -38,6 +39,28 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
       if (changed(action)) for (const listener of listeners) listener(action.startsWith('view.')
         ? { type: 'view.changed', viewState: value } : { type: 'library.changed', action, result: value });
       return value;
+    },
+    async draftComment(request) {
+      if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
+      if (!bridge.canDraftComments) throw fail('This host cannot add design comments to the active chat draft.', 'NATIVE_COMMENT_DRAFT_UNAVAILABLE');
+      if (!request || typeof request.requestId !== 'string' || !artifactId.test(request.requestId)
+        || typeof request.artifactId !== 'string' || !artifactId.test(request.artifactId)
+        || Object.hasOwn(request, 'attemptId') && (typeof request.attemptId !== 'string' || !artifactId.test(request.attemptId))
+        || request.uri !== `codex-design://edit-requests/${request.requestId}`
+        || typeof request.title !== 'string' || !request.title.trim() || request.title.length > 300
+        || typeof request.summary !== 'string' || !request.summary.trim() || request.summary.length > 20_000) {
+        throw fail('The immutable design comment request is invalid.', 'INVALID_COMMENT_DRAFT');
+      }
+      const result = await extensions.message.send({
+        role: 'user',
+        content: [
+          { type: 'text', text: `Apply the attached Codex Design edit request for ${request.title}.\n${request.summary.slice(0, 1000)}${request.summary.length > 1000 ? '\nRead the attached request for the full comment.' : ''}` },
+          { type: 'resource_link', uri: request.uri, name: `edit-request-${request.requestId}.json`, title: request.title, mimeType: 'application/json' },
+        ],
+        _meta: { 'openai/message': { target: 'active', send: false } },
+      });
+      if (result.isError) throw fail('The host could not add the design comment to the active chat draft.', 'NATIVE_COMMENT_DRAFT_FAILED');
+      return result;
     },
     async downloadArtifact({ filename, text }) {
       return bridge.downloadResource({ filename, mimeType: 'application/json', text });
@@ -64,12 +87,13 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
         styleVariableNames: Object.keys(context?.styles?.variables || {}).sort() };
     },
     subscribe(handler) { listeners.add(handler); return () => listeners.delete(handler); },
-    async dispose() { disposed = true; bridge.available = false; connected = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
+    async dispose() { disposed = true; bridge.available = false; connected = false; bridge.capabilities.canDraftComments = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
   };
   const applyContext = () => {
     // SDK listeners receive params directly; the SDK merges each partial patch first.
     const context = app.getHostContext();
     bridge.hostContext = context ?? null;
+    bridge.capabilities.canDraftComments = bridge.canDraftComments;
     const root = globalThis.document?.documentElement;
     const host = app.getHostVersion();
     if (root?.setAttribute) {
@@ -148,7 +172,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
     if (disposed) return;
     bridge.initialState = result.structuredContent ?? null;
     if (latestViewState) bridge.initialState = { ...bridge.initialState, viewState: latestViewState };
-    if (bridge.initialState?.capabilities) bridge.capabilities = bridge.initialState.capabilities;
+    if (bridge.initialState?.capabilities) bridge.capabilities = { ...bridge.initialState.capabilities, canDraftComments: bridge.canDraftComments };
     onInitialResult?.(bridge.initialState);
     for (const listener of listeners) listener({ type: 'initial-state', result: bridge.initialState });
     void readDescriptor();

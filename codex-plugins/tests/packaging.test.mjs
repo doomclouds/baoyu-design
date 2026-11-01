@@ -290,7 +290,12 @@ test('all five generated skills use Codex routing, validation, and supported ent
       assert.match(text, /On .*timedOut.*call worker-next again/);
       assert.match(text, /On .*closed.*end this listener turn/);
       assert.match(text, /Do not create an agent for every comment/);
-      assert.match(text, /does not wake a native agent, call an external queue, or start a model\/HTTP daemon/);
+      assert.match(text, /Native Add to chat/);
+      assert.match(text, /does not enqueue a worker, start a model, select a user chat, or send the draft/);
+      assert.match(text, /The user presses the native Send button/);
+      assert.match(text, /design_request.*read and accept only those request IDs/);
+      assert.match(text, /Do not scan prepared drafts and accept them automatically/);
+      assert.match(text, /dispatchCommand.*actual native parent environment/);
       assert.match(text, /cannot interrupt a native agent/);
       assert.match(text, /must not wait for its own worker-status entry/);
       assert.doesNotMatch(text, /independent local design worker|codex app-server|ephemeral|stdin.*RPC/i);

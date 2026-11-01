@@ -80,7 +80,7 @@ A dashboard is written through the same script (`write-db`, `read-db`, `upload`,
 
 `codex design` bundles all five skills above, the complete local editors, and Codex annotation and editor-comment integration.
 
-Version 0.4.3 provides a local MCP-backed library with category navigation, a permanent library tab, reusable artwork tabs within a workspace, content-only import/export, recovery history, and English-only editor UI. Artwork is stored in `~/.codex/CodexDesignLibrary` and opens in the native Codex Design workspace by default. Comments use each editor's existing tools. The app consumes host typography/theme variables and uses an inline editor transport instead of blocked localhost frames. The current public host API does not expose Space's middle-sidebar slot, native-toolbar replacement, or per-artwork bound native chat. See [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md) for the distinction between protocol, browser, and actual-host evidence.
+Version 0.5.0 provides a local MCP-backed library with category navigation, a permanent library tab, reusable artwork tabs within a workspace, content-only import/export, recovery history, and English-only editor UI. Artwork is stored in `~/.codex/CodexDesignLibrary` and opens in the native Codex Design workspace by default. Comments use each editor's existing tools. The app consumes host typography/theme variables and uses an inline editor transport instead of blocked localhost frames. The current public host API does not expose Space's middle-sidebar slot, native-toolbar replacement, or per-artwork bound native chat. See [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md) for the distinction between protocol, browser, and actual-host evidence.
 
 See [`codex-plugins/examples/`](codex-plugins/examples/README.md) for editable showcases: a five-slide deck, the Bean Club canvas, the Nimbus design system, and a year of sample X analytics.
 
@@ -89,7 +89,7 @@ codex plugin marketplace add doomclouds/baoyu-design --ref codex/plugin
 codex plugin add codex-design@codex-design-marketplace
 ```
 
-See [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md) for setup and usage. Native annotations are submitted by the user to the current chat. The editors' **Send to agent** sends comments to a dedicated design worker for that project, which writes its replies back into the editor.
+See [`codex-plugins/codex-design/README.md`](codex-plugins/codex-design/README.md) for setup and usage. Native annotations are submitted by the user to the current chat. In native Codex Design, **Add to chat** prepares an immutable request in the native draft. The user sends it; the receiving native parent accepts and dispatches it, then coordinates a real worker and writes the verified result back into the comment. Trash supports confirmed single and selected-item permanent deletion.
 
 Build and test locally, without GitHub workflows: `npm run build:codex-plugin` builds the package, `npm run check:codex-plugin` checks that committed output matches the sources, and `npm run test:codex-plugin` runs the plugin tests. The GitHub branch includes the built plugin for installation.
 

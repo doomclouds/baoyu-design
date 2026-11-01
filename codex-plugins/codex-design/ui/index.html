@@ -516,6 +516,36 @@ a { color: inherit; }
 .design-table tbody td { font-size: .9286rem; }
 .design-table .record-actions .icon-button { min-height: 40px; }
 .design-count { display: none; }
+.trash-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 46px; margin-bottom: 10px; color: var(--muted); font-size: .9286rem; }
+.trash-select-all { display: inline-flex; align-items: center; gap: 9px; min-height: 40px; cursor: pointer; }
+.trash-select-all input, .trash-checkbox input { width: 17px; height: 17px; margin: 0; accent-color: var(--text); cursor: pointer; }
+.trash-selection-count { margin-left: auto; }
+.trash-delete-button { min-height: 34px; padding: 6px 10px; color: var(--danger); background: transparent; font-size: .8571rem; }
+.trash-delete-button:hover:not(:disabled) { background: var(--color-background-danger, var(--surface-hover)); }
+.trash-checkbox { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 40px; }
+.trash-table { table-layout: auto; }
+.trash-table thead th.trash-selection-column { width: 40px; padding-inline: 4px; }
+.trash-table tbody td.trash-selection-column { width: 40px; padding-inline: 4px; overflow: visible; }
+.trash-table thead th:last-child { width: 240px; }
+.trash-table .record-actions { flex-wrap: wrap; }
+.trash-table tr.is-selected { background: var(--surface-active); }
+.trash-grid .design-card { position: relative; }
+.trash-grid .design-card.is-selected { border-color: var(--text); }
+.trash-card-selection { position: absolute; z-index: 1; top: 8px; left: 8px; min-width: 34px; min-height: 34px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line-strong); }
+.trash-grid .card-bottom { flex-wrap: wrap; }
+.trash-grid .record-actions { flex-wrap: wrap; margin-left: auto; }
+.purge-title-list { max-height: 200px; overflow-y: auto; margin: 0; padding-left: 23px; overflow-wrap: anywhere; font-size: .9286rem; line-height: 1.7; }
+.purge-warning { margin: 2px 0 0; color: var(--danger); font-size: .9286rem; line-height: 1.6; }
+.purge-error { white-space: pre-line; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; }
+@media (max-width: 700px) {
+  .trash-selection-bar { gap: 8px; }
+  .trash-selection-count { margin-left: 0; }
+  .trash-selection-bar .trash-delete-button { margin-left: auto; }
+  .trash-table thead th:last-child { width: 150px; }
+  .trash-table .record-actions { gap: 0; }
+  .trash-table .trash-delete-button { white-space: normal; text-align: right; }
+  .trash-table .record-type-icon { display: none; }
+}
 @media (min-width: 701px) {
   .design-shell { grid-template-columns: clamp(208px, 19vw, 250px) minmax(0, 1fr); }
   .design-sidebar { padding-top: 16px; }
@@ -23670,6 +23700,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     trashed: "Moved to trash",
     restored: "Design restored",
     favoriteSaved: "Favorite updated",
+    deletePermanently: "Delete permanently",
+    deletePermanentlyTitle: "Delete {{title}} permanently",
+    deleteSelected: "Delete selected",
+    selectDesigns: "Select designs",
+    selectTrashDesign: "Select {{title}}",
+    selectVisibleTrash: "Select all {{count}} visible",
+    trashSelected: "{{count}} selected",
+    purgeTitle: "Permanently delete {{count}} design?",
+    purgeTitle_other: "Permanently delete {{count}} designs?",
+    purgeBody: "This design will be permanently removed from Trash:",
+    purgeBody_other: "These {{count}} designs will be permanently removed from Trash:",
+    purgeIrreversible: "This cannot be undone. These designs and their saved content can no longer be restored from Trash.",
+    purgeDeleted: "{{count}} design permanently deleted.",
+    purgeDeleted_other: "{{count}} designs permanently deleted.",
+    purgeFailed: "Permanent deletion did not finish for {{count}} design.",
+    purgeFailed_other: "Permanent deletion did not finish for {{count}} designs.",
+    purgePartiallyRemoved: "Some saved content was removed. Retry to finish permanently deleting this design.",
+    purgeUnconfirmed: "Deletion could not be confirmed. Refresh Trash before trying again.",
     missing: "Files not found",
     invalid: "Needs attention",
     missingBody: "The design files could not be found. Restore their location before opening this design.",
@@ -24063,6 +24111,49 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 
   // source/ui/native-editor.mjs
   var ALLOWED = /* @__PURE__ */ new Set(["editor.request", "editor.digest", "editor.events.open", "editor.events.poll", "editor.events.close", "editor.download"]);
+  var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var REQUEST_LIMIT = 128;
+  var errorDetail = (error112) => ({ code: error112?.code || "EDITOR_REQUEST_FAILED", message: String(error112?.message || error112).slice(0, 2e3) });
+  function savedCommentFailure(result, request, error112) {
+    if (!Number.isInteger(result.status) || result.status < 200 || result.status >= 300 || typeof result.body !== "string") return;
+    try {
+      const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(result.body), (character) => character.charCodeAt(0))));
+      const thread = body?.thread;
+      if (!thread || typeof thread.id !== "string" || !/^c_[A-Za-z0-9_-]{1,100}$/.test(thread.id) || typeof request.requestId !== "string" || !UUID.test(request.requestId) || Object.hasOwn(request, "savedCommentId") && request.savedCommentId !== thread.id) return;
+      const detail = errorDetail(error112);
+      const message = (error112?.nativeDraftAdded ? "Your comment was saved and added to the chat draft, but confirming the draft failed. Check the existing draft before adding it again. " : 'Your comment was saved, but adding it to the chat draft failed. Use "Retry add to chat" on this comment. ') + detail.message;
+      body.thread = { ...thread, agent: { ...thread.agent, nativeRequest: {
+        ...thread.agent?.nativeRequest,
+        requestId: request.requestId,
+        status: "needs_attention",
+        message
+      } } };
+      const bytes2 = new TextEncoder().encode(JSON.stringify(body));
+      let binary = "";
+      for (let offset = 0; offset < bytes2.length; offset += 16384) binary += String.fromCharCode(...bytes2.subarray(offset, offset + 16384));
+      return { result: { ...result, body: btoa(binary) }, warning: { code: detail.code, message } };
+    } catch {
+    }
+  }
+  function reuseRequest(cache, requestId, execute) {
+    const existing = cache.get(requestId);
+    if (existing) return existing.promise;
+    if (cache.size >= REQUEST_LIMIT) {
+      for (const [id, entry2] of cache) {
+        if (entry2.settled) {
+          cache.delete(id);
+          break;
+        }
+      }
+    }
+    if (cache.size >= REQUEST_LIMIT) throw Object.assign(new Error("The artwork editor has too many pending requests."), { code: "EDITOR_REQUEST_BUSY" });
+    const entry = { settled: false };
+    entry.promise = Promise.resolve().then(execute).finally(() => {
+      entry.settled = true;
+    });
+    cache.set(requestId, entry);
+    return entry.promise;
+  }
   function loadEditorDocument(channel) {
     let accepted = false;
     let editor;
@@ -24092,6 +24183,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (typeof editorDocument?.html !== "string" || !editorDocument.html.trim()) throw new TypeError("The editor document is missing.");
     const ownerWindow = iframe.ownerDocument?.defaultView || window;
     const subscriptions = /* @__PURE__ */ new Set();
+    const requests = /* @__PURE__ */ new Map(), drafts = /* @__PURE__ */ new Map();
     let disposed = false;
     let appReady = false;
     let flush;
@@ -24104,6 +24196,55 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     };
     const reply = (requestId, value) => {
       if (!disposed) iframe.contentWindow?.postMessage({ type: "codex-design:editor-response", channel, requestId, ...value }, "*");
+    };
+    const draftComment = (request) => {
+      if (!request || request.artifactId !== artifactId2 || typeof request.requestId !== "string" || !UUID.test(request.requestId) || Object.hasOwn(request, "attemptId") && (typeof request.attemptId !== "string" || !UUID.test(request.attemptId)) || request.uri !== `codex-design://edit-requests/${request.requestId}`) {
+        throw Object.assign(new Error("The comment draft does not belong to this artwork."), { code: "INVALID_COMMENT_DRAFT" });
+      }
+      const draftKey = request.attemptId === void 0 ? request.requestId : `${request.requestId}:${request.attemptId}`;
+      return reuseRequest(drafts, draftKey, async () => {
+        let appended = false;
+        try {
+          if (disposed) throw Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" });
+          if (typeof bridge.draftComment !== "function") throw Object.assign(new Error("This host cannot add design comments to the active chat draft."), { code: "NATIVE_COMMENT_DRAFT_UNAVAILABLE" });
+          await bridge.draftComment(request);
+          appended = true;
+          await bridge.invoke("request.draftAdded", { requestId: request.requestId });
+        } catch (error112) {
+          const failure2 = appended ? Object.assign(new Error("The chat draft was added, but confirming it failed. " + errorDetail(error112).message), {
+            code: error112?.code || "NATIVE_COMMENT_DRAFT_ACK_FAILED",
+            nativeDraftAdded: true
+          }) : error112;
+          await bridge.invoke("request.draftFailed", { requestId: request.requestId, error: errorDetail(failure2) }).catch(() => {
+          });
+          if (!appended) drafts.delete(draftKey);
+          throw failure2;
+        }
+      });
+    };
+    const execute = async (message) => {
+      let result;
+      try {
+        result = message.action === "editor.download" ? await bridge.downloadResource(message.payload) : await bridge.invoke(message.action, { ...message.payload, id: artifactId2 });
+        if (message.action === "editor.events.open" && result?.subscriptionId) {
+          if (disposed) {
+            void bridge.invoke("editor.events.close", { id: artifactId2, subscriptionId: result.subscriptionId }).catch(() => {
+            });
+            return;
+          }
+          subscriptions.add(result.subscriptionId);
+        }
+        if (message.action === "editor.events.close") subscriptions.delete(message.payload.subscriptionId);
+        if (message.action === "editor.request" && result?.nativeDraft) await draftComment(result.nativeDraft);
+        return { result };
+      } catch (error112) {
+        const saved = message.action === "editor.request" && result?.nativeDraft && savedCommentFailure(result, result.nativeDraft, error112);
+        if (saved) {
+          onError?.(saved.warning);
+          return { result: saved.result };
+        }
+        return { error: errorDetail(error112) };
+      }
     };
     const listener = async (event) => {
       const message = event.data;
@@ -24134,21 +24275,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         onError?.({ code: "EDITOR_RUNTIME_ERROR", message: message.message });
         return;
       }
-      if (message.type !== "codex-design:editor-request" || !ALLOWED.has(message.action) || typeof message.requestId !== "string" || message.requestId.length > 80 || !message.payload || typeof message.payload !== "object" || Array.isArray(message.payload)) return;
+      if (message.type !== "codex-design:editor-request" || !ALLOWED.has(message.action) || typeof message.requestId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$/.test(message.requestId) || !message.payload || typeof message.payload !== "object" || Array.isArray(message.payload)) return;
       try {
-        const result = message.action === "editor.download" ? await bridge.downloadResource(message.payload) : await bridge.invoke(message.action, { ...message.payload, id: artifactId2 });
-        if (message.action === "editor.events.open" && result?.subscriptionId) {
-          if (disposed) {
-            void bridge.invoke("editor.events.close", { id: artifactId2, subscriptionId: result.subscriptionId }).catch(() => {
-            });
-            return;
-          }
-          subscriptions.add(result.subscriptionId);
-        }
-        if (message.action === "editor.events.close") subscriptions.delete(message.payload.subscriptionId);
-        reply(message.requestId, { result });
+        reply(message.requestId, await reuseRequest(requests, message.requestId, () => execute(message)));
       } catch (error112) {
-        reply(message.requestId, { error: { code: error112.code || "EDITOR_REQUEST_FAILED", message: String(error112.message || error112).slice(0, 2e3) } });
+        reply(message.requestId, { error: errorDetail(error112) });
       }
     };
     let url3;
@@ -24211,6 +24342,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         for (const subscriptionId of subscriptions) void bridge.invoke("editor.events.close", { id: artifactId2, subscriptionId }).catch(() => {
         });
         subscriptions.clear();
+        requests.clear();
+        drafts.clear();
       }
     };
   }
@@ -24288,7 +24421,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       busy: /* @__PURE__ */ new Set(),
       chat: /* @__PURE__ */ new Map(),
       drafts: /* @__PURE__ */ new Map(),
-      minimized: /* @__PURE__ */ new Set()
+      minimized: /* @__PURE__ */ new Set(),
+      trashSelection: /* @__PURE__ */ new Set()
     };
     try {
       state.sidebarCollapsed = localStorage.getItem("codex-design.sidebar-collapsed") === "true";
@@ -24305,6 +24439,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let viewQueue = Promise.resolve();
     let toastTimer;
     let conversationTimer;
+    let purgeConfirmation = null;
     const abort = new AbortController();
     root.classList.add("codex-design-ui");
     root.innerHTML = '<div class="design-shell"><aside class="design-sidebar" id="design-category-navigation"></aside><section class="design-workspace"><div class="workspace-tabbar"><button type="button" class="icon-button sidebar-toggle" data-action="toggle-sidebar" aria-controls="design-category-navigation"></button><div class="workspace-tabs"></div></div><main id="design-workspace-panel" class="workspace-panel" role="tabpanel"></main></section><div class="sidebar-scrim" hidden></div><div class="floating-layer"></div><div class="menu-layer"></div><div class="toast-layer" aria-live="polite" aria-atomic="true"></div><dialog class="design-dialog"></dialog><span class="sr-only live-status" role="status"></span></div>';
@@ -24553,7 +24688,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       return '<section class="library-empty"><div class="empty-symbol">' + icon(symbol3) + "</div><h2>" + escape2(t2(heading)) + "</h2><p>" + escape2(t2(body)) + "</p>" + (state.query ? '<button type="button" class="button secondary" data-action="clear-search">' + escape2(t2("clearSearch")) + "</button>" : state.error ? '<button type="button" class="button secondary" data-action="refresh"' + disabled("library.list") + ">" + icon("refresh") + escape2(t2("retry")) + "</button>" : state.category !== "trash" && !state.favorites ? '<button type="button" class="button primary" data-action="create"' + disabled("library.create") + ">" + icon("plus") + escape2(t2("newDesign")) + "</button>" : "") + "</section>";
     }
     function recordActions(record3) {
-      if (isDeleted(record3)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape2(record3.id) + '"' + disabled("library.restore") + ">" + icon("restore") + escape2(t2("restore")) + "</button>";
+      if (isDeleted(record3)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape2(record3.id) + '"' + (busy("purge-trash") ? " disabled" : disabled("library.restore")) + ">" + icon("restore") + escape2(t2("restore")) + '</button><button type="button" class="button trash-delete-button" data-action="purge-dialog" data-id="' + escape2(record3.id) + '" aria-label="' + escape2(t2("deletePermanentlyTitle", { title: record3.title })) + '"' + (busy("purge-trash") ? " disabled" : disabled("library.purge")) + ">" + escape2(t2("deletePermanently")) + "</button>";
       return '<button type="button" class="icon-button favorite-button ' + (record3.favorite ? "is-favorite" : "") + '" data-action="favorite" data-id="' + escape2(record3.id) + '" data-focus-key="favorite-' + escape2(record3.id) + '" aria-label="' + escape2(t2(record3.favorite ? "unfavoriteDesign" : "favoriteDesign", { title: record3.title })) + '" aria-pressed="' + Boolean(record3.favorite) + '"' + disabled("library.setFavorite") + ">" + icon("star") + '</button><button type="button" class="icon-button" data-action="item-menu" data-menu-trigger="true" data-id="' + escape2(record3.id) + '" aria-haspopup="menu" aria-label="' + escape2(t2("moreActions", { title: record3.title })) + '">' + icon("more") + "</button>";
     }
     function recordStatus(record3) {
@@ -24564,25 +24699,44 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const visual = className === "card-open" ? thumbnail(record3) : '<span class="record-type-icon" title="' + escape2(t2(record3.kind)) + '" aria-hidden="true">' + icon(record3.kind) + "</span>";
       return '<button type="button" class="record-open ' + className + '" data-action="open" data-id="' + escape2(record3.id) + '" aria-label="' + escape2(t2("openDesign", { title: record3.title })) + '"' + (cannotOpen ? " disabled" : "") + ">" + visual + '<span class="record-copy"><span class="record-title">' + escape2(record3.title) + "</span>" + recordStatus(record3) + "</span></button>";
     }
+    function selectedTrashRecords(records = visibleRecords()) {
+      return state.category === "trash" ? records.filter((record3) => isDeleted(record3) && state.trashSelection.has(record3.id)) : [];
+    }
+    function trashCheckbox(record3, className = "") {
+      return '<label class="trash-checkbox ' + className + '"><input type="checkbox" data-action="trash-select" data-id="' + escape2(record3.id) + '" data-focus-key="trash-select-' + escape2(record3.id) + '" aria-label="' + escape2(t2("selectTrashDesign", { title: record3.title })) + '"' + (state.trashSelection.has(record3.id) ? " checked" : "") + (busy("purge-trash") ? " disabled" : "") + "></label>";
+    }
+    function renderTrashSelection(records) {
+      if (state.category !== "trash") return;
+      const visible = new Set(records.map((record3) => record3.id));
+      state.trashSelection = new Set([...state.trashSelection].filter((id) => visible.has(id)));
+      const selected = selectedTrashRecords(records).length;
+      const controls = elements.panel.querySelector(".trash-selection-bar");
+      if (!controls) return;
+      controls.innerHTML = '<label class="trash-select-all"><input type="checkbox" data-action="trash-select-all" data-focus-key="trash-select-all"' + (records.length && selected === records.length ? " checked" : "") + (!records.length || busy("purge-trash") ? " disabled" : "") + "><span>" + escape2(t2("selectVisibleTrash", { count: records.length })) + '</span></label><span class="trash-selection-count" role="status">' + escape2(t2("trashSelected", { count: selected })) + '</span><button type="button" class="button trash-delete-button" data-action="purge-selected"' + (!selected || busy("purge-trash") ? " disabled" : disabled("library.purge")) + ">" + escape2(t2("deleteSelected")) + "</button>";
+      const checkbox = controls.querySelector("input");
+      if (checkbox) checkbox.indeterminate = selected > 0 && selected < records.length;
+    }
     function renderRecords() {
       const container = elements.panel.querySelector(".records-container");
       if (!container) return;
       const focused = focusKey();
       const records = visibleRecords();
+      const trash = state.category === "trash";
+      renderTrashSelection(records);
       const counter = elements.panel.querySelector(".design-count");
       if (counter) counter.textContent = t2("count", { count: records.length });
       container.className = "records-container " + (state.layout === "grid" ? "is-grid" : "is-list");
       if (state.loading) container.innerHTML = '<div class="library-empty loading-state" role="status"><span class="spinner"></span><p>' + escape2(t2("loadingLibrary")) + "</p></div>";
       else if (!records.length || state.error) container.innerHTML = renderEmpty(records);
-      else if (state.layout === "grid") container.innerHTML = '<div class="design-grid">' + records.map((record3) => '<article class="design-card">' + recordOpen(record3, "card-open") + '<div class="card-bottom"><span>' + escape2(formatTime(record3.updatedAt)) + '</span><div class="record-actions">' + recordActions(record3) + "</div></div></article>").join("") + "</div>";
-      else container.innerHTML = '<table class="design-table"><thead><tr><th scope="col">' + escape2(t2("name")) + '</th><th scope="col" class="kind-column">' + escape2(t2("kindColumn")) + '</th><th scope="col" class="edited-column">' + escape2(t2("lastEdited")) + '</th><th scope="col"><span class="sr-only">' + escape2(t2("actions")) + "</span></th></tr></thead><tbody>" + records.map((record3) => '<tr><th scope="row">' + recordOpen(record3) + '</th><td class="kind-column">' + escape2(t2(record3.kind)) + '</td><td class="edited-column"><time datetime="' + escape2(record3.updatedAt) + '">' + escape2(formatTime(record3.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record3) + "</div></td></tr>").join("") + "</tbody></table>";
+      else if (state.layout === "grid") container.innerHTML = '<div class="design-grid' + (trash ? " trash-grid" : "") + '">' + records.map((record3) => '<article class="design-card' + (trash && state.trashSelection.has(record3.id) ? " is-selected" : "") + '">' + (trash ? trashCheckbox(record3, "trash-card-selection") : "") + recordOpen(record3, "card-open") + '<div class="card-bottom"><span>' + escape2(formatTime(record3.updatedAt)) + '</span><div class="record-actions">' + recordActions(record3) + "</div></div></article>").join("") + "</div>";
+      else container.innerHTML = '<table class="design-table' + (trash ? " trash-table" : "") + '"><thead><tr>' + (trash ? '<th scope="col" class="trash-selection-column"><span class="sr-only">' + escape2(t2("selectDesigns")) + "</span></th>" : "") + '<th scope="col">' + escape2(t2("name")) + '</th><th scope="col" class="kind-column">' + escape2(t2("kindColumn")) + '</th><th scope="col" class="edited-column">' + escape2(t2("lastEdited")) + '</th><th scope="col"><span class="sr-only">' + escape2(t2("actions")) + "</span></th></tr></thead><tbody>" + records.map((record3) => "<tr" + (trash && state.trashSelection.has(record3.id) ? ' class="is-selected"' : "") + ">" + (trash ? '<td class="trash-selection-column">' + trashCheckbox(record3) + "</td>" : "") + '<th scope="row">' + recordOpen(record3) + '</th><td class="kind-column">' + escape2(t2(record3.kind)) + '</td><td class="edited-column"><time datetime="' + escape2(record3.updatedAt) + '">' + escape2(formatTime(record3.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record3) + "</div></td></tr>").join("") + "</tbody></table>";
       restoreFocus(focused);
       hydrateThumbnails();
     }
     function renderLibrary() {
       const categoryTitle = t2(state.category);
       elements.panel.classList.add("library-panel");
-      elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape2(t2("libraryNavigation")) + '" aria-expanded="' + state.mobileSidebar + '">' + icon("menu") + "</button><div><h1>" + escape2(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon("search") + '<span class="sr-only">' + escape2(t2("search")) + '</span><input type="search" class="library-search" placeholder="' + escape2(t2("searchKind", { kind: categoryTitle })) + '" value="' + escape2(state.query) + '" autocomplete="off"></label>' + (state.category !== "trash" ? '<button type="button" class="button primary" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled("library.create") + ">" + escape2(t2("create")) + icon("chevron") + "</button>" : "") + '</div></header><div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape2(t2("favorites")) + '"><button type="button" class="filter-tab ' + (!state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape2(t2("all")) + '</button><button type="button" class="filter-tab ' + (state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape2(t2("favorites")) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape2(t2("sort")) + '">' + icon("sort") + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === "grid" ? "is-selected" : "") + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === "grid") + '" aria-label="' + escape2(t2("gridView")) + '">' + icon("grid") + '</button><button type="button" class="icon-button ' + (state.layout === "list" ? "is-selected" : "") + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === "list") + '" aria-label="' + escape2(t2("listView")) + '">' + icon("list") + '</button></div></div><div class="records-container"></div></section>';
+      elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape2(t2("libraryNavigation")) + '" aria-expanded="' + state.mobileSidebar + '">' + icon("menu") + "</button><div><h1>" + escape2(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon("search") + '<span class="sr-only">' + escape2(t2("search")) + '</span><input type="search" class="library-search" placeholder="' + escape2(t2("searchKind", { kind: categoryTitle })) + '" value="' + escape2(state.query) + '" autocomplete="off"></label>' + (state.category !== "trash" ? '<button type="button" class="button primary" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled("library.create") + ">" + escape2(t2("create")) + icon("chevron") + "</button>" : "") + '</div></header><div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape2(t2("favorites")) + '"><button type="button" class="filter-tab ' + (!state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape2(t2("all")) + '</button><button type="button" class="filter-tab ' + (state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape2(t2("favorites")) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape2(t2("sort")) + '">' + icon("sort") + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === "grid" ? "is-selected" : "") + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === "grid") + '" aria-label="' + escape2(t2("gridView")) + '">' + icon("grid") + '</button><button type="button" class="icon-button ' + (state.layout === "list" ? "is-selected" : "") + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === "list") + '" aria-label="' + escape2(t2("listView")) + '">' + icon("list") + "</button></div></div>" + (state.category === "trash" ? '<div class="trash-selection-bar"></div>' : "") + '<div class="records-container"></div></section>';
       renderRecords();
     }
     async function openEditor(id, force = false) {
@@ -24613,7 +24767,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       try {
         const native = bridge.supportsInlineEditor === true;
         const channel = native ? crypto.randomUUID() : null;
-        const result = await invoke(native ? "editor.document" : "editor.open", { id, force, ...native ? { language: "en", channel } : {} });
+        const result = await invoke(native ? "editor.document" : "editor.open", { id, force, ...native ? { language: "en", channel, canDraftComments: bridge.canDraftComments === true } : {} });
         if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
         const iframe = document.createElement("iframe");
         iframe.className = "design-editor-frame";
@@ -24848,6 +25002,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       if (!["all", "recent", "trash", ...KINDS2].includes(category)) return;
       const previous = { category: state.category, favorites: state.favorites, query: state.query, sort: state.sort };
       state.category = category;
+      state.trashSelection.clear();
       state.favorites = false;
       state.query = "";
       state.mobileSidebar = false;
@@ -24934,6 +25089,70 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         if (dialog.querySelector("[data-history-id]")?.dataset.historyId === id) dialog.querySelector(".snapshot-list").innerHTML = '<p class="dialog-error">' + escape2(errorMessage(error112)) + "</p>";
       }
     }
+    function openPurgeDialog(records) {
+      if (busy("purge-trash") || !enabled("library.purge")) return;
+      const eligible = records.filter((record3) => record3 && isDeleted(record3));
+      if (!eligible.length) return;
+      closeMenu();
+      purgeConfirmation = eligible.map((record3) => ({ id: record3.id, title: record3.title }));
+      elements.dialog.innerHTML = '<form class="dialog-form" data-dialog-type="purge"><header><h2 id="design-dialog-title">' + escape2(t2("purgeTitle", { count: eligible.length })) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape2(t2("closeDialog")) + '">' + icon("close") + '</button></header><div class="dialog-fields"><p class="dialog-description">' + escape2(t2("purgeBody", { count: eligible.length })) + '</p><ul class="purge-title-list">' + eligible.map((record3) => "<li>" + escape2(record3.title) + "</li>").join("") + '</ul><p class="purge-warning">' + escape2(t2("purgeIrreversible")) + '</p></div><p class="dialog-error purge-error" role="alert" hidden></p><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape2(t2("cancel")) + '</button><button type="submit" class="button destructive">' + escape2(t2("deletePermanently")) + "</button></footer></form>";
+      elements.dialog.setAttribute("aria-labelledby", "design-dialog-title");
+      if (!elements.dialog.open) elements.dialog.showModal();
+      elements.dialog.querySelector('footer [data-action="close-dialog"]')?.focus();
+    }
+    async function submitPurge(form) {
+      if (!purgeConfirmation?.length || !elements.dialog.open || busy("purge-trash")) return;
+      const confirmed = purgeConfirmation.map((record3) => ({ ...record3 }));
+      const deleted = /* @__PURE__ */ new Set(), failed = [];
+      state.busy.add("purge-trash");
+      form.setAttribute("aria-busy", "true");
+      form.querySelector('button[type="submit"]').disabled = true;
+      try {
+        for (let offset = 0; offset < confirmed.length; offset += 200) {
+          const batch = confirmed.slice(offset, offset + 200);
+          try {
+            const result = await invoke("library.purge", { ids: batch.map((record3) => record3.id) });
+            if (!Array.isArray(result?.deleted) || !Array.isArray(result?.failed)) throw new BridgeError("The library returned an invalid deletion result.", "INVALID_RESPONSE");
+            const expected = new Set(batch.map((record3) => record3.id));
+            if (result.deleted.some((id) => !expected.has(id)) || result.failed.some((item) => !expected.has(item?.id))) throw new BridgeError("The library returned unrelated deletion results.", "INVALID_RESPONSE");
+            const failures = new Map(result.failed.map((item) => [item.id, item]));
+            for (const record3 of batch) {
+              if (result.deleted.includes(record3.id) && !failures.has(record3.id)) deleted.add(record3.id);
+              else failed.push({ ...record3, error: failures.get(record3.id)?.error || { code: "PURGE_UNCONFIRMED" }, removed: failures.get(record3.id)?.removed });
+            }
+          } catch (error112) {
+            for (const record3 of confirmed.slice(offset)) failed.push({ ...record3, error: error112 });
+            break;
+          }
+        }
+        if (deleted.size) {
+          ++recordsSequence;
+          state.records = state.records.filter((record3) => !deleted.has(record3.id));
+          for (const id of deleted) {
+            state.trashSelection.delete(id);
+            thumbnailCache.delete(id);
+          }
+        }
+        await refreshRecords(true);
+        const summary = [deleted.size ? t2("purgeDeleted", { count: deleted.size }) : "", failed.length ? t2("purgeFailed", { count: failed.length }) : ""].filter(Boolean).join(" ");
+        if (failed.length) {
+          state.busy.delete("purge-trash");
+          openPurgeDialog(failed.map((record3) => ({ ...record3, deleted: true })));
+          const errorNode = elements.dialog.querySelector(".dialog-error");
+          errorNode.hidden = false;
+          errorNode.textContent = summary + "\n" + failed.map((record3) => record3.title + ": " + (record3.removed?.length ? t2("purgePartiallyRemoved") + " " : "") + (record3.error?.code === "PURGE_UNCONFIRMED" ? t2("purgeUnconfirmed") : errorMessage(record3.error))).join("\n");
+        } else {
+          purgeConfirmation = null;
+          elements.dialog.close();
+        }
+        toast(summary, failed.length > 0);
+      } finally {
+        state.busy.delete("purge-trash");
+        form.removeAttribute("aria-busy");
+        elements.dialog.querySelector('button[type="submit"]').disabled = false;
+        if (state.view.activeTabId === "library") renderRecords();
+      }
+    }
     function openDialog(type, record3, details = {}) {
       closeMenu();
       const dialog = elements.dialog;
@@ -24964,6 +25183,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     async function submitDialog(form) {
       const type = form.dataset.dialogType;
       const id = form.dataset.id;
+      if (type === "purge") {
+        await submitPurge(form);
+        return;
+      }
       if (type === "restore-snapshot") {
         if (!form.reportValidity() || form.getAttribute("aria-busy") === "true") return;
         form.setAttribute("aria-busy", "true");
@@ -25089,10 +25312,29 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       } else if (action === "rename" || action === "copy" || action === "trash-dialog") {
         const record3 = recordFor(id);
         if (record3) openDialog(action === "trash-dialog" ? "trash" : action, record3);
-      } else if (action === "close-dialog") elements.dialog.close();
-      else if (action === "category") await setCategory(button.dataset.category);
+      } else if (action === "purge-dialog") openPurgeDialog([recordFor(id)]);
+      else if (action === "purge-selected") openPurgeDialog(selectedTrashRecords());
+      else if (action === "trash-select" && !busy("purge-trash") && state.category === "trash") {
+        if (visibleRecords().some((record3) => record3.id === id && isDeleted(record3))) {
+          if (button.checked) state.trashSelection.add(id);
+          else state.trashSelection.delete(id);
+          renderRecords();
+        }
+      } else if (action === "trash-select-all" && !busy("purge-trash") && state.category === "trash") {
+        for (const record3 of visibleRecords()) {
+          if (button.checked) state.trashSelection.add(record3.id);
+          else state.trashSelection.delete(record3.id);
+        }
+        renderRecords();
+      } else if (action === "close-dialog") {
+        if (!busy("purge-trash")) {
+          purgeConfirmation = null;
+          elements.dialog.close();
+        }
+      } else if (action === "category") await setCategory(button.dataset.category);
       else if (action === "filter") {
         state.favorites = button.dataset.value === "favorites";
+        state.trashSelection.clear();
         renderLibrary();
       } else if (action === "layout") {
         state.layout = button.dataset.layout;
@@ -25114,6 +25356,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       else if (action === "refresh") await refreshRecords();
       else if (action === "clear-search") {
         state.query = "";
+        state.trashSelection.clear();
         renderLibrary();
         elements.panel.querySelector(".library-search")?.focus();
       } else if (action === "retry-editor") await openEditor(id, true);
@@ -25148,6 +25391,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     root.addEventListener("input", (event) => {
       if (event.target.matches(".library-search")) {
         state.query = event.target.value;
+        state.trashSelection.clear();
         renderRecords();
       }
       if (event.target.matches(".conversation-composer textarea")) {
@@ -25173,6 +25417,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         event.preventDefault();
         sendConversation();
       }
+    }, { signal: abort.signal });
+    elements.dialog.addEventListener("cancel", (event) => {
+      if (busy("purge-trash")) event.preventDefault();
+      else purgeConfirmation = null;
     }, { signal: abort.signal });
     root.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && state.mobileSidebar) {
@@ -43135,7 +43383,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.4.3";
+  var PLUGIN_UI_VERSION = "0.5.0";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
@@ -43148,6 +43396,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "library.duplicate",
     "library.trash",
     "library.restore",
+    "library.purge",
     "library.snapshot",
     "library.listSnapshots",
     "library.restoreSnapshot",
@@ -43164,7 +43413,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "editor.digest",
     "editor.events.open",
     "editor.events.poll",
-    "editor.events.close"
+    "editor.events.close",
+    "request.draftAdded",
+    "request.draftFailed"
   ]);
   var UNSUPPORTED_CHAT_CODE = "NATIVE_EDIT_CHAT_UNAVAILABLE";
 
@@ -43192,7 +43443,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       language: "en",
       hostContext: null,
       initialState: null,
-      capabilities: { actions: [...ACTIONS] },
+      capabilities: { actions: [...ACTIONS], canDraftComments: false },
+      get canDraftComments() {
+        return connected && !disposed && Boolean(extensions.message);
+      },
       async invoke(action, payload = {}) {
         if (disposed) throw fail2("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
         if (action === "conversation.send") throw fail2("A verified per-artifact native conversation bridge is not available.", UNSUPPORTED_CHAT_CODE);
@@ -43214,6 +43468,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
         if (changed(action)) for (const listener of listeners) listener(action.startsWith("view.") ? { type: "view.changed", viewState: value } : { type: "library.changed", action, result: value });
         return value;
+      },
+      async draftComment(request) {
+        if (disposed) throw fail2("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (!bridge.canDraftComments) throw fail2("This host cannot add design comments to the active chat draft.", "NATIVE_COMMENT_DRAFT_UNAVAILABLE");
+        if (!request || typeof request.requestId !== "string" || !artifactId.test(request.requestId) || typeof request.artifactId !== "string" || !artifactId.test(request.artifactId) || Object.hasOwn(request, "attemptId") && (typeof request.attemptId !== "string" || !artifactId.test(request.attemptId)) || request.uri !== `codex-design://edit-requests/${request.requestId}` || typeof request.title !== "string" || !request.title.trim() || request.title.length > 300 || typeof request.summary !== "string" || !request.summary.trim() || request.summary.length > 2e4) {
+          throw fail2("The immutable design comment request is invalid.", "INVALID_COMMENT_DRAFT");
+        }
+        const result = await extensions.message.send({
+          role: "user",
+          content: [
+            { type: "text", text: `Apply the attached Codex Design edit request for ${request.title}.
+${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the attached request for the full comment." : ""}` },
+            { type: "resource_link", uri: request.uri, name: `edit-request-${request.requestId}.json`, title: request.title, mimeType: "application/json" }
+          ],
+          _meta: { "openai/message": { target: "active", send: false } }
+        });
+        if (result.isError) throw fail2("The host could not add the design comment to the active chat draft.", "NATIVE_COMMENT_DRAFT_FAILED");
+        return result;
       },
       async downloadArtifact({ filename, text }) {
         return bridge.downloadResource({ filename, mimeType: "application/json", text });
@@ -43250,6 +43522,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         disposed = true;
         bridge.available = false;
         connected = false;
+        bridge.capabilities.canDraftComments = false;
         listeners.clear();
         app.removeEventListener("hostcontextchanged", onHostContext);
         await app.close();
@@ -43258,6 +43531,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const applyContext = () => {
       const context = app.getHostContext();
       bridge.hostContext = context ?? null;
+      bridge.capabilities.canDraftComments = bridge.canDraftComments;
       const root = globalThis.document?.documentElement;
       const host = app.getHostVersion();
       if (root?.setAttribute) {
@@ -43349,7 +43623,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       if (disposed) return;
       bridge.initialState = result.structuredContent ?? null;
       if (latestViewState) bridge.initialState = { ...bridge.initialState, viewState: latestViewState };
-      if (bridge.initialState?.capabilities) bridge.capabilities = bridge.initialState.capabilities;
+      if (bridge.initialState?.capabilities) bridge.capabilities = { ...bridge.initialState.capabilities, canDraftComments: bridge.canDraftComments };
       onInitialResult?.(bridge.initialState);
       for (const listener of listeners) listener({ type: "initial-state", result: bridge.initialState });
       void readDescriptor();

@@ -19,7 +19,7 @@ async function until(predicate) {
   }
 }
 
-function host(t, { context = {}, initialState, file, descriptor, onCall } = {}) {
+function host(t, { context = {}, initialState, file, descriptor, onCall, onMessage, hostCapabilities = { experimental: { 'openai/resource': {} } } } = {}) {
   const app = new App({ name: 'ui-bridge-test', version: '1' }, {}, { autoResize: false, strict: true });
   const requests = [];
   const notify = (method, params) => transport.onmessage?.({ jsonrpc: '2.0', method, params });
@@ -38,7 +38,7 @@ function host(t, { context = {}, initialState, file, descriptor, onCall } = {}) 
       const response = async () => {
         if (message.method === 'ui/initialize') return {
           protocolVersion: '2026-01-26', hostInfo: { name: 'test-host', version: '1' },
-          hostCapabilities: { experimental: { 'openai/resource': {} } }, hostContext: context,
+          hostCapabilities, hostContext: context,
         };
         if (message.method === 'resources/read') return {
           contents: [{ uri: file.resourceUri, mimeType: 'application/json', text: JSON.stringify(descriptor) }],
@@ -49,6 +49,7 @@ function host(t, { context = {}, initialState, file, descriptor, onCall } = {}) 
           if (action === 'view.openTab') return resultFor(artifactView(payload.id));
           if (action === 'view.closeTab') return resultFor(libraryView);
         }
+        if (message.method === 'ui/message') return onMessage ? onMessage(message.params) : {};
         throw new Error(`Unexpected host request: ${message.method}`);
       };
       void response().then(result => transport.onmessage?.({ jsonrpc: '2.0', id: message.id, result }),
@@ -77,6 +78,72 @@ test('a native bridge declares its UI version and becomes unavailable before dis
   assert.equal(bridge.available, false);
   await closing;
   await assert.rejects(bridge.invoke('view.get'), { code: 'BRIDGE_UNAVAILABLE' });
+});
+
+const commentDraft = {
+  requestId: '33333333-3333-4333-8333-333333333333', artifactId: firstId,
+  uri: 'codex-design://edit-requests/33333333-3333-4333-8333-333333333333',
+  title: 'Nimbus', summary: 'Increase the heading contrast.',
+};
+
+test('native comments append an immutable request to the active editable draft without generating a response', async t => {
+  const f = host(t, { hostCapabilities: { experimental: { 'openai/message': {} } },
+    initialState: { capabilities: { actions: ['editor.request'] } } });
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  assert.equal(bridge.canDraftComments, true);
+  assert.equal(bridge.capabilities.canDraftComments, true);
+  assert.deepEqual(bridge.capabilities.actions, ['editor.request']);
+  await bridge.draftComment({ ...commentDraft, attemptId: secondId });
+  assert.deepEqual(f.requests.filter(request => request.method === 'ui/message').map(request => request.params), [{
+    role: 'user',
+    content: [
+      { type: 'text', text: 'Apply the attached Codex Design edit request for Nimbus.\nIncrease the heading contrast.' },
+      { type: 'resource_link', uri: commentDraft.uri, name: `edit-request-${commentDraft.requestId}.json`, title: 'Nimbus', mimeType: 'application/json' },
+    ],
+    _meta: { 'openai/message': { target: 'active', send: false } },
+  }]);
+  assert.equal(f.calls().length, 0);
+  assert.equal(f.requests.some(request => request.method === 'sampling/createMessage' || request.method === 'ui/update-model-context'), false);
+  await bridge.dispose();
+  assert.equal(bridge.canDraftComments, false);
+  assert.equal(bridge.capabilities.canDraftComments, false);
+  await assert.rejects(bridge.draftComment(commentDraft), { code: 'BRIDGE_UNAVAILABLE' });
+});
+
+test('native draft capability requires the negotiated OpenAI message extension and never falls back', async t => {
+  const f = host(t, { initialState: { capabilities: { actions: ['editor.request'], canDraftComments: true } } });
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  assert.equal(bridge.canDraftComments, false);
+  assert.equal(bridge.capabilities.canDraftComments, false);
+  await assert.rejects(bridge.draftComment(commentDraft), { code: 'NATIVE_COMMENT_DRAFT_UNAVAILABLE' });
+  assert.equal(f.requests.some(request => request.method === 'ui/message' || request.method === 'ui/open-link' || request.method === 'sampling/createMessage'), false);
+  assert.equal(f.calls().length, 0);
+});
+
+test('native draft links reject mutable or mismatched request resources before asking the host', async t => {
+  const f = host(t, { hostCapabilities: { experimental: { 'openai/message': {} } } });
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  for (const patch of [
+    { requestId: '' }, { requestId: 'arbitrary' }, { artifactId: '' },
+    { attemptId: '' }, { attemptId: 'arbitrary' }, { attemptId: null }, { attemptId: undefined },
+    { uri: commentDraft.uri + '?latest=true' }, { uri: commentDraft.uri + '#comment' },
+    { uri: 'codex-design://edit-requests/' + secondId },
+    { uri: 'https://example.com/' }, { title: '' }, { summary: '' },
+  ]) await assert.rejects(bridge.draftComment({ ...commentDraft, ...patch }), { code: 'INVALID_COMMENT_DRAFT' });
+  assert.equal(f.requests.some(request => request.method === 'ui/message'), false);
+});
+
+test('a declined native draft returns an error without a fallback send or generation', async t => {
+  const f = host(t, { hostCapabilities: { experimental: { 'openai/message': {} } }, onMessage: () => ({ isError: true }) });
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  await assert.rejects(bridge.draftComment(commentDraft), { code: 'NATIVE_COMMENT_DRAFT_FAILED' });
+  assert.equal(f.requests.filter(request => request.method === 'ui/message').length, 1);
+  assert.equal(f.calls().length, 0);
+  assert.equal(f.requests.some(request => request.method === 'sampling/createMessage' || request.method === 'ui/open-link'), false);
 });
 
 test('host locale stays unchanged in context while the plugin UI remains English-only', async t => {

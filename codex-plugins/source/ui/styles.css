@@ -508,6 +508,36 @@ a { color: inherit; }
 .design-table tbody td { font-size: .9286rem; }
 .design-table .record-actions .icon-button { min-height: 40px; }
 .design-count { display: none; }
+.trash-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 46px; margin-bottom: 10px; color: var(--muted); font-size: .9286rem; }
+.trash-select-all { display: inline-flex; align-items: center; gap: 9px; min-height: 40px; cursor: pointer; }
+.trash-select-all input, .trash-checkbox input { width: 17px; height: 17px; margin: 0; accent-color: var(--text); cursor: pointer; }
+.trash-selection-count { margin-left: auto; }
+.trash-delete-button { min-height: 34px; padding: 6px 10px; color: var(--danger); background: transparent; font-size: .8571rem; }
+.trash-delete-button:hover:not(:disabled) { background: var(--color-background-danger, var(--surface-hover)); }
+.trash-checkbox { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 40px; }
+.trash-table { table-layout: auto; }
+.trash-table thead th.trash-selection-column { width: 40px; padding-inline: 4px; }
+.trash-table tbody td.trash-selection-column { width: 40px; padding-inline: 4px; overflow: visible; }
+.trash-table thead th:last-child { width: 240px; }
+.trash-table .record-actions { flex-wrap: wrap; }
+.trash-table tr.is-selected { background: var(--surface-active); }
+.trash-grid .design-card { position: relative; }
+.trash-grid .design-card.is-selected { border-color: var(--text); }
+.trash-card-selection { position: absolute; z-index: 1; top: 8px; left: 8px; min-width: 34px; min-height: 34px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line-strong); }
+.trash-grid .card-bottom { flex-wrap: wrap; }
+.trash-grid .record-actions { flex-wrap: wrap; margin-left: auto; }
+.purge-title-list { max-height: 200px; overflow-y: auto; margin: 0; padding-left: 23px; overflow-wrap: anywhere; font-size: .9286rem; line-height: 1.7; }
+.purge-warning { margin: 2px 0 0; color: var(--danger); font-size: .9286rem; line-height: 1.6; }
+.purge-error { white-space: pre-line; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; }
+@media (max-width: 700px) {
+  .trash-selection-bar { gap: 8px; }
+  .trash-selection-count { margin-left: 0; }
+  .trash-selection-bar .trash-delete-button { margin-left: auto; }
+  .trash-table thead th:last-child { width: 150px; }
+  .trash-table .record-actions { gap: 0; }
+  .trash-table .trash-delete-button { white-space: normal; text-align: right; }
+  .trash-table .record-type-icon { display: none; }
+}
 @media (min-width: 701px) {
   .design-shell { grid-template-columns: clamp(208px, 19vw, 250px) minmax(0, 1fr); }
   .design-sidebar { padding-top: 16px; }

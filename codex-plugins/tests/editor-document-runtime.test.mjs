@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,10 +79,55 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
         assert.equal(await readFile(path.join(artifact.path, fixture.contentFile), 'utf8'), changed);
       }
       const comment = await request('__comments', 'POST', { ...fixture.comment, text: 'Native editor proxy comment.', send: false });
+      const draft = await service.invoke('editor.request', { id: artifact.id,
+        request: { path: '__comments/' + comment.thread.id + '/send', method: 'POST' } });
+      assert.equal(draft.nativeDraft.artifactId, artifact.id);
+      assert.match(draft.nativeDraft.uri, /^codex-design:\/\/edit-requests\//);
+      assert.ok(draft.nativeDraft.attemptId);
+      const canonical = JSON.parse(await readFile(path.join(artifact.path, 'comments.json'), 'utf8'));
+      assert.equal(canonical.threads.find(thread => thread.id === comment.thread.id).agent, undefined, 'native Add never calls the canonical delivery hook');
+      await assert.rejects(readFile(path.join(artifact.path, '.codex-design-worker-jobs.json')), { code: 'ENOENT' });
+      await service.invoke('request.draftAdded', { requestId: draft.nativeDraft.requestId });
       subscription = await service.invoke('editor.events.open', { id: artifact.id, path: '__comments/events' });
       const events = await service.invoke('editor.events.poll', { id: artifact.id, ...subscription });
       assert.ok(events.events.some(event => event.event === 'comments' && event.data.includes(comment.thread.id)));
+      assert.ok(events.events.some(event => JSON.parse(event.data).threads.some(thread => thread.agent?.nativeRequest?.status === 'prepared')));
+      const accepted = await service.operateEditRequests('accept', [draft.nativeDraft.requestId]);
+      assert.deepEqual(accepted.errors, []);
+      assert.equal(accepted.requests[0].status, 'accepted');
+      assert.equal(accepted.requests[0].dispatchCommand.args[1], 'request-dispatch');
+      const updated = await service.invoke('editor.events.poll', { id: artifact.id, subscriptionId: subscription.subscriptionId, cursor: events.cursor });
+      assert.ok(updated.events.some(event => JSON.parse(event.data).threads.some(thread => thread.agent?.nativeRequest?.status === 'accepted')),
+        'request state changes reach comments even when comments.json itself did not change');
+      await assert.rejects(readFile(path.join(artifact.path, '.codex-design-worker-jobs.json')), { code: 'ENOENT' }, 'model receipt alone does not enqueue or invent a parent id');
       await service.invoke('editor.events.close', { id: artifact.id, ...subscription }); subscription = null;
+      const createAndAdd = await service.invoke('editor.request', { id: artifact.id, request: { path: '__comments', method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify({ ...fixture.comment, text: 'Save before preparing a native draft.', send: true })).toString('base64') } });
+      assert.ok(createAndAdd.nativeDraft.requestId);
+      const created = JSON.parse(Buffer.from(createAndAdd.body, 'base64').toString());
+      const saved = JSON.parse(await readFile(path.join(artifact.path, 'comments.json'), 'utf8')).threads.find(thread => thread.id === created.thread.id);
+      assert.equal(saved.messages.at(-1).text, 'Save before preparing a native draft.');
+      assert.equal(saved.agent, undefined);
+      // Imported/legacy comment identities are legal canonical data too. Their
+      // routes and encoded aliases must never fall through to the old hook.
+      const legacyDoc = JSON.parse(await readFile(path.join(artifact.path, 'comments.json'), 'utf8'));
+      const legacy = legacyDoc.threads.find(thread => thread.id === created.thread.id);
+      legacy.id = 'legacy-thread'; legacy.messages[0].id = 'legacy-message';
+      await writeFile(path.join(artifact.path, 'comments.json'), JSON.stringify(legacyDoc));
+      const legacySend = await service.invoke('editor.request', { id: artifact.id,
+        request: { path: '__comments//legacy-thread/%73end/', method: 'POST' } });
+      assert.equal(legacySend.nativeDraft.savedCommentId, 'legacy-thread');
+      const legacyEdit = await service.invoke('editor.request', { id: artifact.id, request: {
+        path: '__comments/legacy-thread/messages/legacy-message', method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: Buffer.from(JSON.stringify({ text: 'Revised legacy user comment.', send: true })).toString('base64'),
+      } });
+      assert.equal(legacyEdit.nativeDraft.savedCommentId, 'legacy-thread');
+      const adHoc = await service.invoke('editor.request', { id: artifact.id, request: {
+        path: '__comments/agent/requests', method: 'POST', headers: { 'content-type': 'application/json' },
+        body: Buffer.from(JSON.stringify({ text: 'Review the selected artwork area.', label: 'Selection', selection: 'Selected area' })).toString('base64'),
+      } });
+      assert.ok(adHoc.nativeDraft.savedCommentId);
+      await assert.rejects(readFile(path.join(artifact.path, '.codex-design-worker-jobs.json')), { code: 'ENOENT' });
       const check = await command(kind, 'check', artifact.path);
       assert.equal(check.problems, 0, JSON.stringify(check));
     } finally {

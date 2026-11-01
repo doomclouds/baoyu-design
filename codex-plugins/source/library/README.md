@@ -21,7 +21,7 @@ Public asynchronous operations:
 
 - `list({kind?, query?, favoritesOnly?, includeDeleted?})`, `get(id, {includeDeleted?})`
 - `create({kind, title})`, `rename(id, title)`, `setFavorite(id, boolean)`, `duplicate(id, {title?})`
-- `trash(id)`, `restore(id)`; no permanent purge is supplied
+- `trash(id)`, `restore(id)`, `purge(ids)`; purge accepts only explicitly confirmed trash selections and returns exact deleted/failed IDs
 - `snapshot(id, {label?})`, `listSnapshots(id)`, `restoreSnapshot(id, snapshotId)`
 - `exportArtifact(id)`, `importArtifact({bundle | sourcePath, kind?, title?})`
 - `listFiles(id)`, `readFile(id, packageRelativePath, {encoding: 'utf8' | 'base64'})`
@@ -30,6 +30,16 @@ Public asynchronous operations:
 - `getViewState()`, `openTab(id)`, `activateTab('library' | id)`, `closeTab('library' | id)`, `reorderTabs(ids)`
 
 Chat binding and tab/view state are machine-local metadata in `_state/`, outside artwork directories. Binding a different editing conversation fails with `BINDING_CONFLICT`; callers must explicitly unlink first. The host supplies real identifiers and owns conversation creation and authorization. The fixed library tab is always first. Each artwork has exactly one tab whose tab ID equals its artifact UUID, and the tab list/order/active selection survive reopening the store.
+
+The legacy chat-binding records are separate from the global native draft workflow.
+Immutable edit requests live under `_state/edit-requests/`; preparation and model
+receipt do not create worker jobs. The real native parent performs dispatch with
+its own execution identity. These requests and their runtime records are never
+part of content exports. Purge preflights all selected trash identities, rejects
+active/unknown execution, validates every deletion target, and removes only the
+selected artwork plus its local snapshots/bindings/requests. External native
+conversation history is preserved. Partial filesystem failures return exact
+deleted/failed IDs and a retry receipt rather than pretending rollback.
 
 Native export is a bounded JSON bundle:
 

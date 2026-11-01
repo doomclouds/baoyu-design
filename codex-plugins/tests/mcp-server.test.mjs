@@ -10,8 +10,33 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { fileUri, referenceUri, LIBRARY_UI_URI, FILE_UI_URI, PLUGIN_UI_VERSION } from '../source/server/contract.mjs';
+import { createLibraryStore } from '../source/library/index.mjs';
+import { createEditRequestStore } from '../source/library/edit-requests.mjs';
 
 const pluginBuildRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+test('model request receipt exposes immutable references and parent dispatch without starting execution', async t => {
+  const f = await session(t);
+  const artwork = await f.value('library.create', { kind: 'slides', title: 'Native request receipt' });
+  await fs.writeFile(path.join(artwork.path, 'comments.json'), JSON.stringify({ version: 1, threads: [{
+    id: 'c_receipt', status: 'open', label: 'Cover', location: { file: 'project/slides/cover.html' },
+    messages: [{ id: 'm_receipt', author: { kind: 'user', name: 'User' }, text: 'Make the heading clearer.', at: '2026-11-01T00:00:00Z' }],
+  }] }));
+  const requests = createEditRequestStore({ store: createLibraryStore({ root: f.libraryRoot }) });
+  const prepared = await requests.prepare({ artifactId: artwork.id, commentId: 'c_receipt' });
+  const resource = await f.rpc('resources/read', { uri: prepared.requestUri });
+  assert.equal(JSON.parse(resource.contents[0].text).commentId, 'c_receipt');
+  const result = await f.rpc('tools/call', { name: 'design_request', arguments: { action: 'accept', ids: [prepared.id, prepared.id] } });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.requests.length, 1);
+  const accepted = result.structuredContent.requests[0];
+  assert.equal(accepted.status, 'accepted');
+  assert.deepEqual(accepted.dispatchCommand.args.slice(-3), ['request-dispatch', artwork.path, prepared.id]);
+  assert.equal(result._meta?.ui?.resourceUri, undefined, 'receipts do not attach a chat panel');
+  await assert.rejects(fs.access(path.join(artwork.path, '.codex-design-worker-jobs.json')), { code: 'ENOENT' });
+  const invalid = await f.rpc('tools/call', { name: 'design_request', arguments: { action: 'accept', ids: [prepared.id], threadId: 'invented' } });
+  assert.equal(invalid.isError, true, 'native parent identity cannot be supplied through a model argument');
+});
 
 async function session(t, { spike = false, built = false, resourceDiagnostics = true } = {}) {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-design-mcp-test-'));
@@ -77,13 +102,15 @@ test('global/file entries use app-only UI; ordinary model tools never attach a p
   for (const name of ['DesignLibrary', 'DesignFile']) assert.deepEqual(tools.find(tool => tool.name === name)._meta.ui.visibility, ['app']);
   assert.deepEqual(tools.find(tool => tool.name === 'DesignFile')._meta['openai/ui'].entrypoints, [{ type: 'file', extensions: ['.codexdesign'] }]);
   assert.deepEqual(tools.find(tool => tool.name === 'DesignLibrary')._meta['openai/ui'].entrypoints, [{ type: 'global' }]);
-  for (const name of ['design_read', 'design_action', 'search_mentions']) {
+  for (const name of ['design_read', 'design_action', 'search_mentions', 'design_request']) {
     const tool = tools.find(tool => tool.name === name);
     assert.ok(tool);
     assert.equal(tool._meta?.ui?.resourceUri, undefined);
     assert.equal(tool._meta?.['openai/outputTemplate'], undefined);
   }
   assert.equal(tools.find(tool => tool.name === 'search_mentions').annotations.readOnlyHint, true);
+  assert.deepEqual(tools.find(tool => tool.name === 'design_request')._meta.ui.visibility, ['model']);
+  assert.deepEqual(tools.find(tool => tool.name === 'design_action')._meta.ui.visibility, ['app']);
   const resources = await f.rpc('resources/list', {});
   assert.deepEqual(resources.resources.map(resource => resource.uri).sort(), [FILE_UI_URI, LIBRARY_UI_URI].sort());
   assert.ok([FILE_UI_URI, LIBRARY_UI_URI].every(uri => uri.includes(`/${PLUGIN_UI_VERSION}/`)));

@@ -6,6 +6,7 @@ import { webcrypto, createHash } from 'node:crypto';
 import { createEditorTransport, editorRequestUrl, isValidBase64 } from '../source/server/editor-transport.mjs';
 import { installNativeEditorTransport } from '../source/scripts/editor-native-transport.js';
 import { mountNativeEditor } from '../source/ui/native-editor.mjs';
+import { nativeCommentActions, nativeCommentPresentation } from '../source/scripts/comment-draft-adapter.mjs';
 
 async function editor(t) {
   const calls = [];
@@ -325,4 +326,309 @@ test('a mounted native editor cannot acknowledge unsaved navigation until its ex
   await listener({ source: iframe.contentWindow, data: { type: 'codex-design:editor-flushed', channel: 'flush-channel', requestId: request.requestId, saved: false, error: { code: 'EDITOR_UNSAVED_CHANGES', message: 'Still saving.' } } });
   await assert.rejects(saved, { code: 'EDITOR_UNSAVED_CHANGES' });
   handle.dispose();
+});
+
+const draftArtifactId = '11111111-1111-4111-8111-111111111111';
+const draftRequest = {
+  requestId: '22222222-2222-4222-8222-222222222222', artifactId: draftArtifactId,
+  uri: 'codex-design://edit-requests/22222222-2222-4222-8222-222222222222',
+  title: 'Nimbus', summary: 'Increase the heading contrast.',
+};
+
+function mountedDraftEditor(t, bridge) {
+  let listener;
+  const replies = [], warnings = [];
+  const ownerWindow = { addEventListener: (_, value) => { listener = value; }, removeEventListener() {} };
+  Object.defineProperty(ownerWindow, 'parent', { get() { throw new Error('The native editor broker must not inspect the host DOM.'); } });
+  const iframe = { ownerDocument: { defaultView: ownerWindow }, setAttribute() {}, contentWindow: { postMessage: message => replies.push(message) } };
+  const handle = mountNativeEditor({ iframe, bridge, artifactId: draftArtifactId, channel: 'draft-channel', document: { html: '<body>editor</body>' }, onError: error => warnings.push(error) });
+  t.after(() => handle.dispose());
+  const request = (requestId, extra = {}) => ({ type: 'codex-design:editor-request', channel: 'draft-channel', requestId, action: 'editor.request', payload: { request: { path: '__deck/comments', method: 'POST' } }, ...extra });
+  return { replies, warnings, request, handle, iframe, dispatch: (data, source = iframe.contentWindow) => listener({ source, data }) };
+}
+
+test('native comment HTTP success waits for the real draft append and acknowledgement, including duplicate RPC delivery', async t => {
+  const calls = [], drafted = [];
+  let releaseDraft, releaseAcknowledgement;
+  const draftGate = new Promise(resolve => { releaseDraft = resolve; });
+  const acknowledgementGate = new Promise(resolve => { releaseAcknowledgement = resolve; });
+  const result = { status: 200, headers: { 'content-type': 'application/json' }, body: Buffer.from('{"saved":true}').toString('base64'), nativeDraft: draftRequest };
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => {
+      calls.push({ action, payload });
+      if (action === 'request.draftAdded') { await acknowledgementGate; return { status: 'prepared' }; }
+      return result;
+    },
+    draftComment: async request => { drafted.push(request); await draftGate; },
+  });
+  const first = f.dispatch(f.request('rpc-one'));
+  const duplicate = f.dispatch(f.request('rpc-one'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].payload.id, draftArtifactId);
+  assert.deepEqual(drafted, [draftRequest]);
+  assert.deepEqual(f.replies, []);
+  releaseDraft();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls[1], { action: 'request.draftAdded', payload: { requestId: draftRequest.requestId } });
+  assert.deepEqual(f.replies, []);
+  releaseAcknowledgement();
+  await Promise.all([first, duplicate]);
+  assert.equal(f.replies.length, 2);
+  for (const reply of f.replies) assert.deepEqual(reply, { type: 'codex-design:editor-response', channel: 'draft-channel', requestId: 'rpc-one', result });
+  await f.dispatch(f.request('rpc-one'));
+  assert.equal(calls.length, 2);
+  await f.dispatch(f.request('rpc-two'));
+  assert.equal(calls.filter(call => call.action === 'editor.request').length, 2);
+  assert.equal(drafted.length, 1, 'The same immutable request cannot append twice under different RPC ids.');
+  assert.equal(calls.filter(call => call.action === 'request.draftAdded').length, 1);
+  assert.equal(calls.some(call => call.action === 'conversation.send' || call.action === 'request.accept'), false);
+});
+
+test('a failed native append reports draftFailed and returns only a structured editor error', async t => {
+  const calls = [];
+  let attempts = 0;
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => { calls.push({ action, payload }); return { status: 200, body: 'e30=', nativeDraft: draftRequest }; },
+    draftComment: async () => { attempts++; throw Object.assign(new Error('The user declined the draft.'), { code: 'NATIVE_COMMENT_DRAFT_FAILED' }); },
+  });
+  await f.dispatch(f.request('declined'));
+  assert.deepEqual(calls[1], { action: 'request.draftFailed', payload: { requestId: draftRequest.requestId, error: { code: 'NATIVE_COMMENT_DRAFT_FAILED', message: 'The user declined the draft.' } } });
+  assert.deepEqual(f.replies[0].error, { code: 'NATIVE_COMMENT_DRAFT_FAILED', message: 'The user declined the draft.' });
+  assert.equal(Object.hasOwn(f.replies[0], 'result'), false);
+  assert.equal(calls.some(call => call.action === 'request.draftAdded' || call.action === 'request.accept'), false);
+  await f.dispatch(f.request('declined'));
+  assert.equal(attempts, 1);
+  assert.equal(calls.length, 2);
+});
+
+for (const mutation of [
+  { name: 'create', path: '__comments', method: 'POST' },
+  { name: 'reply', path: '__comments/c_saved/messages', method: 'POST' },
+  { name: 'edit', path: '__comments/c_saved/messages/m_saved', method: 'PATCH' },
+]) test(`a saved canonical ${mutation.name} survives native draft failure and retries the same thread without repeating the save`, async t => {
+  const savedBody = { thread: { id: 'c_saved', label: '标题', status: 'open',
+    messages: [{ id: 'm_saved', text: '已保存的评论 🙂', author: { kind: 'user' } }],
+    agent: { status: 'delivered', nativeRequest: { requestId: draftRequest.requestId, status: 'draft_ready' } } }, retained: true };
+  const calls = [], draftFailures = [];
+  let saves = 0, sends = 0, attempts = 0;
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => {
+      calls.push({ action, payload });
+      if (action === 'request.draftFailed') { draftFailures.push(payload); return {}; }
+      if (action !== 'editor.request') return {};
+      const request = payload.request;
+      if (request.path === '__comments/c_saved/send') { sends++; assert.equal(request.method, 'POST'); }
+      else { saves++; assert.equal(request.path, mutation.path); assert.equal(request.method, mutation.method); }
+      return { status: 201, headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(savedBody)).toString('base64'),
+        nativeDraft: { ...draftRequest, savedCommentId: 'c_saved', attemptId: sends ? '44444444-4444-4444-8444-444444444444' : '33333333-3333-4333-8333-333333333333' } };
+    },
+    draftComment: async () => { attempts++; if (attempts === 1) throw Object.assign(new Error('The host declined the append.'), { code: 'NATIVE_COMMENT_DRAFT_FAILED' }); },
+  });
+  const originalRpc = f.request('canonical-save', { payload: { request: { ...mutation, body: 'e30=' } } });
+  await f.dispatch(originalRpc);
+  const reply = f.replies[0];
+  assert.equal(Object.hasOwn(reply, 'error'), false);
+  assert.equal(reply.result.status, 201);
+  assert.deepEqual(reply.result.headers, { 'content-type': 'application/json' });
+  const saved = JSON.parse(Buffer.from(reply.result.body, 'base64').toString('utf8'));
+  assert.equal(saved.thread.id, 'c_saved');
+  assert.equal(saved.retained, true);
+  assert.deepEqual(saved.thread.messages, savedBody.thread.messages);
+  assert.equal(saved.thread.agent.nativeRequest.status, 'needs_attention');
+  assert.equal(nativeCommentPresentation(saved.thread).working, undefined);
+  assert.match(saved.thread.agent.nativeRequest.message, /saved, but adding it to the chat draft failed/);
+  assert.match(f.warnings[0].message, /Retry add to chat/);
+  assert.equal(draftFailures.length, 1);
+  await f.dispatch(originalRpc);
+  assert.equal(saves, 1);
+  assert.equal(attempts, 1);
+  assert.equal(f.warnings.length, 1, 'The same RPC cannot repeat the save or its failure toast.');
+  const controller = { agentAvailable: () => true, act: (_, callback) => callback(), request: (path, method) =>
+    f.dispatch(f.request('retry-existing', { payload: { request: { path: '__comments' + path, method } } })) };
+  const retry = nativeCommentActions(controller, saved.thread, { busy: {} })[0];
+  assert.equal(retry.label, 'Retry add to chat');
+  await retry.onSelect();
+  assert.equal(saves, 1, 'Retry sends the saved thread without another canonical create/reply/edit mutation.');
+  assert.equal(sends, 1);
+  assert.equal(attempts, 2);
+  assert.equal(JSON.parse(Buffer.from(f.replies.at(-1).result.body, 'base64')).thread.id, 'c_saved');
+  await f.dispatch(originalRpc);
+  assert.equal(saves, 1);
+  assert.equal(attempts, 2);
+});
+
+test('a saved comment reports that the native draft already exists when only its acknowledgement fails', async t => {
+  const savedBody = { thread: { id: 'c_saved', status: 'open', messages: [{ id: 'm_saved', text: 'Keep this comment', author: { kind: 'user' } }] } };
+  const failures = [];
+  let attempts = 0;
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => {
+      if (action === 'request.draftAdded') throw Object.assign(new Error('Acknowledgement unavailable.'), { code: 'REQUEST_ACK_FAILED' });
+      if (action === 'request.draftFailed') { failures.push(payload); return {}; }
+      return { status: 200, body: Buffer.from(JSON.stringify(savedBody)).toString('base64'), nativeDraft: { ...draftRequest, savedCommentId: 'c_saved' } };
+    },
+    draftComment: async () => { attempts++; },
+  });
+  await f.dispatch(f.request('saved-ack-failure'));
+  const saved = JSON.parse(Buffer.from(f.replies[0].result.body, 'base64'));
+  assert.equal(saved.thread.id, 'c_saved');
+  assert.equal(saved.thread.agent.nativeRequest.status, 'needs_attention');
+  assert.match(saved.thread.agent.nativeRequest.message, /saved and added to the chat draft, but confirming/);
+  assert.match(f.warnings[0].message, /Check the existing draft/);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0].error.message, /draft was added, but confirming it failed/);
+  await f.dispatch(f.request('same-attempt-ack-failure'));
+  assert.equal(attempts, 1);
+});
+
+test('native draft failures retain structured errors when a saved comment identity cannot be verified', async t => {
+  let result;
+  const f = mountedDraftEditor(t, {
+    invoke: async action => action === 'editor.request' ? result : {},
+    draftComment: async () => { throw Object.assign(new Error('Append unavailable.'), { code: 'NATIVE_COMMENT_DRAFT_FAILED' }); },
+  });
+  const cases = [
+    { status: 200, body: btoa('not JSON') },
+    { status: 200, body: btoa('{"saved":true}') },
+    { status: 500, body: btoa('{"thread":{"id":"c_saved"}}') },
+    { status: 200, body: btoa('{"thread":{"id":"c_other"}}'), nativeDraft: { ...draftRequest, savedCommentId: 'c_saved' } },
+  ];
+  for (const [index, value] of cases.entries()) {
+    result = { nativeDraft: draftRequest, ...value };
+    await f.dispatch(f.request(`unverified-${index}`));
+    assert.equal(f.replies.at(-1).error.code, 'NATIVE_COMMENT_DRAFT_FAILED');
+    assert.equal(Object.hasOwn(f.replies.at(-1), 'result'), false);
+  }
+  assert.deepEqual(f.warnings, []);
+});
+
+test('a new RPC can retry a failed immutable draft while replaying the original RPC preserves its failure', async t => {
+  const calls = [];
+  let attempts = 0;
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => { calls.push({ action, payload }); return { status: 200, body: 'e30=', nativeDraft: draftRequest }; },
+    draftComment: async () => {
+      attempts++;
+      if (attempts === 1) throw Object.assign(new Error('The first append was declined.'), { code: 'NATIVE_COMMENT_DRAFT_FAILED' });
+    },
+  });
+  await f.dispatch(f.request('first-attempt'));
+  await f.dispatch(f.request('first-attempt'));
+  assert.equal(attempts, 1);
+  assert.equal(calls.length, 2);
+  assert.equal(f.replies.every(reply => reply.error?.code === 'NATIVE_COMMENT_DRAFT_FAILED'), true);
+  await f.dispatch(f.request('explicit-retry'));
+  assert.equal(attempts, 2);
+  assert.equal(calls.filter(call => call.action === 'request.draftFailed').length, 1);
+  assert.equal(calls.filter(call => call.action === 'request.draftAdded').length, 1);
+  assert.equal(f.replies.at(-1).result.status, 200);
+  await f.dispatch(f.request('first-attempt'));
+  assert.equal(f.replies.at(-1).error.code, 'NATIVE_COMMENT_DRAFT_FAILED');
+  await f.dispatch(f.request('another-delivery'));
+  assert.equal(attempts, 2, 'A successful retry remains cached under the immutable request id.');
+  assert.equal(calls.filter(call => call.action === 'request.draftAdded').length, 1);
+  assert.equal(f.replies.at(-1).result.status, 200);
+});
+
+test('explicit add-again attempts append the same immutable request once per attempt while RPC replays remain cached', async t => {
+  const firstAttempt = { ...draftRequest, attemptId: '33333333-3333-4333-8333-333333333333' };
+  const secondAttempt = { ...draftRequest, attemptId: '44444444-4444-4444-8444-444444444444' };
+  let nativeDraft = firstAttempt;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const calls = [], drafted = [];
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => { calls.push({ action, payload }); return { status: 200, body: 'e30=', nativeDraft }; },
+    draftComment: async request => { drafted.push(request); await gate; },
+  });
+  const first = f.dispatch(f.request('first-add'));
+  const replay = f.dispatch(f.request('first-add'));
+  const sameAttempt = f.dispatch(f.request('same-attempt'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(drafted, [firstAttempt]);
+  assert.equal(calls.filter(call => call.action === 'editor.request').length, 2);
+  release();
+  await Promise.all([first, replay, sameAttempt]);
+  assert.equal(calls.filter(call => call.action === 'request.draftAdded').length, 1);
+  nativeDraft = secondAttempt;
+  await f.dispatch(f.request('first-add'));
+  assert.equal(drafted.length, 1, 'Replaying the original RPC cannot create a new attempt.');
+  await Promise.all([f.dispatch(f.request('add-again')), f.dispatch(f.request('same-second-attempt'))]);
+  await f.dispatch(f.request('add-again'));
+  assert.deepEqual(drafted, [firstAttempt, secondAttempt]);
+  assert.equal(drafted[0].requestId, drafted[1].requestId);
+  assert.equal(drafted[0].uri, drafted[1].uri);
+  assert.equal(calls.filter(call => call.action === 'request.draftAdded').length, 2);
+  assert.equal(f.replies.every(reply => reply.result?.status === 200 && !Object.hasOwn(reply, 'error')), true);
+});
+
+test('an acknowledgement failure cannot conceal an error or repeat an already appended native draft', async t => {
+  let attempts = 0;
+  const calls = [];
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => {
+      calls.push({ action, payload });
+      if (action === 'request.draftAdded') throw Object.assign(new Error('The request acknowledgement failed.'), { code: 'REQUEST_ACK_FAILED' });
+      return { status: 200, body: 'e30=', nativeDraft: draftRequest };
+    },
+    draftComment: async () => { attempts++; },
+  });
+  await f.dispatch(f.request('ack-one'));
+  await f.dispatch(f.request('ack-two'));
+  assert.equal(attempts, 1);
+  assert.equal(calls.filter(call => call.action === 'request.draftFailed').length, 1);
+  assert.equal(f.replies.every(reply => reply.error?.code === 'REQUEST_ACK_FAILED' && !Object.hasOwn(reply, 'result')), true);
+});
+
+test('native draft brokering validates frame, channel, RPC ids and immutable artwork scope without exposing request actions', async t => {
+  const calls = [], drafted = [];
+  let nativeDraft = draftRequest;
+  const f = mountedDraftEditor(t, {
+    invoke: async (action, payload) => { calls.push({ action, payload }); return { status: 200, body: 'e30=', nativeDraft }; },
+    draftComment: async request => drafted.push(request),
+  });
+  await f.dispatch(f.request('forged-frame'), {});
+  await f.dispatch(f.request('forged-channel', { channel: 'another-channel' }));
+  for (const requestId of ['', ' ', 'line\nbreak', 'x'.repeat(81), {}, 1]) await f.dispatch(f.request(requestId));
+  for (const action of ['request.draftAdded', 'request.draftFailed', 'request.accept', 'conversation.send']) await f.dispatch(f.request(action, { action, payload: { requestId: draftRequest.requestId } }));
+  assert.deepEqual(calls, []);
+  assert.deepEqual(f.replies, []);
+  const invalidDrafts = [
+    { ...draftRequest, artifactId: '33333333-3333-4333-8333-333333333333' },
+    { ...draftRequest, requestId: 'arbitrary' },
+    { ...draftRequest, attemptId: 'arbitrary' },
+    { ...draftRequest, attemptId: null },
+    { ...draftRequest, uri: draftRequest.uri + '?latest=true' },
+    { ...draftRequest, uri: 'codex-design://edit-requests/33333333-3333-4333-8333-333333333333' },
+  ];
+  for (const [index, invalid] of invalidDrafts.entries()) {
+    nativeDraft = invalid;
+    await f.dispatch(f.request(`scope-${index}`));
+  }
+  assert.equal(calls.length, invalidDrafts.length);
+  assert.equal(calls.every(call => call.action === 'editor.request' && call.payload.id === draftArtifactId), true);
+  assert.deepEqual(drafted, []);
+  assert.equal(f.replies.every(reply => reply.error?.code === 'INVALID_COMMENT_DRAFT' && !Object.hasOwn(reply, 'result')), true);
+});
+
+test('the native RPC cache stays bounded while retaining pending duplicate requests', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let calls = 0;
+  const f = mountedDraftEditor(t, { invoke: async () => { calls++; await gate; return { status: 200 }; } });
+  const pending = Array.from({ length: 128 }, (_, index) => f.dispatch(f.request(`pending-${index}`)));
+  const duplicate = f.dispatch(f.request('pending-0'));
+  await f.dispatch(f.request('over-capacity'));
+  assert.equal(calls, 128);
+  assert.equal(f.replies[0].error.code, 'EDITOR_REQUEST_BUSY');
+  release();
+  await Promise.all([...pending, duplicate]);
+  assert.equal(calls, 128);
+  await f.dispatch(f.request('new-request'));
+  assert.equal(calls, 129);
+  await f.dispatch(f.request('pending-127'));
+  assert.equal(calls, 129);
+  await f.dispatch(f.request('pending-0'));
+  assert.equal(calls, 130, 'The oldest settled response was evicted when the bounded cache was full.');
 });
