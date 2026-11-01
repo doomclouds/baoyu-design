@@ -85,9 +85,26 @@ Retained local evidence includes `codex-design-0.5-tests-first.txt`,
 
 ## Release and outstanding work
 
-The release installation and installed-file verification will be recorded after
-the formal GitHub marketplace update. No GitHub workflow or tag is part of this
-release process.
+Release commit `d389de564148ba096995243a40eb8e3a33b30549` was pushed to
+`doomclouds/baoyu-design`, branch `codex/plugin`. The configured GitHub
+marketplace snapshot was refreshed through the installed Desktop CLI, then
+`codex-design@codex-design-marketplace` was installed as **0.5.0**.
+The first install attempt failed with Windows Access Denied while the old
+0.4.3 MCP entry processes held their cache directories. Only those exact
+entry processes were stopped after identity revalidation; the supported
+installation command then succeeded.
+
+Read-only discovery through the real Desktop app-server
+`0.166.0-alpha.5.1` verified all five enabled skills, six MCP tools, the global
+entrypoint and no plugin diagnostics. All **178 installed-file hashes** match
+the generated package. `gh run list` returned no workflow runs for this branch;
+no GitHub workflow or tag was used.
+
+The current long-lived chat connection still returned `Transport closed`
+after the old MCP process was replaced. A normal Desktop restart/reconnect is
+required before the final real-host Add to chat/native Send operator check.
+This connection error is retained separately from the successful fresh-runtime
+discovery and installed-file verification.
 
 The full original goal is not claimed complete. The native host's empty top
 toolbar and shared middle-sidebar slot remain outside the verified public
