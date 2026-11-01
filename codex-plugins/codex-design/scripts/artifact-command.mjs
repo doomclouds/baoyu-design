@@ -9,6 +9,7 @@ import { designSystemSearchEnvironment } from './design-system-search.mjs';
 import { createLibraryStore } from '../library/index.mjs';
 import { UUID } from '../library/safety.mjs';
 import { WORKER_LOCK_FILE } from './worker-core.mjs';
+import { artworkAppUrl, openArtworkInApp, checkedArtworkDelivery, normalizeControlHints } from './artifact-delivery.mjs';
 
 const BRIDGE_FLAGS = new Map([
   ['thread', 'threadId'], ['remote', 'remote'], ['remote-auth-token-env', 'remoteAuthTokenEnv'], ['codex-path', 'codexPath'],
@@ -59,9 +60,7 @@ export async function createArtworkForSkill(skillDir, title, { store = createLib
   const kind = kindForSkill(skillDir);
   if (!kind) throw new BridgeError('UNSUPPORTED_SKILL', 'Only the four artwork editor skills can create library artwork.');
   const artwork = await store.create({ kind, title });
-  const url = new URL('codex://plugins/codex-design@codex-design-marketplace/app/DesignLibrary');
-  url.searchParams.set('path', `/artifacts/${artwork.id}`);
-  return { id: artwork.id, kind: artwork.kind, title: artwork.title, root: artwork.path, appUrl: url.href };
+  return { id: artwork.id, kind: artwork.kind, title: artwork.title, root: artwork.path, appUrl: artworkAppUrl(artwork.id), navigationRequested: false };
 }
 
 export async function checkpointArtworkForSkill(skillDir, givenRoot) {
@@ -144,6 +143,45 @@ function originalCommand(script, argv, env, onStart) {
   });
 }
 
+function originalJsonCommand(script, argv, env, maximum = 32 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script, ...argv], { env, shell: false, windowsHide: true, stdio: ['inherit', 'pipe', 'inherit'] });
+    let output = '', size = 0, failed = false;
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      size += Buffer.byteLength(chunk);
+      if (size > maximum) { failed = true; child.kill(); reject(new BridgeError('CLI_RESPONSE_TOO_LARGE', 'The artifact command returned too much structured output.')); }
+      else output += chunk;
+    });
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      if (failed) return;
+      const exitCode = code ?? (signal ? 1 : 0);
+      if (!output.trim() && exitCode !== 0) return resolve({ code: exitCode, result: null });
+      try { resolve({ code: exitCode, result: JSON.parse(output.trim().replace(/^\uFEFF/, '')) }); }
+      catch { reject(new BridgeError('INVALID_CLI_RESPONSE', 'The artifact command did not return valid structured output.')); }
+    });
+  });
+}
+
+function publicHelp(skillDir) {
+  return `${path.basename(skillDir)} — Codex Design artwork commands
+  create <title>          create in the global artwork library; returns appUrl
+  check <root>            validate files; native delivery metadata is included
+  open <library-root>     request the native Codex Design artwork tab
+  preview <root>          explicitly start an independent local web editor
+  checkpoint <root>       save a recovery point before independent AI edits
+  open-service <root>     internal: start/reuse the local data service for MCP
+  serve-service <root>    internal: run that data service in the foreground
+  stop <root>             explicitly stop a verified local editor service
+Other format, upload, database and comment commands keep their existing arguments.
+Native open does not start a model, chat, worker or data server. navigationRequested
+means the OS accepted the request; verify the native tab before claiming rendering.
+Folders outside the library require an explicit import or preview; they are never
+silently copied, moved, or opened as a web fallback.
+`;
+}
+
 const sameTarget = (a, b) => ['remote', 'remoteAuthTokenEnv', 'codexPath', 'skillDir', 'deliveryMode', 'workerModel'].every((key) => (a[key] ?? null) === (b[key] ?? null))
   && (['native', 'worker'].includes(b.deliveryMode) || a.threadId === b.threadId);
 
@@ -168,19 +206,50 @@ async function completionInput() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function runArtifactCommand(skillDir, argv, { env = process.env, startupTimeoutMs = 20_000, libraryStore } = {}) {
+export async function runArtifactCommand(skillDir, argv, { env = process.env, startupTimeoutMs = 20_000, libraryStore, navigate } = {}) {
   try {
     if (Number(process.versions.node.split('.')[0]) < 22) throw new BridgeError('NODE_VERSION', 'Codex Design requires Node.js 22 or later.');
     skillDir = fs.realpathSync(skillDir);
     const script = path.join(skillDir, 'scripts', 'artifact.mjs');
     const { forwarded, options } = parseBridgeArguments(argv);
-    const command = forwarded[0];
+    let command = forwarded[0];
+    if (!command || ['--help', '-h', 'help'].includes(command)) {
+      process.stdout.write(publicHelp(skillDir)); process.exitCode = 0; return 0;
+    }
     if (command === 'create') {
       if (forwarded.length !== 2 || Object.keys(options).length) throw new BridgeError('INVALID_CREATE_ARGUMENTS', 'Use create <title> with one quoted artwork title. Existing explicit artifact roots use the usual file workflow.');
       const result = await createArtworkForSkill(skillDir, forwarded[1], { store: libraryStore });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       process.exitCode = 0;
       return 0;
+    }
+    if (command === 'open') {
+      if (forwarded.length !== 2 || Object.keys(options).length) throw new BridgeError('INVALID_NATIVE_OPEN_ARGUMENTS', 'Use open <library-artifact-root> for the native artwork tab. Use explicit preview or internal open-service for data-service flags.');
+      const { root } = artifactRoot(skillDir, forwarded);
+      const result = await openArtworkInApp(skillDir, root, kindForSkill(skillDir), { libraryRoot: libraryStore?.root, navigate });
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exitCode = 0; return 0;
+    }
+    if (command === 'check') {
+      if (Object.keys(options).length) throw new BridgeError('INVALID_CHECK_ARGUMENTS', 'Comment-delivery flags do not apply to check.');
+      const { root, rootIndex } = artifactRoot(skillDir, forwarded);
+      forwarded[rootIndex] = root;
+      const checked = await originalJsonCommand(script, forwarded, env);
+      if (checked.result !== null) process.stdout.write(`${JSON.stringify(checkedArtworkDelivery(checked.result, {
+        skillDir, root, kind: kindForSkill(skillDir), libraryRoot: libraryStore?.root,
+      }), null, 2)}\n`);
+      process.exitCode = checked.code; return checked.code;
+    }
+    if (['upload', 'write-db'].includes(command)) {
+      const { root, rootIndex } = artifactRoot(skillDir, forwarded, { allowMissing: true });
+      forwarded[rootIndex] = root;
+      const output = await originalJsonCommand(script, forwarded, env);
+      if (output.result !== null) process.stdout.write(`${JSON.stringify(normalizeControlHints(output.result, script, skillDir, root), null, 2)}\n`);
+      process.exitCode = output.code; return output.code;
+    }
+    if (command === 'serve') throw new BridgeError('EXPLICIT_SERVICE_COMMAND', 'Use serve-service for the foreground internal data server, preview for an explicitly requested web editor, or open for Codex Design.');
+    if (['preview', 'open-service', 'serve-service'].includes(command)) {
+      command = command === 'serve-service' ? 'serve' : 'open';
+      forwarded[0] = command;
     }
     if (command === 'checkpoint') {
       if (forwarded.length !== 2 || Object.keys(options).length) throw new BridgeError('INVALID_CHECKPOINT_ARGUMENTS', 'Use checkpoint <existing-library-artifact-root>.');
@@ -321,7 +390,9 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
     process.exitCode = finalCode;
     return finalCode;
   } catch (error) {
-    process.stderr.write(`${JSON.stringify({ error: error.code ?? 'CODEX_DESIGN_ERROR', message: error.message })}\n`);
+    const detail = { error: error.code ?? 'CODEX_DESIGN_ERROR', message: error.message };
+    for (const key of ['appUrl', 'nativeAvailable', 'navigationRequested', 'renderVerified', 'next']) if (Object.hasOwn(error, key)) detail[key] = error[key];
+    process.stderr.write(`${JSON.stringify(detail)}\n`);
     process.exitCode = 2;
     return 2;
   }

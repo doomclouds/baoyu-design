@@ -11,6 +11,8 @@ const execFileAsync = promisify(execFile);
 const pluginRoot = path.resolve(process.env.CODEX_DESIGN_TEST_PLUGIN_ROOT || fileURLToPath(new URL('../codex-design/', import.meta.url)));
 const cliPath = (fixture) => path.join(pluginRoot, 'skills', fixture.skill, 'scripts', 'artifact.mjs');
 
+// This helper deliberately exercises the canonical data-server API. Public
+// wrapper navigation and its explicit open-service route have separate tests.
 async function runCli(fixture, ...args) {
   const { stdout, stderr } = await execFileAsync(process.execPath, [cliPath(fixture), ...args], {
     timeout: 20_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
@@ -153,16 +155,16 @@ test('legacy main delivery: real editor hook targets the bound chat and refuses 
   await writeFile(fake, "import fs from 'node:fs'; fs.appendFileSync(process.env.FAKE_TRACE, JSON.stringify({args:process.argv.slice(2),cwd:process.cwd()})+'\\n');\n");
   let opened;
   try {
-    const first = await runWrapper('open', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake);
+    const first = await runWrapper('open-service', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake);
     opened = JSON.parse(first.stdout);
     const bindingPath = path.join(fixture.root, '.codex-design-bridge.json');
     const binding = JSON.parse(await readFile(bindingPath, 'utf8'));
     assert.equal(binding.threadId, threadId);
     assert.equal(binding.serverPid, opened.pid);
-    const reused = JSON.parse((await runWrapper('open', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake)).stdout);
+    const reused = JSON.parse((await runWrapper('open-service', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake)).stdout);
     assert.equal(reused.pid, opened.pid);
     assert.equal(reused.reused, true);
-    await assert.rejects(runWrapper('open', fixture.root, '--delivery', 'main', '--thread', otherThread, '--codex-path', fake), (error) => {
+    await assert.rejects(runWrapper('open-service', fixture.root, '--delivery', 'main', '--thread', otherThread, '--codex-path', fake), (error) => {
       assert.equal(error.code, 2);
       assert.match(error.stderr, /EDITOR_ALREADY_BOUND/);
       return true;
@@ -229,7 +231,7 @@ test('legacy main delivery: an edited revision sent during slow delivery is queu
   };
   let opened;
   try {
-    const result = await execFileAsync(process.execPath, [wrapper, 'open', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake], {
+    const result = await execFileAsync(process.execPath, [wrapper, 'open-service', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake], {
       env, timeout: 12_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
     });
     opened = JSON.parse(result.stdout);
@@ -298,7 +300,7 @@ async function boundNativeFixture() {
     catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   };
   let opened;
-  try { opened = await parent('open', fixture.root, '--codex-path', fake); }
+  try { opened = await parent('open-service', fixture.root, '--codex-path', fake); }
   catch (error) { await rm(fixture.root, { recursive: true, force: true }); throw error; }
   const headers = { 'Content-Type': 'application/json', Origin: new URL(opened.url).origin };
   return {

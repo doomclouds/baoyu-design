@@ -18,18 +18,20 @@ function codexInstructions(editor) {
   if (editor) lines.push(...[
   "- Run `node \"<this skill folder>/scripts/codex-artifact.mjs\" <command>`. This entry point delegates to the bundled local tool. References or returned hints naming `artifact.mjs` mean this Codex entry point.",
   "- **Create new artwork:** Unless the user gave an explicit output folder, first run `node \"<this skill folder>/scripts/codex-artifact.mjs\" create \"<artwork title>\"`. It creates a blank native artifact in the global library and returns its UUID, exact `root`, and native `appUrl`. Use THAT root for all subsequent writes, `check`, and `open`; do not create a second project folder from later examples. Creating artwork does not start a model, queue a message, or open another chat.",
+  "- **Open and deliver in Codex Design:** Keep the `appUrl` returned by `create`. After writing and checking, run this entry point's `open <root>` to request the artwork's existing Tab in Codex Design, and give its returned native `appUrl` as the delivery link. Do not open a localhost editor URL in a chat's browser Tab by default. `navigationRequested: true` only means the navigation request was accepted; `renderVerified: false` does not prove that the editor rendered. Report a failed native open honestly, without silently switching to HTTP. Opening artwork does not create or resume a worker or another chat.",
+  "- **Check hints and explicit previews:** Follow `check.next` through this skill's `scripts/codex-artifact.mjs` wrapper. A non-library root has `nativeAvailable: false`; keep its files in place and explain that native opening needs an explicitly requested import. Use `preview <root>` and its HTTP `url` only when the user explicitly asks for a standalone browser preview. Do not invoke internal `open-service` / `serve-service` commands as a delivery workflow. Asset and dataset `url` values such as `/_blob/<id>` remain content references, not editor links.",
   "- **Read-only references:** Artwork or a design system attached as reference is context to read and follow, not permission to edit its source. Change only the user's editing target. Reading or changing a design system never automatically changes other artwork; chats, comments, worker state, and runtime records do not become reference content.",
   "- **Before AI edits:** For an existing library artwork, run `node \"<this skill folder>/scripts/codex-artifact.mjs\" checkpoint \"<root>\"` before changing content, and preserve the returned restore point. An active native job blocks independent checkpoints; pending jobs are reported as `pendingCount` for the parent's coordination and are not consumed. A native worker already holding a claimed job skips this command because its controller has already created that job's restore point. Freshly created blank artwork and explicitly located legacy project folders keep their existing workflow; do not import or relocate them just to checkpoint.",
   "- **Design system search:** `list` searches the current project and the existing global library's `~/.codex/CodexDesignLibrary/design-system` folder, without creating the library or searching its trash. Set `CODEX_DESIGN_SYSTEMS` to additional local design-system folders when needed; explicit folders keep priority. Separate paths with the platform path delimiter (semicolon on Windows, colon on macOS/Linux).",
   "- **Coordinate ownership from the main chat:** Before the main chat or another independent agent changes an artifact, inspect `worker-status <root>` through the Codex entry point. Do not write the same artifact while its native worker owns an active job. Pending work with no listener needs the parent's native-agent decision, not an indefinite wait. The registered worker owns its active serial job and must not wait for its own worker-status entry.",
-  "- **Native annotations:** Use the built-in browser toolbar's **批注** control. The plugin adds object/file metadata to existing page elements and does not add an annotation panel or button. The user submits the native annotation through the host composer to the current chat. Treat that submitted selection and text as a request for the current chat; check worker status before editing its files.",
-  "- **Editor Send to agent:** The editor's existing Comments control stays in its original position and saves `comments.json`. Explicit **Send to agent** durably records a local job; it does not wake a native agent, call an external queue, or start a model/HTTP daemon. Ordinary saved comments are not sent. Default delivery is `native`; `worker` is an alias. `--delivery main` is explicit legacy compatibility only, never a fallback.",
+  "- **Annotations and editor comments:** In a native Codex Design artwork Tab, use Comments in that editor's existing toolbar or navigation tools. Only an explicitly requested standalone browser preview uses the browser toolbar's annotation control, where available; the plugin adds object/file metadata to existing elements. A selection submitted through the host composer is a request for the current chat; check worker status before editing its files.",
+  "- **Editor Send to agent:** The editor's Comments control saves `comments.json`. Explicit **Send to agent** durably records a local job; it does not wake a native agent, call an external queue, or start a model/HTTP daemon. Ordinary saved comments are not sent. Default delivery is `native`; `worker` is an alias. `--delivery main` is explicit legacy compatibility only, never a fallback.",
   "- **Parent native-agent controller:** Inspect worker-status and the actual platform native-agent tools. Reuse the registered child when it is available; resume the existing child when needed; create one with the platform spawn tool only when the parent decides that is necessary. Do not create an agent for every comment. A real platform-spawned child appears in the native UI; never invent threadSource metadata. Listener presence is not proof of agent liveness. If native tools are unavailable or unloaded, leave durable jobs pending and have the parent arrange recovery; do not silently use a background model process or the main chat queue.",
   "- **Register inside the real child:** The selected child runs `worker-register <root> --name <task>` using its own actual `CODEX_THREAD_ID` environment. Never copy the parent's id or fabricate one. Registration reuses the same id; a different child requires the parent's explicit replacement decision and `--replace`.",
   "- **Keep the child listening:** After registration, do not end the turn with a Ready message. Run `worker-next <root> --timeout 60` as a long wait and poll that same running command instead of starting duplicate listeners. On `timedOut`, call worker-next again. On `closed`, end this listener turn. A job returns `job.id`, `request`, and `event`: read the installed skill and current artifact files, edit only that artifact, preserve unrelated content, and run its built-in check. Do not wait for your own active status.",
   "- **Complete each job:** Run `worker-complete <root> <jobId> -` with a concise reply on stdin, then call worker-next again. Plain text completes a successful job; JSON `{\"text\":\"honest explanation\",\"status\":\"failed\",\"error\":{\"code\":\"...\",\"message\":\"...\"}}` reports failure. The controller posts the reply to the original comment with a user-revision precondition; do not also call comment-reply or comment-resolve. Acceptance is not completion. Report pending, active, completed, failed, and superseded results accurately.",
   "- **Pause or replace:** Before pausing/replacing a child that may still be editing, the parent uses the platform native interrupt tool, then `worker-stop <root>` and, for a different child, explicit registration with `--replace`. The CLI pauses its local listener; it cannot interrupt a native agent. Main and independent agents must not write concurrently with that worker.",
-  "- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option opens a local editor without delivery; it does not recover or replace a native child."
+  "- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option disables comment delivery; it does not change native opening into a browser preview or recover or replace a native child."
 ]);
   else lines.push(...[
   "- Run the palette validator using its absolute installed path: `node \"<this skill folder>/scripts/validate_palette.js\" ...`."
@@ -72,15 +74,54 @@ const synchronizedSystem = `## A system generated from code: \`"editing": "code"
 
 const localDeckFiles = `# A local deck's files
 
-The deck lives in one user-project folder. Read this skill's SKILL.md for the full index and slide schemas.
+The deck lives at the exact saved root returned by creation, or the user's explicit existing folder. Read this skill's SKILL.md for the full index and slide schemas.
 
 - Keep the index in \`project/deck.json\` and each slide in \`project/slides/<id>.html\`. A slide contains exactly one section whose id matches its file name.
 - Read current files before editing; preserve slide ids and index keys unrelated to the request. Speaker notes are plain text in one final \`aside\` per slide.
 - Upload pictures and font files with \`node "<this skill folder>/scripts/codex-artifact.mjs" upload <root> <file>\`; use the returned asset URL.
 - To install a design system, read its local README and tokens, copy the required files byte for byte into \`project/ds/<namespace>/\`, and add its record to \`designSystems\` in the current deck index. Use the user-provided local system folder as \`artifact\`, \`version: null\`, and the current time as \`copiedAt\`. Follow the namespace and font rules in SKILL.md.
 - Add or remove slides by updating both their files and \`order\`; update section starts and the cover only when affected. Re-read the index immediately before changing it.
-- Run \`node "<this skill folder>/scripts/codex-artifact.mjs" check <root>\`, fix reported problems, and inspect the changed output with available Codex preview tools. Start or reopen the editor with the same entry point's \`open\` command.
+- Run \`node "<this skill folder>/scripts/codex-artifact.mjs" check <root>\`, fix reported problems, and follow its wrapper-based \`next\`. Request the existing artwork Tab with the same entry point's \`open <root>\` and deliver the returned native \`appUrl\`. Name a slide by its page number alongside that artwork link; native slide-specific URL anchors are not implemented. Only a user's explicit standalone-browser request uses \`preview <root>\`.
 `;
+
+const nativeOpenCall = '- `open <root>` → `{appUrl, navigationRequested, renderVerified, …}`: requests the existing artwork Tab in Codex Design. Give the returned native `appUrl`, retaining the same artwork UUID and saved root. An accepted navigation request does not verify rendering. A root outside the library is refused for native opening; do not copy, import, or relocate it without the user\'s instruction. The editor saves into the same artwork files. Runtime records and `comments.json` belong to the existing tooling; preserve them.';
+const explicitPreviewCall = '- `preview <root> [--port n]` → `{url, …}`: standalone HTTP editor preview, only when the user explicitly asks for an independent browser page. This preview URL is not the default delivery link.';
+
+function adaptNativeDelivery(text, name, relative) {
+  if (!editors.includes(name)) return text;
+  let adapted = text;
+  if (relative === 'SKILL.md') {
+    adapted = adapted
+      .replace(/then open them in a local (?:slide|canvas)\s+editor/, 'then open them in their Codex Design artwork Tab')
+      .replace('open them in a local design-system page', 'open them in their Codex Design artwork Tab')
+      .replace('that opens in the bundled live editor:', 'that opens in its Codex Design artwork Tab:')
+      .replace(/If no deck exists yet: `<root>` = a new folder `designs\/<slug>\/`[\s\S]*?the deck's name goes in `title` \(REQUIRED\)\./, 'If no deck exists yet, use the Codex execution `create` command and retain its exact `root` and native `appUrl`, unless the user explicitly named an output folder. The deck\'s name goes in `title` (REQUIRED).')
+      .replace(/If no canvas exists yet: `<root>` = a new folder `designs\/<slug>\/`[\s\S]*?goes in `title`\./, 'If no canvas exists yet, use the Codex execution `create` command and retain its exact `root` and native `appUrl`, unless the user explicitly named an output folder. The canvas\'s name (REQUIRED; as the user says it, not “Design” or “Untitled”) goes in `title`.')
+      .replace(/No system yet\?\n`<root>` = a new folder `designs\/<slug>\/`[\s\S]*?Never make a second one\./, 'No system yet? Use the Codex execution `create` command and retain its exact `root` and native `appUrl`, unless the user explicitly named an output folder. Its name goes in the index\'s `title`. Never make a second one.')
+      .replace(/A dashboard is a folder, `<root>`: `designs\/<slug>\/`[\s\S]*?The first `write-db` or\n`upload` creates it\./, 'A dashboard lives in the exact `root` returned by the Codex execution `create` command; retain its native `appUrl` for delivery. Reuse an existing dashboard or a user\'s explicit output folder instead of creating another.')
+      .replace('Work in ONE folder, `<root>` (make it first)', 'Work in ONE folder, `<root>` (the creation result\'s root or the user\'s explicit folder)')
+      .replace(/^- `open <root>` →[^\n]+$/m, nativeOpenCall + '\n' + explicitPreviewCall)
+      .replace(/^\| `node \$A open <root>[^\n]+$/m, '| `node $A open <root>` | Requests this artwork\'s existing Codex Design Tab and returns `{appUrl, navigationRequested, renderVerified, …}`. Deliver `appUrl`; navigation acceptance is not a render check. |\n| `node $A preview <root> [--port n]` | Standalone HTTP preview only when the user explicitly requests an independent browser page; returns its preview `url`. |')
+      .replace("Naming slide 7 to the user? Link it too: `open`'s `url` + `#slide-7` (number, not id).", 'Naming slide 7 to the user? Link the artwork\'s native `appUrl` and write “Slide 7” beside it. Native slide-specific URL anchors are not implemented; do not construct a localhost `#slide-7` link.')
+      .replace(/run `open` and give the user its `url` once, so they can watch the (slides|artboards) arrive\./g, 'run `open <root>` through the Codex wrapper and give the returned native `appUrl` once, so they can watch the $1 arrive in the same Codex Design artwork Tab.')
+      .replace('then the folder and the link.', 'then the saved root and the native `appUrl` link.')
+      .replace('then the folder, the link and a line', 'then the saved root, the native `appUrl` link and a line')
+      .replace('the link (`open`) and the Codex verification policy above.', 'request the existing Codex Design artwork Tab with `open <root>`, return its native `appUrl`, and follow the Codex verification policy above.')
+      .replace('4. Only now show it: run `open`, then the link, the folder, what you built from and assumed, what remains of', '4. Only now show it: run `open <root>` through the Codex wrapper, then give its native `appUrl`, the saved root, what you built from and assumed, what remains of')
+      .replace('Then `check` until `problems` is 0.', 'Then `check` until `problems` is 0, request the existing Codex Design artwork Tab with `open <root>`, and deliver its native `appUrl`.')
+      .replace('Then run `open <root>` (it starts the\n   editor in the background and returns at once).', 'Then run `open <root>` to request this artwork\'s existing Codex Design Tab; keep its returned native `appUrl` for delivery.')
+      .replace('where a browser has the page open', 'while the Codex Design artwork Tab is open')
+      .replace('or no browser has\n   it open.', 'or its artwork Tab is not open.')
+      .replace("shows it; if it isn't running, `open` it again.", 'shows it; use `open <root>` to request the same artwork Tab again and return its native `appUrl`.')
+      .replace('Then hand over: give the person the `url` and the\n   folder.', 'Then hand over: give the person the native `appUrl` from `create` or `open` and the exact saved root.')
+      .replace('For an output made from this canvas, give the user its local folder and editor or export link;', 'For an output made from this canvas, give its saved root and native `appUrl` when it is a Codex Design artwork, or its exported file link;')
+      .replace('"save to the target\'s url" → the files are written; then `check`, and `open` for the link.', '"save to the target\'s url" → write the target files, run the Codex wrapper\'s `check`, then `open <root>` and return its native `appUrl`.');
+  }
+  if (name === 'codex-dashboard' && relative === 'artifact-type/reference/design-defaults.md') {
+    adapted = adapted.replace('### Handing over\n\n', '### Handing over\n\nUse the native `appUrl` from `create` or `open <root>` to deliver the existing Codex Design artwork Tab, alongside its saved root. A standalone HTTP `preview` link is only for a user\'s explicit browser-preview request.\n\n');
+  }
+  return adapted;
+}
 
 const localSources = `# Local dashboard data sources
 
@@ -110,7 +151,7 @@ function adaptLocalMarkdown(text, name, relative) {
     return '# Reading a local dashboard\n\nThe local editor does not bundle a voice service. Keep headings, reading order, labels, tables, and text alternatives accessible. Build a complete dashboard without a Listen button or a dependency on speech playback.\n';
   }
   if (name === 'codex-design' && relative.endsWith('artifact-type/reference/make-from-this.md')) {
-    return '# Make another artifact from this canvas\n\nRead the selected artboards and create the requested deck, document, or other output in its own user-project folder using the appropriate Codex skill. Keep the original canvas intact. Return the new output path and its local editor or exported file link; do not invent a hosted artifact URL or add a link card that requires a hosted artifact service.\n';
+    return '# Make another artifact from this canvas\n\nRead the selected artboards and create the requested deck, document, or other output using the appropriate Codex skill. Keep the original canvas intact. For another Codex Design artwork, retain the new creation result\'s exact root and native appUrl, then use that skill\'s open command to request its own Codex Design artwork Tab. Deliver the appUrl and saved root; other output formats use their exported file links. Use an independent HTTP preview only when the user explicitly requests one. Do not invent a hosted artifact URL or add a link card that requires a hosted artifact service.\n';
   }
   let adapted = text
     .replace(/^license:.*$/m, 'license: "Mixed sources. See the bundled ../../NOTICE.md for source-specific terms."')
@@ -170,7 +211,28 @@ function adaptLocalMarkdown(text, name, relative) {
     adapted = adapted.replace(/### Certified queries[\s\S]*$/, '### Local file sources\n\nThe local editor uses uploaded file datasets. Certified-query administration is not bundled; prepare approved data with existing tools, attach the file, and record its origin and update time.\n');
   }
   if (/claude/i.test(adapted)) throw new Error(`Unadapted host wording remains in ${name}/${relative}: ${adapted.split('\n').filter((line) => /claude/i.test(line)).join(' | ')}`);
-  return adapted;
+  return adaptNativeDelivery(adapted, name, relative);
+}
+
+export function adaptSkillMarkdown(original, name, relative) {
+  original = original.replaceAll('\r\n', '\n');
+  let adapted = adaptMarkdown(original);
+  if (name === 'codex-design-system' && relative === 'artifact-type/reference/from-code.md') {
+    const start = adapted.indexOf('## A system kept in sync by `/design-sync`:');
+    if (start < 0) throw new Error('Upstream design-system synchronization section changed; review the Codex adaptation.');
+    adapted = `${adapted.slice(0, start)}${synchronizedSystem}`;
+  }
+  if (relative === 'SKILL.md') {
+    const upstreamName = name === 'codex-dataviz' ? 'dataviz' : name.replace(/^codex-/, 'claude-');
+    const expectedName = `name: ${upstreamName}\n`;
+    if (!original.includes(expectedName)) throw new Error(`Unexpected upstream skill name: ${name}`);
+    adapted = adapted.replace(/^name: [^\n]+$/m, `name: ${name}`);
+    if (adapted.includes('## Codex execution')) throw new Error(`Refusing to adapt an already adapted skill: ${name}`);
+    const heading = /(^# [^\n]+\n\n)/m;
+    if (!heading.test(adapted)) throw new Error(`Missing title in upstream skill: ${name}`);
+    adapted = adapted.replace(heading, title => `${title}${codexInstructions(editors.includes(name))}`);
+  }
+  return adaptLocalMarkdown(adapted, name, relative);
 }
 
 export async function adaptSkills(pluginRoot) {
@@ -178,23 +240,7 @@ export async function adaptSkills(pluginRoot) {
     const skillRoot = path.join(pluginRoot, 'skills', name);
     for (const filename of await markdownFiles(skillRoot)) {
       const original = await readFile(filename, 'utf8');
-      let adapted = adaptMarkdown(original.replaceAll('\r\n', '\n'));
-      if (name === 'codex-design-system' && filename === path.join(skillRoot, 'artifact-type', 'reference', 'from-code.md')) {
-        const start = adapted.indexOf('## A system kept in sync by `/design-sync`:');
-        if (start < 0) throw new Error('Upstream design-system synchronization section changed; review the Codex adaptation.');
-        adapted = `${adapted.slice(0, start)}${synchronizedSystem}`;
-      }
-      if (filename === path.join(skillRoot, 'SKILL.md')) {
-        const upstreamName = name === 'codex-dataviz' ? 'dataviz' : name.replace(/^codex-/, 'claude-');
-        const expectedName = `name: ${upstreamName}\n`;
-        if (!original.replaceAll('\r\n', '\n').includes(expectedName)) throw new Error(`Unexpected upstream skill name: ${name}`);
-        adapted = adapted.replace(/^name: [^\n]+$/m, `name: ${name}`);
-        if (adapted.includes('## Codex execution')) throw new Error(`Refusing to adapt an already adapted skill: ${name}`);
-        const heading = /(^# [^\n]+\n\n)/m;
-        if (!heading.test(adapted)) throw new Error(`Missing title in upstream skill: ${name}`);
-        adapted = adapted.replace(heading, (title) => `${title}${codexInstructions(editors.includes(name))}`);
-      }
-      adapted = adaptLocalMarkdown(adapted, name, path.relative(skillRoot, filename).split(path.sep).join('/'));
+      const adapted = adaptSkillMarkdown(original, name, path.relative(skillRoot, filename).split(path.sep).join('/'));
       if (adapted !== original) await writeFile(filename, adapted);
     }
     if (editors.includes(name)) {

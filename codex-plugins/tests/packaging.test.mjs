@@ -208,7 +208,7 @@ test('the installed stdio bundle exposes real entrypoints while ordinary tools k
   assert.equal(ui.contents[0].text, packagedHtml, 'the distributed server must return the bundled UI, not source HTML or a test placeholder');
 });
 
-test('all four distributed editors load complete native English/Chinese resources before their runtime', async () => {
+test('all four distributed editors load English-only UI resources before their runtime', async () => {
   for (const name of editors) {
     const editor = path.join(pluginRoot, 'skills', name, 'scripts/editor');
     const html = await readFile(path.join(editor, 'index.html'), 'utf8');
@@ -234,10 +234,14 @@ test('all four distributed editors load complete native English/Chinese resource
     }
     assert.equal(catalog.kind, name.replace(/^codex-/, ''));
     assert.ok(catalog.coverage.native > 50);
-    assert.equal(catalog.coverage.translatedNative, catalog.coverage.native, name + ': incomplete native UI translation');
-    assert.deepEqual(Object.keys(catalog.resources.en.editor).sort(), Object.keys(catalog.resources.zh.editor).sort(), name + ': shared menus and comment controls must not rely on English fallbacks');
-    assert.ok(catalog.resources.zh.editor['chrome.reply']);
+    assert.equal(catalog.language, 'en');
+    assert.equal(catalog.coverage.englishNative, catalog.coverage.native, name + ': incomplete native English UI catalog');
+    assert.deepEqual(Object.keys(catalog.resources), ['en']);
+    assert.equal(catalog.resources.en.editor['chrome.reply'], 'Reply');
   }
+  const packaged = JSON.parse(await readFile(path.join(pluginRoot, '.generated-manifest.json'), 'utf8'));
+  const files = Object.keys(packaged.files);
+  assert.ok(!files.some(file => /scripts\/locales\/|ui\/locales\/zh\.js$/.test(file)), 'unused source locale dictionaries must not be distributed');
 });
 
 test('installed-package metadata and Markdown links resolve inside the package', async () => {
@@ -275,7 +279,8 @@ test('all five generated skills use Codex routing, validation, and supported ent
     assert.ok(!text.includes('\r\n'));
     if (editors.includes(name)) {
       assert.match(text, /codex-artifact\.mjs/);
-      assert.match(text, /browser toolbar's \*\*批注\*\*/);
+      assert.match(text, /use Comments in that editor's existing toolbar or navigation tools/);
+      assert.match(text, /Only an explicitly requested standalone browser preview uses the browser toolbar's annotation control/);
       assert.match(text, /Parent native-agent controller/);
       assert.match(text, /worker-status <root>/);
       assert.match(text, /worker-register <root> --name <task>/);
@@ -325,6 +330,7 @@ test('builder refuses unowned files, changed files, and unowned empty directorie
       const output = path.join(temporaryBuild, 'codex-design');
       await mkdir(output, { recursive: true });
       await cp(path.join(buildRoot, 'build.mjs'), path.join(temporaryBuild, 'build.mjs'));
+      await cp(path.join(buildRoot, 'publish-filter.mjs'), path.join(temporaryBuild, 'publish-filter.mjs'));
       await writeFile(path.join(temporaryBuild, 'adapt-skills.mjs'), 'export async function adaptSkills() {}\n');
       await writeFile(path.join(temporaryBuild, 'adapt-annotations.mjs'), 'export async function adaptAnnotations() {}\n');
       await writeFile(path.join(temporaryBuild, 'assets.mjs'), 'export async function buildPluginAssets() { throw new Error("Assets must not build before refusing changed user output."); }\n');

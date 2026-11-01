@@ -20,7 +20,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
   let pendingArtifact;
   const bridge = {
     available: true, transport: 'mcp', uiVersion: PLUGIN_UI_VERSION, supportsInlineEditor: true,
-    language: navigator.language, hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS] },
+    language: 'en', hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS] },
     async invoke(action, payload = {}) {
       if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
       if (action === 'conversation.send') throw fail('A verified per-artifact native conversation bridge is not available.', UNSUPPORTED_CHAT_CODE);
@@ -80,11 +80,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
     if (context?.theme) applyDocumentTheme(context.theme);
     if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables);
     if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts);
-    const language = context?.locale || navigator.language;
-    if (bridge.language !== language) {
-      bridge.language = language;
-      for (const listener of listeners) listener({ type: 'language.changed', language });
-    }
+    bridge.language = 'en';
     for (const listener of listeners) listener({ type: 'host-context.changed', context: bridge.hostContext });
   };
   const reportError = (error, property, fallback) => {

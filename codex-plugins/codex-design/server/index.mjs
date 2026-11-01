@@ -73,18 +73,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker = markers[0];
+  const marker2 = markers[0];
   let owner;
-  if (marker) {
+  if (marker2) {
     try {
-      owner = readJson(path.join(directory, marker));
+      owner = readJson(path.join(directory, marker2));
     } catch (error113) {
       if (error113.code !== "INVALID_BRIDGE_STATE") throw error113;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker) fs.rmSync(path.join(directory, marker), { force: true });
+  if (marker2) fs.rmSync(path.join(directory, marker2), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error113) {
@@ -93,12 +93,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker = `owner-${token}.json`;
+  const marker2 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker2), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -109,7 +109,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error113;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker), { force: true });
+      fs.rmSync(path.join(directory, marker2), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error113) {
@@ -118,7 +118,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker), { force: true });
+      fs.rmSync(path.join(staging, marker2), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error113) {
@@ -441,11 +441,11 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker2 = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker2, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker2, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker2, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
@@ -601,9 +601,9 @@ var init_library = __esm({
           const needed = /* @__PURE__ */ new Set([INDEX_FILES[record3.kind], "project/tokens.json", "db/files/index.html.json"]);
           const files = [];
           for (const file3 of listed) files.push({ ...file3, data: needed.has(file3.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path) ? (await readBytes(root, file3.path, this.limits.maxFileBytes)).toString("base64") : "" });
-          const native = validateFiles(record3.kind, files);
+          const native2 = validateFiles(record3.kind, files);
           const changedAt = listed.reduce((latest, file3) => file3.modifiedAt > latest ? file3.modifiedAt : latest, manifest.updatedAt);
-          Object.assign(result, manifest, { title: native.title, updatedAt: changedAt });
+          Object.assign(result, manifest, { title: native2.title, updatedAt: changedAt });
         } catch (error113) {
           result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error113.code) ? "missing" : "invalid";
           result.contentError = { code: error113.code || "INVALID_CONTENT", message: error113.message };
@@ -711,8 +711,8 @@ var init_library = __esm({
         await this._busy(record3);
         const root = await this._artifactPath(record3);
         const files = await collectContent(root, record3.kind, this.limits);
-        const native = validateFiles(record3.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native.title, files: files.map(({ path: path10, encoding, data }) => ({ path: path10, encoding, data })) };
+        const native2 = validateFiles(record3.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native2.title, files: files.map(({ path: path10, encoding, data }) => ({ path: path10, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -759,8 +759,8 @@ var init_library = __esm({
           if (bytes.toString("base64") !== file3.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
           files.push({ path: relative, encoding: "base64", data: file3.data });
         }
-        const native = validateFiles(bundle.kind, files);
-        return { kind: bundle.kind, title: native.title, files };
+        const native2 = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native2.title, files };
       }
       async _source(sourcePath, kind) {
         if (typeof sourcePath !== "string" || !path4.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
@@ -782,8 +782,8 @@ var init_library = __esm({
         const busy = await this.isBusy({ id: null, kind, path: sourcePath });
         if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
         const files = await collectContent(sourcePath, kind, this.limits);
-        const native = validateFiles(kind, files);
-        return { kind, title: native.title, files };
+        const native2 = validateFiles(kind, files);
+        return { kind, title: native2.title, files };
       }
       async importArtifact({ bundle, sourcePath, kind, title } = {}) {
         await this._checkRoot();
@@ -1180,6 +1180,15 @@ var init_design_system_search = __esm({
   }
 });
 
+// source/scripts/artifact-delivery.mjs
+var init_artifact_delivery = __esm({
+  "source/scripts/artifact-delivery.mjs"() {
+    init_library();
+    init_safety();
+    init_bridge_core();
+  }
+});
+
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
   const fail2 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
@@ -1204,6 +1213,7 @@ var init_artifact_command = __esm({
     init_library();
     init_safety();
     init_worker_core();
+    init_artifact_delivery();
   }
 });
 
@@ -53171,8 +53181,10 @@ function repairEditorRuntime(source) {
   );
 }
 
-// source/scripts/comment-floating-adapter.mjs
-var identifier = "[\\w$]+";
+// source/scripts/comment-toolbar-adapter.mjs
+var native = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker = "/* codex-design:native-comment-toolbar */";
+var escape4 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function readCommentComponent(source, pattern) {
   const match = pattern.exec(source);
   if (!match) return null;
@@ -53190,40 +53202,53 @@ function readCommentComponent(source, pattern) {
   }
   throw new Error("The packaged comment component could not be read.");
 }
-function adaptFloatingCommentAccess(source) {
-  const root = readCommentComponent(source, /function ([\w$]+)\(\{controller:([\w$]+),modeShortcut:([\w$]+)="C",launcher:([\w$]+)=\{bottom:16\},header:[\w$]+=!1,seats:[\w$]+,pinSide:[\w$]+\}\)\{/);
-  if (!root || root.text.includes("__codexFloatingCommentList")) return source;
-  const split = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,modeShortcut:[\w$]+,panelOpen:[\w$]+,onPanel:[\w$]+\}\)/.exec(source)?.[1];
-  const list = readCommentComponent(source, /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,dark:([\w$]+),top:([\w$]+),onClose:[\w$]+\}\)\{/);
-  const state = /(?:const|let) ([\w$]+)=(?:\(0,)?[\w$]+\.useSyncExternalStore(?:\))?\(/.exec(root.text)?.[1];
-  const dark = /\{dark:([\w$]+),remScale:/.exec(root.text)?.[1];
-  const panel = /\[([\w$]+),([\w$]+)\]=(?:\(0,)?[\w$]+\.useState(?:\))?\(!1\)/.exec(root.text);
-  if (!split || !list || !state || !dark || !panel) throw new Error("The packaged comment controls changed; native floating adaptation was refused.");
-  const controller = root.match[2], shortcut = root.match[3], launcher = root.match[4];
-  let replacements = 0;
-  const floating = root.text.replace(
-    /children:(?:\(0,)?([\w$]+)\.jsx(?:\))?\(([\w$]+),\{variant:"ghost",iconOnly:!0,icon:"Comment",[\s\S]*?onClick:\(\)=>[\w$]+\.setMode\(![\w$]+\.mode\)\}\)/,
-    (match, jsx) => {
-      replacements++;
-      const original = match.slice("children:".length);
-      return `children:globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?(0,${jsx}.jsxs)(${jsx}.Fragment,{children:[(0,${jsx}.jsx)(${split},{controller:${controller},state:${state},modeShortcut:${shortcut}??void 0,panelOpen:${panel[1]},onPanel:${panel[2]}}),${panel[1]}&&(0,${jsx}.jsx)(${list.match[1]},{controller:${controller},state:${state},dark:${dark},top:0,onClose:()=>${panel[2]}(!1),__codexFloatingCommentList:!0,__codexFloatBottom:${launcher}.bottom??16})]}):${original}`;
-    }
-  );
-  if (replacements !== 1) throw new Error("The canonical floating comment launcher was not found.");
-  const listDark = list.match[2], top = list.match[3];
-  let panelStyles = 0;
-  const escapedDark = listDark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const escapedTop = top.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const style = new RegExp(`style:\\{top:${escapedTop},right:(${identifier}),[\\s\\S]*?\\.\\.\\.${identifier}\\(${escapedDark}\\)\\}`);
-  let listText = list.text.replace(/,onClose:([\w$]+)\}\)\{/, ",onClose:$1,__codexFloatingCommentList:__cfx=!1,__codexFloatBottom:__cfb=16}){");
-  listText = listText.replace(style, (match, margin) => {
-    panelStyles++;
-    return match.slice(0, -1) + `,...(__cfx?{position:"absolute",top:"auto",right:0,bottom:"calc(100% + 8px)",maxHeight:\`calc(100dvh - 100% - \${__cfb+${margin}+8}px)\`}:{})}`;
-  });
-  if (panelStyles !== 1) throw new Error("The canonical comment list position was not found.");
-  const changes = [{ ...root, replacement: floating }, { ...list, replacement: listText }].sort((a, b) => b.start - a.start);
-  for (const change of changes) source = source.slice(0, change.start) + change.replacement + source.slice(change.end);
-  return source;
+function adaptCommentToolbar(source) {
+  if (source.includes(marker)) return source;
+  let changed = false;
+  const factory = /function ([\w$]+)\(\{base:[\w$]+,win:[\w$]+=window,modeShortcut:[\w$]+="C",launcher:[\w$]+,header:[\w$]+=!1,toolbar:[\w$]+=!1,pinSide:[\w$]+\}\)\{/.exec(source);
+  if (factory) {
+    const call = new RegExp(`${escape4(factory[1])}\\(\\{base:([\\w$]+)\\}\\)`, "g");
+    source = source.replace(call, (_, base) => {
+      changed = true;
+      return `${factory[1]}({base:${base},toolbar:!!${native}})`;
+    });
+    const top = /function ([\w$]+)\(([\w$]+)\)\{for\((?:const|let) ([\w$]+) of \2\)\{(?:const|let) ([\w$]+)=\(\3\.el\.closest\([\w$]+\)\?\?\3\.el\.parentElement\)\?\.getBoundingClientRect\(\);if\(!\(!\4\|\|\4\.height===0\)\)return Math\.round\(\4\.bottom\+([\w$]+)\)\}return null\}/;
+    let positioned = 0;
+    source = source.replace(top, (match, name, seats, seat2, rect, margin) => {
+      positioned++;
+      changed = true;
+      return match.replace(`Math.round(${rect}.bottom+${margin})`, `Math.round(${native}?Math.min(${rect}.bottom+${margin},Math.max(${margin},globalThis.innerHeight/2)):${rect}.bottom+${margin})`);
+    });
+    if (positioned !== 1) throw new Error("The canonical toolbar comment-list anchor changed; adaptation was refused.");
+  }
+  const seat = (jsx) => `${native}?${jsx}.jsx("span",{"data-baoyu-comments-seat":"","data-codex-comment-toolbar":"",style:{display:"contents"}}):null`;
+  const floating = readCommentComponent(source, /function ([\w$]+)\(\{sections:[\w$]+,tail:[\w$]+,current:[\w$]+,onJump:[\w$]+,footer:[\w$]+,status:([\w$]+),navRef:[\w$]+,edgeRef:[\w$]+,port:[\w$]+,marks:[\w$]+,search:[\w$]+,pending:[\w$]+\}\)\{/);
+  const sidebar = readCommentComponent(source, /function ([\w$]+)\(\{sections:[\w$]+,tail:[\w$]+,current:[\w$]+,onJump:[\w$]+,dropProps:[\w$]+,footer:([\w$]+),navRef:[\w$]+,marks:[\w$]+,search:[\w$]+,pending:[\w$]+\}\)\{/);
+  if (floating || sidebar) {
+    if (!floating || !sidebar) throw new Error("The design-system navigation modes changed; adaptation was refused.");
+    const jsx = /return ([\w$]+)\.jsx\(/.exec(floating.text)?.[1];
+    if (!jsx) throw new Error("The design-system navigation JSX runtime was not found.");
+    const status = floating.match[2], footer = sidebar.match[2];
+    const suffix = `}),${status}]})})}`;
+    if (!floating.text.endsWith(suffix)) throw new Error("The design-system chapter tool row changed; adaptation was refused.");
+    const floatingText = floating.text.slice(0, -suffix.length) + `}),${seat(jsx)},${status}]})})}`;
+    const footerPattern = new RegExp(`${escape4(footer)}!==void 0\\?${escape4(jsx)}\\.jsx\\("div",\\{className:"ds-nav-foot[^"]*","data-testid":"ds-nav-foot",children:${escape4(footer)}\\}\\):null`);
+    let footers = 0;
+    const sidebarText = sidebar.text.replace(footerPattern, (match) => {
+      footers++;
+      return match.replace(`${footer}!==void 0?`, `(${footer}!==void 0||${native})?`).replace(`children:${footer}`, `children:${jsx}.jsxs(${jsx}.Fragment,{children:[${seat(jsx)},${footer}]})`);
+    });
+    if (footers !== 1) throw new Error("The design-system sidebar tool row changed; adaptation was refused.");
+    for (const part of [{ ...floating, replacement: floatingText }, { ...sidebar, replacement: sidebarText }].sort((a, b) => b.start - a.start)) source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
+    changed = true;
+  }
+  if (source.includes("toolbarTrailing:") && source.includes("markToolbarUncommentable")) {
+    const slot = /([\w$]+)\.jsx\("span",\{ref:([\w$]+)\.markToolbarUncommentable,hidden:!0\}\)/;
+    if (!slot.test(source)) throw new Error("The dashboard toolbar slot changed; adaptation was refused.");
+    source = source.replace(slot, (_, jsx, namespace) => `${jsx}.jsx("span",{ref:${namespace}.markToolbarUncommentable,hidden:!${native},"data-baoyu-comments-seat":${native}?"":void 0,"data-codex-comment-toolbar":${native}?"":void 0,style:${native}?{display:"contents"}:void 0})`);
+    changed = true;
+  }
+  return changed ? marker + "\n" + source : source;
 }
 
 // source/server/editor-document.mjs
@@ -53242,15 +53267,11 @@ async function replaceAsync2(source, expression, transform3) {
 }
 function adaptInlineEditorScript(source, scriptUrl) {
   source = repairEditorRuntime(source);
-  source = adaptFloatingCommentAccess(source);
+  source = adaptCommentToolbar(source);
   source = source.replace(/\bwindow\.parent===window\b/g, "(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)");
   source = source.replace(
     /function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
     (match, name, win) => `function ${name}(${win}){return (globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&${win}===globalThis.window)||${win}.parent===${win}?null:{post:`
-  );
-  source = source.replace(
-    /localComments:([\w$]+)=>([\w$]+)\(\{base:\1,toolbar:!0\}\)/g,
-    (match, base, create) => `localComments:${base}=>${create}({base:${base},toolbar:!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__})`
   );
   source = source.replace(/(?<![\w$.])(?:[\w$]+\.)?crypto\.randomUUID\(\)/g, (call) => {
     const crypto2 = call.slice(0, -".randomUUID()".length);
@@ -53398,6 +53419,48 @@ function installNativeEditorTransport(configuration, target) {
     }
     target.document.documentElement?.setAttribute("data-codex-parent-isolation", "blocked");
     target.document.documentElement?.setAttribute("data-codex-editor-origin", target.location?.origin || "null");
+  }
+  if (target.document && target.location?.origin === "null") {
+    let temporary = false;
+    for (const name of ["localStorage", "sessionStorage"]) {
+      try {
+        const existing = target[name];
+        if (existing && typeof existing.getItem === "function" && typeof existing.setItem === "function") continue;
+      } catch {
+      }
+      const values = /* @__PURE__ */ new Map();
+      const storage = {
+        get length() {
+          return values.size;
+        },
+        key(index) {
+          return [...values.keys()][index >>> 0] ?? null;
+        },
+        getItem(key) {
+          return values.get(String(key)) ?? null;
+        },
+        setItem(key, value) {
+          values.set(String(key), String(value));
+        },
+        removeItem(key) {
+          values.delete(String(key));
+        },
+        clear() {
+          values.clear();
+        }
+      };
+      try {
+        Object.defineProperty(target, name, { configurable: true, enumerable: true, value: storage });
+        temporary = true;
+      } catch {
+        target.parent.postMessage({
+          type: "codex-design:editor-diagnostic",
+          channel,
+          message: "Temporary editor UI preferences could not be initialized."
+        }, "*");
+      }
+    }
+    if (temporary) target.document.documentElement?.setAttribute("data-codex-ui-storage", "memory");
   }
   const pending = /* @__PURE__ */ new Map();
   const pendingWrites = /* @__PURE__ */ new Set();
@@ -53910,7 +53973,7 @@ async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeout
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.4.1";
+var PLUGIN_UI_VERSION = "0.4.2";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var UI_MIME_TYPE = "text/html;profile=mcp-app";
@@ -53972,7 +54035,7 @@ var capabilityState = () => ({
   arbitraryThreadTarget: false,
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
-async function openLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 3e4 } = {}) {
+async function openLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
   const current = readJson(path9.join(record3.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record3.path, record3.kind);
@@ -53989,7 +54052,7 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
   const skill = `codex-${record3.kind}`;
   const cli = path9.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
-    const child = spawn2(process.execPath, [cli, "open", record3.path, "--delivery", "native"], {
+    const child = spawnProcess(process.execPath, [cli, "open-service", record3.path, "--delivery", "native"], {
       cwd: record3.path,
       env,
       shell: false,
@@ -54169,7 +54232,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", 
         case "editor.document": {
           const id = idOf(payload.id);
           if (typeof payload.channel !== "string" || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure3("INVALID_EDITOR_REQUEST", "A unique editor channel is required.");
-          const language = /^zh(?:-|$)/i.test(String(payload.language)) ? "zh" : "en";
+          const language = "en";
           const editor = await editorFor(id);
           const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
           const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { repairEditorRuntime } from '../scripts/editor-runtime-adapter.mjs';
-import { adaptFloatingCommentAccess } from '../scripts/comment-floating-adapter.mjs';
+import { adaptCommentToolbar } from '../scripts/comment-toolbar-adapter.mjs';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
 const scriptText = value => value.replace(/<\/script/gi, '<\\/script');
@@ -20,12 +20,10 @@ async function replaceAsync(source, expression, transform) {
 /** Adapt only the editor's local-host selection, never authored artwork files. */
 export function adaptInlineEditorScript(source, scriptUrl) {
   source = repairEditorRuntime(source);
-  source = adaptFloatingCommentAccess(source);
+  source = adaptCommentToolbar(source);
   source = source.replace(/\bwindow\.parent===window\b/g, '(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)');
   source = source.replace(/function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
     (match, name, win) => `function ${name}(${win}){return (globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&${win}===globalThis.window)||${win}.parent===${win}?null:{post:`);
-  source = source.replace(/localComments:([\w$]+)=>([\w$]+)\(\{base:\1,toolbar:!0\}\)/g,
-    (match, base, create) => `localComments:${base}=>${create}({base:${base},toolbar:!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__})`);
   // An intrinsic opaque data: origin is not a secure context. getRandomValues
   // remains available there; this quote-free fallback also survives canonical
   // runtime code serialized into nested preview and worker string literals.

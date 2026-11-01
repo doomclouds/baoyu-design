@@ -26,6 +26,7 @@ test('native documents use the current installed chrome even when the reused dat
   const service = createDesignService({ store, pluginRoot,
     editorOpen: async () => ({ url: 'http://127.0.0.1:1/old-runtime/', kind: 'slides', artifactId: record.id }) });
   const result = await service.invoke('editor.document', { id: record.id, channel: 'current-chrome-test-channel', language: 'zh' });
+  assert.ok(result.html.includes('"language":"en"'), 'old caller preferences cannot change the native editor UI language');
   assert.ok(result.html.includes('__CODEX_DESIGN_EDITOR_RESOURCES__'));
   assert.ok(result.html.includes('__CODEX_DESIGN_EDITOR_FLUSH__'));
   assert.ok(result.html.includes('Current installed editor') === false, 'Document content loads through the separate data transport.');
@@ -48,7 +49,7 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
     try {
       const artifact = await store.importArtifact({ sourcePath: fixture.root, kind });
       service = createDesignService({ store, pluginRoot, editorOpen: async record => {
-        opened = await command(kind, 'open', record.path, '--no-agent');
+        opened = await command(kind, 'open-service', record.path, '--no-agent');
         return { ...opened, artifactId: record.id, kind, nativeConversationBound: false };
       } });
       const document = await service.invoke('editor.document', { id: artifact.id, channel: 'runtime-editor-channel', language: 'zh' });

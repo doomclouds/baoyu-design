@@ -112,7 +112,7 @@ actual action, observable outcome, evidence location, and pass/fail/pending.
 | Four blank types | Slides, Design, Design System and Dashboard each show real editable content after creation, not a gray/broken frame |
 | CSP | Inner editor scripts/assets load under the consuming host policy; no HTTP loopback frame dependency remains |
 | Themes/fonts | Host light/dark and UI font settings arrive and change app chrome; artwork content is unaffected |
-| Language | Chinese/English menus, dialogs, default labels, context menus and errors update; user content is unchanged |
+| Language (0.4.2 onward) | Plugin controls, menus and dialogs remain English despite old Chinese preferences or host locale; authored titles, body and comments remain unchanged |
 | Save/reopen | Edit a distinctive literal, observe saved state, close/reopen, read exact saved bytes from the library |
 | Unique tabs | Open an existing artwork again and activate the same tab; tab order and selection restore |
 | Failure/retry | A failed content load displays a useful error; retry recovers without creating a replacement artwork |

@@ -79,27 +79,29 @@ test('a native bridge declares its UI version and becomes unavailable before dis
   await assert.rejects(bridge.invoke('view.get'), { code: 'BRIDGE_UNAVAILABLE' });
 });
 
-test('SDK hostcontextchanged supplies params directly and merged partial updates preserve locale', async t => {
+test('host locale stays unchanged in context while the plugin UI remains English-only', async t => {
   const f = host(t, { context: { locale: 'zh-CN' } });
   const bridge = await createMcpBridge({ app: f.app });
   t.after(() => bridge.dispose());
   assert.equal(bridge.hostContext.locale, 'zh-CN');
+  assert.equal(bridge.language, 'en');
   assert.deepEqual(bridge.diagnostics().host, { name: 'test-host', version: '1' });
   assert.equal(bridge.diagnostics().transport, 'mcp');
   const params = [], events = [];
   f.app.addEventListener('hostcontextchanged', value => params.push(value));
   bridge.subscribe(event => events.push(event));
   f.context({ locale: 'en-GB' });
-  await until(() => bridge.language === 'en-GB');
+  await until(() => bridge.hostContext.locale === 'en-GB');
   f.context({ displayMode: 'fullscreen' });
   await until(() => params.length === 2);
   assert.deepEqual(params, [{ locale: 'en-GB' }, { displayMode: 'fullscreen' }]);
-  assert.equal(bridge.language, 'en-GB');
+  assert.equal(bridge.language, 'en');
   assert.deepEqual(bridge.hostContext, { locale: 'en-GB', displayMode: 'fullscreen' });
   assert.deepEqual(events.filter(event => event.type === 'host-context.changed').map(event => event.context), [
     { locale: 'en-GB' }, { locale: 'en-GB', displayMode: 'fullscreen' },
   ]);
-  assert.deepEqual(events.filter(event => event.type === 'language.changed'), [{ type: 'language.changed', language: 'en-GB' }]);
+  assert.equal(events.filter(event => event.type === 'language.changed').length, 0);
+  assert.deepEqual(events.filter(event => event.type === 'language.changed'), []);
   assert.equal(f.calls().length, 0);
 });
 

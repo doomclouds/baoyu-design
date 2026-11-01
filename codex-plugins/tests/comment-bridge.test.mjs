@@ -232,7 +232,7 @@ test('serve startup deadline stops an unresponsive helper and releases its bindi
   await fsp.writeFile(path.join(skill, 'scripts', 'artifact.mjs'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); setInterval(()=>{},1000);`);
   const launch = path.join(f.root, 'launch.mjs');
   const source = new URL('../source/scripts/artifact-command.mjs', import.meta.url).href;
-  await fsp.writeFile(launch, `import {runArtifactCommand} from ${JSON.stringify(source)}; await runArtifactCommand(${JSON.stringify(skill)}, ${JSON.stringify(['serve', f.root, '--thread', THREAD, '--codex-path', f.fake])}, {startupTimeoutMs:150});`);
+  await fsp.writeFile(launch, `import {runArtifactCommand} from ${JSON.stringify(source)}; await runArtifactCommand(${JSON.stringify(skill)}, ${JSON.stringify(['serve-service', f.root, '--thread', THREAD, '--codex-path', f.fake])}, {startupTimeoutMs:150});`);
   const result = await runBounded({ command: process.execPath, args: [launch] }, [], { cwd: f.root, env: f.env, timeoutMs: 4000 });
   assert.equal(result.code, 2);
   assert.match(result.stderr, /EDITOR_STARTUP_TIMEOUT/);
@@ -264,9 +264,9 @@ test('stale editor PID reused by an unrelated live process is never reused, rebo
   const source = new URL('../source/scripts/artifact-command.mjs', import.meta.url).href;
   await fsp.writeFile(launch, `import {runArtifactCommand} from ${JSON.stringify(source)}; await runArtifactCommand(${JSON.stringify(binding.skillDir)}, process.argv.slice(2));`);
   for (const args of [
-    ['open', f.root, '--thread', THREAD, '--codex-path', f.fake],
-    ['open', f.root, '--thread', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', '--codex-path', f.fake, '--rebind'],
-    ['open', f.root, '--no-agent'],
+    ['open-service', f.root, '--thread', THREAD, '--codex-path', f.fake],
+    ['open-service', f.root, '--thread', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', '--codex-path', f.fake, '--rebind'],
+    ['open-service', f.root, '--no-agent'],
     ['stop', f.root, '--no-agent'],
   ]) {
     const result = await runBounded({ command: process.execPath, args: [launch] }, args, { env: f.env, timeoutMs: 5000 });

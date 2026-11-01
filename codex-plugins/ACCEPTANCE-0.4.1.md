@@ -39,6 +39,29 @@ host policy changed, debug endpoint enabled, or private host API used.
 - Bundled UI SHA-256:
   `1e52c6e33acb664e8edcbe0f3902ce87c38a25f7b6a386ae50bfb791c0c2ce6b`.
 
-GitHub installation and actual native rendering remain pending. Native rendering
-is unverified until a real artwork page is observed using the new resource;
-protocol checks are not a visual pass.
+## Installation and native display follow-up
+
+The formal GitHub marketplace installed code commit
+`961bb6615973070279c11b636d64762718c1c723` as **0.4.1**. All **179** installed
+file hashes match the generated package. Actual Desktop runtime discovery found
+all five enabled skills and the versioned library entrypoint without a tools
+error. No GitHub workflow was used.
+
+After the user restarted Codex again, the existing chat's live `design_read`
+succeeded. The new Desktop process read
+`ui://codex-design/0.4.1/library`; at **2026-11-01 07:05:22 Asia/Shanghai**, the
+real MCP stderr resource-read record reported plugin/UI version **0.4.1** and
+the same HTML SHA-256 listed above. The log also recorded a widget frame commit;
+no matching new frame-src block or guest-load failure was observed in that
+checked log range. The investigator did not trigger a resource read to create
+this evidence.
+
+The user then confirmed that the artwork now displays normally. This closes the
+reported blocked-artwork loading case for that observed page. It does not prove
+all four editors, save/reopen, comments, worker recovery, references, native
+downloads, import/export, language, theme or restart-recovery behavior. Those
+cases remain in the real-host acceptance matrix in `NATIVE-TESTING.md`.
+
+Retained installation evidence:
+`codex-design-0.4.1-installed-verification.txt` and
+`codex-design-0.4.1-installed-hashes.json` in the local acceptance archive.

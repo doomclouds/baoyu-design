@@ -1,9 +1,9 @@
 import i18next from 'i18next';
 import brandIcon from './assets/brand.svg';
 import en from './locales/en.js';
-import zh from './locales/zh.js';
 import { BridgeError, supports, unavailableBridge } from './bridge.js';
 import { menuPosition } from './layout.mjs';
+import { createMenuDismissal, menuInputMode } from './menu-dismissal.mjs';
 import { createLibraryTransfer } from './library-transfer.mjs';
 import { mountNativeEditor } from './native-editor.mjs';
 
@@ -17,7 +17,6 @@ const ICONS = {
   dashboard: '<rect x="3" y="5" width="6" height="15" rx="1"/><rect x="15" y="3" width="6" height="15" rx="1"/><path d="M10 8h3v13h-3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/>',
   trash: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
-  settings: '<path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z"/><circle cx="12" cy="12" r="3"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/>',
   star: '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
@@ -59,14 +58,12 @@ export function normalizeViewState(value) {
   return { version: 1, tabs, activeTabId: seen.has(value?.activeTabId) ? value.activeTabId : 'library' };
 }
 
-/** Host contract: invoke(action,payload), subscribe(handler), language?, capabilities?. */
+/** Host contract: invoke(action,payload), subscribe(handler), capabilities?. */
 export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   if (!root) throw new TypeError('A mount root is required.');
   const i18n = i18next.createInstance();
-  let preference = 'system';
-  try { preference = localStorage.getItem('codex-design.ui-language') || localStorage.getItem('codexDesign.ui.language') || 'system'; } catch {}
-  const systemLanguage = () => String(bridge.language || navigator.language || 'en').startsWith('zh') ? 'zh' : 'en';
-  await i18n.init({ lng: preference === 'system' ? systemLanguage() : preference, fallbackLng: 'en', resources: { en: { translation: en }, zh: { translation: zh } }, interpolation: { escapeValue: false } });
+  // Interface language is fixed; stored preferences never change authored text.
+  await i18n.init({ lng: 'en', supportedLngs: ['en'], fallbackLng: 'en', resources: { en: { translation: en } }, interpolation: { escapeValue: false } });
   const t = (key, values) => i18n.t(key, values);
   const state = {
     records: [], view: normalizeViewState(), category: 'all', favorites: false,
@@ -80,7 +77,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let conversationSequence = 0;
   let currentSurface = null;
   let currentEditorUrl = null;
-  let currentEditorLanguage = null;
   let currentNativeEditor = null;
   const thumbnailCache = new Map();
   const thumbnailPending = new Set();
@@ -98,6 +94,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     live: root.querySelector('.live-status'), scrim: root.querySelector('.sidebar-scrim'),
     sidebarToggle: root.querySelector('.sidebar-toggle'),
   };
+  const menuDismissal = createMenuDismissal({ document, window, onDismiss: closeMenu });
   const recordFor = (id) => state.records.find((record) => record.id === id);
   const activeRecord = () => recordFor(state.view.activeTabId);
   async function flushCurrentEditor() {
@@ -250,7 +247,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       + '<nav class="category-navigation" aria-label="' + escape(t('libraryNavigation')) + '">' + navItem('all', 'library') + KINDS.map((kind) => navItem(kind)).join('') + '</nav>'
       + '<div class="recent-section"><button type="button" class="section-label recent-heading" data-action="category" data-category="recent">' + escape(t('recent')) + '</button><div class="recent-items">'
       + recents.map((record) => '<button type="button" class="sidebar-item recent-item" data-action="open" data-id="' + escape(record.id) + '" title="' + escape(record.title) + '" aria-label="' + escape(t('openDesign', { title: record.title })) + '">' + icon(record.kind) + '<span>' + escape(record.title) + '</span></button>').join('') + '</div></div>'
-      + '<div class="sidebar-bottom">' + navItem('trash') + '<button type="button" class="icon-button" data-action="settings" aria-label="' + escape(t('settings')) + '">' + icon('settings') + '</button></div>';
+      + '<div class="sidebar-bottom">' + navItem('trash') + '</div>';
     elements.shell.classList.toggle('sidebar-open', state.mobileSidebar);
     elements.shell.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
     elements.scrim.hidden = !state.mobileSidebar;
@@ -343,9 +340,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     try {
       const native = bridge.supportsInlineEditor === true;
       const channel = native ? crypto.randomUUID() : null;
-      const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: i18n.language.startsWith('zh') ? 'zh' : 'en', channel } : {}) });
+      const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: 'en', channel } : {}) });
       if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
-      currentEditorLanguage = i18n.language;
       const iframe = document.createElement('iframe');
       iframe.className = 'design-editor-frame';
       iframe.title = t('editorFrame', { title: record.title });
@@ -369,7 +365,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
         if (typeof result?.url !== 'string' || !result.url.trim()) throw new BridgeError('The editor did not return a URL.', 'INVALID_EDITOR_URL');
         url = new URL(result.url, location.href);
         if (!['http:', 'https:'].includes(url.protocol)) throw new BridgeError('The editor returned an unsupported URL.', 'INVALID_EDITOR_URL');
-        url.searchParams.set('codexDesignLanguage', i18n.language.startsWith('zh') ? 'zh' : 'en');
+        url.searchParams.set('codexDesignLanguage', 'en');
         currentEditorUrl = url.href;
         iframe.src = url.href;
       }
@@ -381,7 +377,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
         loading.innerHTML = '<span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p>';
         host.append(loading);
       }
-      updateLanguageNotice();
       const external = elements.panel.querySelector('.editor-external');
       if (external) { external.hidden = native; if (url) external.href = url.href; }
     } catch (error) {
@@ -398,21 +393,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   function postEditorLanguage() {
     const frame = elements.panel.querySelector('.design-editor-frame');
     if (!frame || !currentEditorUrl) return;
-    const message = { type: 'codex-design:ui-language-changed', preference: i18n.language.startsWith('zh') ? 'zh' : 'en', systemLocale: bridge.language || navigator.language };
+    const message = { type: 'codex-design:ui-language-changed', preference: 'en', systemLocale: 'en' };
     if (currentNativeEditor?.post) currentNativeEditor.post(message);
     else frame.contentWindow?.postMessage(message, currentNativeEditor ? '*' : new URL(currentEditorUrl).origin);
-  }
-  function updateLanguageNotice() {
-    const workspace = elements.panel.querySelector('.editor-workspace');
-    if (!workspace) return;
-    let notice = workspace.querySelector('.editor-language-notice');
-    if (!notice) {
-      notice = document.createElement('div');
-      notice.className = 'editor-language-notice';
-      workspace.insertBefore(notice, workspace.querySelector('.editor-frame-host'));
-    }
-    notice.hidden = !currentEditorLanguage || currentEditorLanguage === i18n.language;
-    notice.innerHTML = '<span>' + escape(t('editorLanguagePending')) + '</span><button type="button" class="button secondary" data-action="reload-language">' + escape(t('reopenEditorLanguage')) + '</button>';
   }
   function renderWorkspace() {
     const id = state.view.activeTabId;
@@ -421,7 +404,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       currentNativeEditor?.dispose();
       currentNativeEditor = null;
       currentEditorUrl = null;
-      currentEditorLanguage = null;
       if (currentSurface !== 'library') thumbnailCache.clear();
       if (currentSurface !== 'library') renderLibrary();
       else renderRecords();
@@ -588,12 +570,13 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   function closeMenu(returnFocus = false) {
     const origin = state.menu?.origin;
+    menuDismissal.clear();
     state.menu = null;
     elements.menus.replaceChildren();
     origin?.setAttribute('aria-expanded', 'false');
     if (returnFocus) origin?.focus();
   }
-  function openMenu(type, origin, id) {
+  function openMenu(type, origin, id, mode = 'pointer') {
     if (state.menu?.type === type && state.menu?.id === id) { closeMenu(); return; }
     closeMenu();
     const record = recordFor(id);
@@ -617,6 +600,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const measured = menuPosition(rectangle, { width: position.width, height: panel.getBoundingClientRect().height, viewportWidth: innerWidth, viewportHeight: innerHeight, align: origin.classList.contains('sidebar-create') ? 'start' : 'end' });
     panel.style.top = measured.top + 'px';
     panel.style.left = measured.left + 'px';
+    menuDismissal.open({ trigger: origin, menu: panel, mode });
     elements.menus.querySelector('button:not(:disabled)')?.focus();
   }
   async function createArtifact(kind) {
@@ -657,17 +641,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     closeMenu();
     const dialog = elements.dialog;
     let title, fields = '', submit;
-    if (type === 'settings') {
-      title = t('settings');
-      fields = '<label class="field-label" for="ui-language">' + escape(t('language')) + '</label><select id="ui-language" name="language">' + [['system', 'languageSystem'], ['zh', 'languageChinese'], ['en', 'languageEnglish']].map(([value, label]) => '<option value="' + value + '"' + (preference === value ? ' selected' : '') + '>' + escape(t(label)) + '</option>').join('') + '</select><p class="field-hint">' + escape(t('languageHelp')) + '</p>';
-      submit = t('done');
-    } else if (type === 'reload-language') {
-      title = t('reopenEditorLanguage');
-      fields = '<p class="dialog-description">' + escape(t('editorLanguageConfirm')) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape(t('editorLanguageSaved')) + '</span></label>';
-      submit = t('reopenEditorLanguage');
-    } else if (type === 'restore-snapshot') {
+    if (type === 'restore-snapshot') {
       title = t('restoreVersionTitle');
-      fields = '<p class="dialog-description">' + escape(t('restoreVersionBody')) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape(t('editorLanguageSaved')) + '</span></label>';
+      fields = '<p class="dialog-description">' + escape(t('restoreVersionBody')) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape(t('editorChangesSaved')) + '</span></label>';
       submit = t('restoreVersion');
     } else if (type === 'trash') {
       title = t('trashTitle'); fields = '<p class="dialog-description">' + escape(t('trashBody', { title: record.title })) + '</p>'; submit = t('trashAction');
@@ -677,7 +653,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       fields += '<label class="field-label" for="design-title">' + escape(t('titleLabel')) + '</label><input id="design-title" name="title" type="text" required maxlength="200" autocomplete="off" value="' + escape(value) + '" placeholder="' + escape(t('titlePlaceholder')) + '">';
       submit = t(type === 'rename' ? 'renameSubmit' : 'copySubmit');
     }
-    dialog.innerHTML = '<form class="dialog-form" data-dialog-type="' + type + '" data-id="' + escape(record?.id || '') + '" data-snapshot-id="' + escape(details.snapshotId || '') + '"><header><h2 id="design-dialog-title">' + escape(title) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><div class="dialog-fields">' + fields + '</div><p class="dialog-error" role="alert" hidden></p><footer>' + (type !== 'settings' ? '<button type="button" class="button secondary" data-action="close-dialog">' + escape(t('cancel')) + '</button>' : '') + '<button type="submit" class="button ' + (type === 'trash' ? 'destructive' : 'primary') + '">' + escape(submit) + '</button></footer></form>';
+    dialog.innerHTML = '<form class="dialog-form" data-dialog-type="' + type + '" data-id="' + escape(record?.id || '') + '" data-snapshot-id="' + escape(details.snapshotId || '') + '"><header><h2 id="design-dialog-title">' + escape(title) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><div class="dialog-fields">' + fields + '</div><p class="dialog-error" role="alert" hidden></p><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape(t('cancel')) + '</button><button type="submit" class="button ' + (type === 'trash' ? 'destructive' : 'primary') + '">' + escape(submit) + '</button></footer></form>';
     dialog.setAttribute('aria-labelledby', 'design-dialog-title');
     if (!dialog.open) dialog.showModal();
     const input = dialog.querySelector('input[name="title"]');
@@ -705,18 +681,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
         form.querySelector('button[type="submit"]').disabled = false;
         if (state.view.activeTabId === id) await openEditor(id, true);
       } finally { form.removeAttribute('aria-busy'); }
-      return;
-    }
-    if (type === 'reload-language') {
-      if (!form.reportValidity()) return;
-      elements.dialog.close();
-      await openEditor(state.view.activeTabId, true);
-      return;
-    }
-    if (type === 'settings') {
-      const value = new FormData(form).get('language');
-      elements.dialog.close();
-      await setLanguage(value);
       return;
     }
     if (!form.reportValidity() || form.getAttribute('aria-busy') === 'true') return;
@@ -763,13 +727,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       toast(t('restored'));
     });
   }
-  async function setLanguage(value) {
-    preference = ['system', 'en', 'zh'].includes(value) ? value : 'system';
-    try { localStorage.setItem('codex-design.ui-language', preference); localStorage.setItem('codexDesign.ui.language', preference); } catch {}
-    await i18n.changeLanguage(preference === 'system' ? systemLanguage() : preference);
-    root.dispatchEvent(new CustomEvent('codex-design:languagechange', { bubbles: true, detail: { language: i18n.language, preference } }));
-  }
-  function renderLocalized() {
+  function renderInterface() {
     if (state.destroyed) return;
     document.documentElement.lang = i18n.language;
     document.title = t('appName');
@@ -787,7 +745,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       const menu = elements.panel.querySelector('.editor-heading-actions [data-action="item-menu"]');
       if (menu) menu.setAttribute('aria-label', t('moreActions', { title: activeRecord()?.title || '' }));
       postEditorLanguage();
-      updateLanguageNotice();
     }
     closeMenu();
   }
@@ -796,7 +753,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (!button || button.disabled) return;
     const { action, id } = button.dataset;
     if (!['item-menu', 'sort-menu', 'create'].includes(action)) closeMenu();
-    if (action === 'create') openMenu('create', button);
+    if (action === 'create') openMenu('create', button, undefined, menuInputMode(event));
     else if (action === 'create-kind') await createArtifact(button.dataset.value);
     else if (action === 'import') {
       const task = transfer.importArtifact();
@@ -805,8 +762,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'history') await openHistory(id);
     else if (action === 'snapshot-create') await runAction('snapshot-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.createSnapshot(id, t('manualSnapshot')); await openHistory(id); });
     else if (action === 'snapshot-restore') { const record = recordFor(id); if (record) openDialog('restore-snapshot', record, { snapshotId: button.dataset.snapshotId }); }
-    else if (action === 'reload-language') openDialog('reload-language');
-    else if (action === 'settings') openDialog('settings');
     else if (action === 'rename' || action === 'copy' || action === 'trash-dialog') {
       const record = recordFor(id);
       if (record) openDialog(action === 'trash-dialog' ? 'trash' : action, record);
@@ -814,8 +769,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'category') await setCategory(button.dataset.category);
     else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; renderLibrary(); }
     else if (action === 'layout') { state.layout = button.dataset.layout; renderLibrary(); }
-    else if (action === 'sort-menu') openMenu('sort', button);
-    else if (action === 'item-menu') openMenu('item', button, id);
+    else if (action === 'sort-menu') openMenu('sort', button, undefined, menuInputMode(event));
+    else if (action === 'item-menu') openMenu('item', button, id, menuInputMode(event));
     else if (action === 'sort-value') { state.sort = button.dataset.value; renderRecords(); }
     else if (action === 'open') { state.mobileSidebar = false; await changeView('openTab', { id }); }
     else if (action === 'activate-tab') { await changeView('activateTab', { id }); if (id === 'library') await refreshRecords(true); }
@@ -857,14 +812,15 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const origin = row?.querySelector('[data-action="item-menu"]');
     if (!origin) return;
     event.preventDefault();
-    openMenu('item', origin, origin.dataset.id);
+    const mode = event.pointerType === 'touch' || event.pointerType === 'pen' ? 'touch' : event.clientX || event.clientY ? 'pointer' : 'keyboard';
+    openMenu('item', origin, origin.dataset.id, mode);
   }, { signal: abort.signal });
   root.addEventListener('submit', (event) => {
     if (event.target.matches('.dialog-form')) { event.preventDefault(); submitDialog(event.target); }
     if (event.target.matches('.conversation-composer')) { event.preventDefault(); sendConversation(); }
   }, { signal: abort.signal });
   root.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { closeMenu(true); if (state.mobileSidebar) { state.mobileSidebar = false; renderSidebar(); } }
+    if (event.key === 'Escape' && state.mobileSidebar) { state.mobileSidebar = false; renderSidebar(); }
     if (event.target.matches('.conversation-composer textarea') && event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendConversation(); }
     if (event.target.getAttribute('role') === 'tab' && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
@@ -909,15 +865,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     changeView('reorderTabs', { ids });
     draggedTab = undefined;
   }, { signal: abort.signal });
-  document.addEventListener('pointerdown', (event) => {
-    if (state.menu && !elements.menus.contains(event.target) && !event.target.closest('[data-menu-trigger]')) closeMenu();
-  }, { signal: abort.signal });
   window.addEventListener('resize', () => closeMenu(), { signal: abort.signal });
   elements.scrim.addEventListener('click', () => { state.mobileSidebar = false; renderSidebar(); }, { signal: abort.signal });
-  const onSystemLanguage = () => { if (preference === 'system') i18n.changeLanguage(systemLanguage()); };
-  window.addEventListener('languagechange', onSystemLanguage, { signal: abort.signal });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.view.activeTabId === 'library') void refreshRecords(true); }, { signal: abort.signal });
-  i18n.on('languageChanged', renderLocalized);
   let refreshTimer;
   const unsubscribe = typeof bridge.subscribe === 'function' ? bridge.subscribe((event) => {
     if (state.destroyed) return;
@@ -932,15 +882,15 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (type === 'bridge.error') { toast(errorMessage(event.error), true); return; }
     if (event?.viewState) applyView(event.viewState);
     else if (type === 'view.changed') invoke('view.get').then(applyView).catch((error) => toast(errorMessage(error), true));
-    if (type === 'language.changed' || type === 'languagechange') { if (event.language) bridge.language = event.language; onSystemLanguage(); return; }
+    if (type === 'language.changed' || type === 'languagechange') return;
     if (type.startsWith('conversation.') || type === 'worker.changed') { if (!event.artifactId || event.artifactId === state.view.activeTabId) refreshConversation(); return; }
-    if (type === 'capabilities.changed') { renderLocalized(); refreshConversation(); return; }
+    if (type === 'capabilities.changed') { renderInterface(); refreshConversation(); return; }
     if (type.startsWith('library.') || type.startsWith('artifact.') || type === 'changed') {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => refreshRecords(true), 100);
     }
   }) : null;
-  renderLocalized();
+  renderInterface();
   renderWorkspace();
   const initial = bridge.initialState;
   if (initial?.artifacts) state.records = initial.artifacts.filter(isRecord);
@@ -950,7 +900,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   else if (bridge.available !== false) toast(errorMessage(results[1].reason), true);
   return {
     refresh: () => refreshRecords(true),
-    setLanguage,
     activateArtifact: (id) => changeView('openTab', { id }),
     destroy() {
       state.destroyed = true;
@@ -962,9 +911,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       clearTimeout(toastTimer);
       clearTimeout(conversationTimer);
       clearTimeout(refreshTimer);
+      menuDismissal.dispose();
       abort.abort();
       if (typeof unsubscribe === 'function') unsubscribe();
-      i18n.off('languageChanged', renderLocalized);
       root.replaceChildren();
     },
   };

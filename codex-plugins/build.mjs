@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { adaptSkills } from './adapt-skills.mjs';
 import { adaptAnnotations } from './adapt-annotations.mjs';
 import { buildPluginAssets } from './assets.mjs';
+import { includePublishedSource } from './publish-filter.mjs';
 
 const buildRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(buildRoot);
@@ -111,7 +112,7 @@ try {
   const sourceRoot = path.join(buildRoot, 'source');
   await filesUnder(sourceRoot);
   await cp(sourceRoot, stagingRoot, { recursive: true, force: true, filter: source =>
-    !['server/spike.mjs', 'server/spike.html'].includes(path.relative(sourceRoot, source).split(path.sep).join('/')) });
+    includePublishedSource(path.relative(sourceRoot, source)) });
   await cp(path.join(repoRoot, 'NOTICE.md'), path.join(stagingRoot, 'NOTICE.md'));
   const noticePath = path.join(stagingRoot, 'NOTICE.md');
   const notice = await readFile(noticePath, 'utf8');

@@ -212,6 +212,8 @@ timed from the first draw that has rows so a redraw doesn't replay it.
 
 ### Handing over
 
+Use the native `appUrl` from `create` or `open <root>` to deliver the existing Codex Design artwork Tab, alongside its saved root. A standalone HTTP `preview` link is only for a user's explicit browser-preview request.
+
 Tell the person, in a line each, what they can do next: ask you for any chart or control by name, such as a flow diagram, a date filter or a click that filters every card; download a source's rows as CSV from Sources; and, as an editor, edit a live query's request in Sources (its SQL or other arguments), test it, save it and restore an earlier one, or edit or replace an attached file there. Then what to know about their data: each live query runs with the reader's own access whenever the dashboard is opened, refreshed or filtered, and an attached file is read by everyone who can open the dashboard, whatever their own access.
 
 Then where the numbers could come from next, once and in a line:

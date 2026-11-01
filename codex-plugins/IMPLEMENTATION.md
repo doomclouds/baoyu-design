@@ -1,5 +1,29 @@
 # Codex Design library implementation
 
+## 0.4.2 agreed revision scope
+
+The revision is limited to native delivery for all four artwork types, opaque
+editor Properties-state recovery, Comments in existing editor toolbars or
+navigation tools, transient-menu dismissal, and English-only plugin UI.
+The earlier upper-right floating-dock prototype was superseded by the user's
+toolbar/menu decision and is not the released design.
+
+Public `open` requests the native artwork route, `check` preserves diagnostics
+while returning native delivery hints, and `open-service` is internal data
+service startup. `preview` is explicitly requested independent web access.
+Native navigation acceptance does not prove a rendered editor. Existing
+non-library directories are not silently copied or migrated.
+
+Temporary in-document Web Storage restores UI switches inside opaque editors
+without granting parent access or claiming preference persistence across reopen.
+Comments retains its existing mode, list, filtering, reply and reopen handlers.
+Only the existing editor tool seats are used; no duplicate native header is
+created for the design system. User-authored text and comments retain their
+language while the plugin UI stays English.
+
+Cross-window editor ownership and the host-wide sidebar, toolbar and bound-chat
+requirements remain outside this revision and are not claimed complete.
+
 ## 0.4.1 native startup follow-up
 
 After the user's Desktop restart, live plugin tools recovered but artwork frames

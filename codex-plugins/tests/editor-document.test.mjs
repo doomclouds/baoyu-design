@@ -65,7 +65,7 @@ test('opaque-origin UUID fallback uses WebCrypto and remains valid inside serial
   assert.equal(result.nested.includes('Math.random'), false);
 });
 
-test('native chrome retains local export and one floating comment launcher without altering ordinary or foreign frame behavior', () => {
+test('native chrome retains local export and canonical toolbar comments without altering ordinary or foreign frame behavior', () => {
   const source = 'function link(w){return w.parent===w?null:{post:()=>{}}}const options={localComments:b=>make({base:b,toolbar:!0})};({standalone:window.parent===window,local:link(window),foreign:link(other),comments:options.localComments("root")});';
   const adapted = adaptInlineEditorScript(source, virtualBase + 'assets/main.js');
   const frame = { parent: {} }, other = { parent: {} };
@@ -73,7 +73,7 @@ test('native chrome retains local export and one floating comment launcher witho
   assert.equal(native.standalone, true);
   assert.equal(native.local, null);
   assert.equal(typeof native.foreign.post, 'function');
-  assert.equal(native.comments.toolbar, false);
+  assert.equal(native.comments.toolbar, true);
   const ordinary = vm.runInNewContext(adapted, { window: frame, other, make: value => value });
   assert.equal(ordinary.standalone, false);
   assert.equal(typeof ordinary.local.post, 'function');

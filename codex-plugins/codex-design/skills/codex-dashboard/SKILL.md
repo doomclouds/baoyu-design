@@ -1,6 +1,6 @@
 ---
 name: codex-dashboard
-description: "Use this for a local, data-backed dashboard, metrics page, KPI tracker, scorecard, data visualization or recurring report that opens in the bundled live editor: a page or scroll story of charts, numbers and tables over datasets (a CSV/TSV/JSON file the user has, or data you gather and attach), with a Sources panel that shows where every number comes from. Read it when creating, filling, refreshing or revising one. You write the datasets, then the page as plain HTML, into the dashboard's own store with this skill's script. For a static HTML mockup or a picture of a dashboard, use the host's normal coding workflow."
+description: "Use this for a local, data-backed dashboard, metrics page, KPI tracker, scorecard, data visualization or recurring report that opens in its Codex Design artwork Tab: a page or scroll story of charts, numbers and tables over datasets (a CSV/TSV/JSON file the user has, or data you gather and attach), with a Sources panel that shows where every number comes from. Read it when creating, filling, refreshing or revising one. You write the datasets, then the page as plain HTML, into the dashboard's own store with this skill's script. For a static HTML mockup or a picture of a dashboard, use the host's normal coding workflow."
 license: "Mixed sources. See the bundled ../../NOTICE.md for source-specific terms."
 ---
 
@@ -14,18 +14,20 @@ This skill is bundled in **codex design**. These local instructions take precede
 - Use Codex file-editing tools for requested changes. Read current files immediately before editing and preserve unrelated data.
 - Run `node "<this skill folder>/scripts/codex-artifact.mjs" <command>`. This entry point delegates to the bundled local tool. References or returned hints naming `artifact.mjs` mean this Codex entry point.
 - **Create new artwork:** Unless the user gave an explicit output folder, first run `node "<this skill folder>/scripts/codex-artifact.mjs" create "<artwork title>"`. It creates a blank native artifact in the global library and returns its UUID, exact `root`, and native `appUrl`. Use THAT root for all subsequent writes, `check`, and `open`; do not create a second project folder from later examples. Creating artwork does not start a model, queue a message, or open another chat.
+- **Open and deliver in Codex Design:** Keep the `appUrl` returned by `create`. After writing and checking, run this entry point's `open <root>` to request the artwork's existing Tab in Codex Design, and give its returned native `appUrl` as the delivery link. Do not open a localhost editor URL in a chat's browser Tab by default. `navigationRequested: true` only means the navigation request was accepted; `renderVerified: false` does not prove that the editor rendered. Report a failed native open honestly, without silently switching to HTTP. Opening artwork does not create or resume a worker or another chat.
+- **Check hints and explicit previews:** Follow `check.next` through this skill's `scripts/codex-artifact.mjs` wrapper. A non-library root has `nativeAvailable: false`; keep its files in place and explain that native opening needs an explicitly requested import. Use `preview <root>` and its HTTP `url` only when the user explicitly asks for a standalone browser preview. Do not invoke internal `open-service` / `serve-service` commands as a delivery workflow. Asset and dataset `url` values such as `/_blob/<id>` remain content references, not editor links.
 - **Read-only references:** Artwork or a design system attached as reference is context to read and follow, not permission to edit its source. Change only the user's editing target. Reading or changing a design system never automatically changes other artwork; chats, comments, worker state, and runtime records do not become reference content.
 - **Before AI edits:** For an existing library artwork, run `node "<this skill folder>/scripts/codex-artifact.mjs" checkpoint "<root>"` before changing content, and preserve the returned restore point. An active native job blocks independent checkpoints; pending jobs are reported as `pendingCount` for the parent's coordination and are not consumed. A native worker already holding a claimed job skips this command because its controller has already created that job's restore point. Freshly created blank artwork and explicitly located legacy project folders keep their existing workflow; do not import or relocate them just to checkpoint.
 - **Design system search:** `list` searches the current project and the existing global library's `~/.codex/CodexDesignLibrary/design-system` folder, without creating the library or searching its trash. Set `CODEX_DESIGN_SYSTEMS` to additional local design-system folders when needed; explicit folders keep priority. Separate paths with the platform path delimiter (semicolon on Windows, colon on macOS/Linux).
 - **Coordinate ownership from the main chat:** Before the main chat or another independent agent changes an artifact, inspect `worker-status <root>` through the Codex entry point. Do not write the same artifact while its native worker owns an active job. Pending work with no listener needs the parent's native-agent decision, not an indefinite wait. The registered worker owns its active serial job and must not wait for its own worker-status entry.
-- **Native annotations:** Use the built-in browser toolbar's **批注** control. The plugin adds object/file metadata to existing page elements and does not add an annotation panel or button. The user submits the native annotation through the host composer to the current chat. Treat that submitted selection and text as a request for the current chat; check worker status before editing its files.
-- **Editor Send to agent:** The editor's existing Comments control stays in its original position and saves `comments.json`. Explicit **Send to agent** durably records a local job; it does not wake a native agent, call an external queue, or start a model/HTTP daemon. Ordinary saved comments are not sent. Default delivery is `native`; `worker` is an alias. `--delivery main` is explicit legacy compatibility only, never a fallback.
+- **Annotations and editor comments:** In a native Codex Design artwork Tab, use Comments in that editor's existing toolbar or navigation tools. Only an explicitly requested standalone browser preview uses the browser toolbar's annotation control, where available; the plugin adds object/file metadata to existing elements. A selection submitted through the host composer is a request for the current chat; check worker status before editing its files.
+- **Editor Send to agent:** The editor's Comments control saves `comments.json`. Explicit **Send to agent** durably records a local job; it does not wake a native agent, call an external queue, or start a model/HTTP daemon. Ordinary saved comments are not sent. Default delivery is `native`; `worker` is an alias. `--delivery main` is explicit legacy compatibility only, never a fallback.
 - **Parent native-agent controller:** Inspect worker-status and the actual platform native-agent tools. Reuse the registered child when it is available; resume the existing child when needed; create one with the platform spawn tool only when the parent decides that is necessary. Do not create an agent for every comment. A real platform-spawned child appears in the native UI; never invent threadSource metadata. Listener presence is not proof of agent liveness. If native tools are unavailable or unloaded, leave durable jobs pending and have the parent arrange recovery; do not silently use a background model process or the main chat queue.
 - **Register inside the real child:** The selected child runs `worker-register <root> --name <task>` using its own actual `CODEX_THREAD_ID` environment. Never copy the parent's id or fabricate one. Registration reuses the same id; a different child requires the parent's explicit replacement decision and `--replace`.
 - **Keep the child listening:** After registration, do not end the turn with a Ready message. Run `worker-next <root> --timeout 60` as a long wait and poll that same running command instead of starting duplicate listeners. On `timedOut`, call worker-next again. On `closed`, end this listener turn. A job returns `job.id`, `request`, and `event`: read the installed skill and current artifact files, edit only that artifact, preserve unrelated content, and run its built-in check. Do not wait for your own active status.
 - **Complete each job:** Run `worker-complete <root> <jobId> -` with a concise reply on stdin, then call worker-next again. Plain text completes a successful job; JSON `{"text":"honest explanation","status":"failed","error":{"code":"...","message":"..."}}` reports failure. The controller posts the reply to the original comment with a user-revision precondition; do not also call comment-reply or comment-resolve. Acceptance is not completion. Report pending, active, completed, failed, and superseded results accurately.
 - **Pause or replace:** Before pausing/replacing a child that may still be editing, the parent uses the platform native interrupt tool, then `worker-stop <root>` and, for a different child, explicit registration with `--replace`. The CLI pauses its local listener; it cannot interrupt a native agent. Main and independent agents must not write concurrently with that worker.
-- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option opens a local editor without delivery; it does not recover or replace a native child.
+- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option disables comment delivery; it does not change native opening into a browser preview or recover or replace a native child.
 - **Verification:** Run the built-in `check`, fix structural problems, then use the available browser or document preview to inspect the affected output when useful. Check visible layout, relevant interactions, and the requested export when applicable. Reuse installed tools. State which checks ran and which could not run; a structural check alone does not prove visual correctness.
 - Use the bundled local commands and available Codex tools.
 
@@ -43,11 +45,7 @@ where `d3` has no helper; if you draw another, say which and why.
 
 ## The calls
 
-A dashboard is a folder, `<root>`: `designs/<slug>/` in the current project
-unless the person names another (`<slug>`: the title in lowercase words joined
-by `-`; a title not in Latin letters, such as a Chinese one, takes a short
-English rendering of it: `x-account-analytics`). The first `write-db` or
-`upload` creates it. One script, Node 22 or later with nothing to install,
+A dashboard lives in the exact `root` returned by the Codex execution `create` command; retain its native `appUrl` for delivery. Reuse an existing dashboard or a user's explicit output folder instead of creating another. One script, Node 22 or later with nothing to install,
 does every call; below, `A` is `<this skill's folder>/scripts/codex-artifact.mjs`.
 
 | Command | Does |
@@ -57,7 +55,8 @@ does every call; below, `A` is `<this skill's folder>/scripts/codex-artifact.mjs
 | `node $A upload <root> <file> [--name n]` | Attaches a CSV, TSV or JSON file: `{"url": "/_blob/<id>", "bytes", "contentType", …}`. |
 | `node $A delete-asset <root> <url \| id>` | Removes an attached file no document names any more. |
 | `node $A check <root>` | Checks the documents, the page's files, and that each dataset mark's `data-where`/`data-row` finds its rows. Exit 1 while `problems` > 0. |
-| `node $A open <root> [--port n]` | Starts the editor on 127.0.0.1 in the background and returns `{"url", "pid", "stop", …}`. Run again, it reuses the one running. `--agent-hook "<command>"`: see Comments. |
+| `node $A open <root>` | Requests this artwork's existing Codex Design Tab and returns `{appUrl, navigationRequested, renderVerified, …}`. Deliver `appUrl`; navigation acceptance is not a render check. |
+| `node $A preview <root> [--port n]` | Standalone HTTP preview only when the user explicitly requests an independent browser page; returns its preview `url`. |
 | `node $A serve <root> [--port n]` / `stop <root>` | The same server in the foreground / stops the background one. |
 | `node $A comments <root> [--all]` / `--wait` | The comments people left on the page / waits for one they send you. See Comments. |
 | `node $A comment-reply <root> <id> <text\|->` / `comment-resolve <root> <id>` | Answers one (`--resolve` closes it too) / closes one (`--reopen`). |
@@ -298,17 +297,14 @@ a new folder makes another.
    each dataset's file as the page does and finds the rows each dataset
    mark names (values shown and calc marks: the open page checks those); fix
    what it lists and run it again until `problems` is 0 (its warnings are
-   worth a read; they don't block). Then run `open <root>` (it starts the
-   editor in the background and returns at once). **Then the page's own
-   check**: where a browser has the page open, the page checks itself about
+   worth a read; they don't block). Then run `open <root>` to request this artwork's existing Codex Design Tab; keep its returned native `appUrl` for delivery. **Then the page's own
+   check**: while the Codex Design artwork Tab is open, the page checks itself about
    10 seconds after each page write, and `check <root>` shows what it found
    as `pageCheck`. Run `check` once more after that. `checking`: run it
    again, 5 times at most. `failed`: fix what your code confirms (an intended
    `output` entry stays), write, check again, 2 fixes max; still `failed`:
-   say so. No `pageCheck`, or `status: null`: it passed, or no browser has
-   it open. No fault there does not show that the numbers are right: never
-   say the page works. Then hand over: give the person the `url` and the
-   folder. Say briefly what it shows, what you
+   say so. No `pageCheck`, or `status: null`: it passed, or its artwork Tab is not open. No fault there does not show that the numbers are right: never
+   say the page works. Then hand over: give the person the native `appUrl` from `create` or `open` and the exact saved root. Say briefly what it shows, what you
    assumed, where each file's data came from and that the folder holds it,
    and what Handing over in `artifact-type/reference/design-defaults.md`
    says of asking for any chart or control by name and downloading a
@@ -320,7 +316,7 @@ a new folder makes another.
 Before a fix, read the dataset's file yourself (`check` lists each one's
 columns and rows) and check the columns. Step 3's rule on verifying holds for
 a change too: write, `check` (its `pageCheck` too), and the open editor
-shows it; if it isn't running, `open` it again.
+shows it; use `open <root>` to request the same artwork Tab again and return its native `appUrl`.
 `read-db`, change only what was asked, one `update` per document (fields
 merge; `null` removes a key); `set` the whole document to change a source's
 kind; a file's `text` is always the whole file. A new file version:

@@ -6,7 +6,7 @@ Bundle `entry.js` with the installed `i18next` dependency, preserve `styles.css`
 
 ## Host adapter
 
-`createUi({root, bridge})` is exported from `library-ui.js`. `entry.js` accepts `window.codexDesignBridge`, exposes `window.installCodexDesignBridge(bridge)`, and listens for `codex-design:bridge-ready`. The returned controller provides `refresh()`, `setLanguage('system'|'en'|'zh')`, `activateArtifact(id)`, and `destroy()`.
+`createUi({root, bridge})` is exported from `library-ui.js`. `entry.js` accepts `window.codexDesignBridge`, exposes `window.installCodexDesignBridge(bridge)`, and listens for `codex-design:bridge-ready`. The returned controller provides `refresh()`, `activateArtifact(id)`, and `destroy()`.
 
 The bridge implements:
 
@@ -14,7 +14,6 @@ The bridge implements:
 {
   invoke(action, payload): Promise<result>,
   subscribe(handler): unsubscribe,
-  language: 'zh-CN', // optional host/system UI language
   capabilities: {actions: ['library.list', /* ... */]}, // optional whitelist
   initialState: {artifacts: [], viewState: {}}, // optional real initial tool result
 }
@@ -33,7 +32,7 @@ Actions and results:
 | `view.openTab` / `view.activateTab` / `view.closeTab` | `{id}` | view state |
 | `view.reorderTabs` | `{ids}` including fixed library first | view state |
 | `editor.open` | `{id,force?}` | `{url}` for the real existing editor |
-| `editor.document` | `{id,language,channel,force?}` | self-contained native editor HTML and scoped transport metadata |
+| `editor.document` | `{id,language:'en',channel,force?}` | self-contained native editor HTML and scoped transport metadata |
 | `conversation.get` | `{id}` | `{binding,messages,status,capabilities,reasonCode?}` |
 | `conversation.send` | `{id,text}` | actual delivery result; UI reloads conversation |
 
@@ -45,15 +44,15 @@ When the bridge advertises `supportsInlineEditor`, the UI opens the self-contain
 
 Before switching away, closing an active artwork tab, reopening, exporting, creating a recovery point or replacing content, the native path waits for the editor's real save barrier. A rejected barrier leaves the current tab and editor open. The controller supplies the same guard to native deep-link navigation and the host teardown request. Category state and keyboard focus also remain on the current work when navigation fails.
 
-Subscription events can contain `viewState`, or use `type: 'library.changed'|'artifact.updated'|'view.changed'|'conversation.changed'|'worker.changed'|'capabilities.changed'|'language.changed'|'host-context.changed'`. Conversation events may identify `artifactId`; language events may include `language`. Active running conversations are observed while visible; inactive editor iframes are unloaded and restored only on activation. This does not stop backend AI work.
+Subscription events can contain `viewState`, or use `type: 'library.changed'|'artifact.updated'|'view.changed'|'conversation.changed'|'worker.changed'|'capabilities.changed'|'host-context.changed'`. Legacy language-change events are ignored. Conversation events may identify `artifactId`. Active running conversations are observed while visible; inactive editor iframes are unloaded and restored only on activation. This does not stop backend AI work.
 
 `createHttpBridge({endpoint,eventsUrl?,headers?,language?})` is an explicitly configured alternative transport, never an automatic endpoint guess. Production MCP hosts can map `invoke` to `design_action({action,payload})` and supply the actual initial result.
 
-## Localization and access
+## Interface language and access
 
-`locales/en.js` and `locales/zh.js` share keys and use i18next. The language preference is UI-only local storage, follows system/host language by default, observes the browser `languagechange` event, and emits `codex-design:languagechange`. Artifact titles, content, skill text, prompts and conversation messages are not translated.
+The interface uses `locales/en.js` through an English-only i18next instance. Existing stored `zh` or `system` preferences and host/browser locale changes do not change it. There is no language selector, follow-system option, or empty Settings dialog. Native editor requests, standalone editor URL parameters, and editor language messages explicitly use English. Artifact titles, content, prompts, comment text, conversation messages, and custom recovery-point labels retain their original text.
 
-Tabs support arrows/Home/End, Alt+Shift+arrows for reordering, and pointer drag. Menus support arrows/Home/End/Escape. Dialogs use native modal focus handling; destructive actions require a concrete confirmation. Search, favorites and sorting use only actual library records. Native editors keep their own comments, location pins, replies, resolve/reopen and Send to agent behavior.
+Tabs support arrows/Home/End, Alt+Shift+arrows for reordering, and pointer drag. Menus support arrows/Home/End/Escape. `menu-dismissal.mjs` keeps a transient dropdown open while the mouse crosses the trigger/menu gap, then closes it 220 ms after leaving both. Entering either region cancels that timer. Programmatic first-item focus does not suppress mouse dismissal; keyboard interaction does, until mouse navigation resumes. Touch interaction does not depend on hover. Outside presses, focus leaving, editor-iframe pointer boundaries, and window blur close only the dropdown; Escape also returns focus to its trigger. Opaque editor documents and the host parent are never inspected. Rename, history, restore and other modal dialogs have separate lifecycles and are not closed by dropdown dismissal. Dialogs use native modal focus handling; destructive actions require a concrete confirmation. Search, favorites and sorting use only actual library records. Native editors keep their own comments, location pins, replies, resolve/reopen and Send to agent behavior.
 
 Create opens an anchored content menu. Selecting a type saves a blank native artifact before opening its unique tab. The editor title and item menu provide renaming. List view uses compact type icons and 58px rows; Grid view keeps real artwork previews. Category navigation can be collapsed and reopened, with its local preference retained.
 

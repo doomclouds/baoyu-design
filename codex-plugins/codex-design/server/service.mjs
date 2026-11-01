@@ -30,7 +30,7 @@ export const capabilityState = () => ({
   arbitraryThreadTarget: false, reasonCode: UNSUPPORTED_CHAT_CODE,
 });
 
-export async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 30_000 } = {}) {
+export async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 30_000, spawnProcess = spawn } = {}) {
   const current = readJson(path.join(record.path, '.artifact-server.json'));
   if (current && alive(current.pid)) {
     await verifyEditorInstance(current, record.path, record.kind);
@@ -41,7 +41,7 @@ export async function openLocalEditor(record, { pluginRoot, env = process.env, t
   const skill = `codex-${record.kind}`;
   const cli = path.join(pluginRoot, 'skills', skill, 'scripts', 'codex-artifact.mjs');
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, 'open', record.path, '--delivery', 'native'], {
+    const child = spawnProcess(process.execPath, [cli, 'open-service', record.path, '--delivery', 'native'], {
       cwd: record.path, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '', stderr = '', settled = false, timedOut = false;
@@ -162,7 +162,7 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'editor.document': {
           const id = idOf(payload.id);
           if (typeof payload.channel !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure('INVALID_EDITOR_REQUEST', 'A unique editor channel is required.');
-          const language = /^zh(?:-|$)/i.test(String(payload.language)) ? 'zh' : 'en';
+          const language = 'en';
           const editor = await editorFor(id);
           const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
           const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2 };

@@ -23596,10 +23596,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     fileReadFailed: "The selected file could not be read.",
     downloadUnavailable: "This host does not support artwork downloads.",
     untitled: { slides: "Untitled slides", design: "Untitled design", "design-system": "Untitled design system", dashboard: "Untitled dashboard" },
-    editorLanguagePending: "The editor will use the new language after reopening.",
-    reopenEditorLanguage: "Reopen editor",
-    editorLanguageConfirm: "First confirm that the editor has saved your work. Reopening reloads the editor and may discard unsaved changes.",
-    editorLanguageSaved: "I have confirmed that my changes are saved.",
+    editorChangesSaved: "I have confirmed that my changes are saved.",
     thumbnailContentReference: "Content reference; live charts are not executed.",
     appName: "Codex Design",
     library: "Library",
@@ -23612,7 +23609,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     recent: "Recent",
     trash: "Trash",
     favorites: "Favorites",
-    settings: "Settings",
     libraryNavigation: "Design library",
     workspaceTabs: "Open designs",
     recentDesigns: "Recent designs",
@@ -23703,11 +23699,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     conversationIdle: "Bound to this design",
     conversationReference: "Other chats can reference this design. Editing stays in this tab.",
     noSendCapability: "This environment does not support sending to the bound conversation.",
-    language: "Language",
-    languageSystem: "Follow system",
-    languageEnglish: "English",
-    languageChinese: "简体中文",
-    languageHelp: "Only the interface language changes. Your designs and conversations keep their original language.",
     done: "Done",
     justNow: "Just now",
     unknownDate: "—",
@@ -23725,179 +23716,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     tabKeyboardHelp: "Use arrow keys to switch tabs. Use Alt+Shift and arrow keys to reorder a design tab.",
     libraryEmptyFooter: "Your work, all in one place.",
     restoredTabMissing: "This design is no longer in the library."
-  };
-
-  // source/ui/locales/zh.js
-  var zh_default = {
-    artifactFilesBusy: "作品文件正在被占用，请关闭其他相关窗口后重试。",
-    createContent: "创建新内容",
-    collapseSidebar: "收起导航栏",
-    expandSidebar: "展开导航栏",
-    actions: "操作",
-    editorStartTimeout: "编辑器未能完成加载，请重新打开这件作品。",
-    editorRuntimeFailed: "编辑器遇到错误，请重新打开这件作品。",
-    savingChanges: "正在保存修改…",
-    changesSaved: "修改已保存",
-    kindColumn: "类型",
-    invalidTitle: "请输入 1 至 200 个字符的名称。",
-    artifactBusy: "这件作品正在执行编辑任务，请完成后重试。",
-    libraryBusy: "作品库正忙，请稍后重试。",
-    artifactNotFound: "这件作品已不可用，请刷新作品库。",
-    fileAccessFailed: "无法访问作品文件，请检查文件权限后重试。",
-    limitExceeded: "这件作品超出了当前操作的限制。",
-    editorTooLarge: "这件作品过大，当前编辑器无法打开。",
-    editorSaveFailed: "尚未确认修改已保存，当前作品标签页将保持打开。",
-    beforeAiSnapshot: "AI 编辑前",
-    beforeResumedAiSnapshot: "AI 继续编辑前",
-    importArtwork: "导入作品",
-    exportArtwork: "导出作品",
-    imported: "作品已导入",
-    exported: "作品已导出",
-    versionHistory: "版本历史",
-    historyDescription: "恢复点只保存作品内容。",
-    loadingHistory: "正在加载恢复点…",
-    historyEmpty: "还没有恢复点。",
-    createSnapshot: "保存恢复点",
-    manualSnapshot: "恢复点",
-    beforeRestoreSnapshot: "恢复前",
-    restoreVersion: "恢复",
-    restoreVersionTitle: "恢复到这个版本？",
-    restoreVersionBody: "此操作会替换作品内容，并先保存当前版本的恢复点。评论和对话保持独立。请先确认编辑器已保存修改。",
-    versionRestored: "作品版本已恢复",
-    transferTooLarge: "作品包超过 16 MB 的传输限制。",
-    invalidBundle: "请选择有效的 Codex Design 作品包。",
-    fileReadFailed: "无法读取所选文件。",
-    downloadUnavailable: "当前宿主不支持下载作品。",
-    untitled: { slides: "无标题的幻灯片", design: "无标题的设计", "design-system": "无标题的设计系统", dashboard: "无标题的数据看板" },
-    editorLanguagePending: "重新打开编辑器后将应用新语言。",
-    reopenEditorLanguage: "重新打开编辑器",
-    editorLanguageConfirm: "请先确认编辑器已保存修改。重新打开会加载编辑器，未保存的修改可能丢失。",
-    editorLanguageSaved: "我已确认修改已保存。",
-    thumbnailContentReference: "内容参考预览，未运行动态图表。",
-    appName: "Codex Design",
-    library: "作品库",
-    create: "创建",
-    all: "全部",
-    slides: "幻灯片",
-    design: "设计",
-    "design-system": "设计系统",
-    dashboard: "数据看板",
-    recent: "最近",
-    trash: "回收站",
-    favorites: "收藏",
-    settings: "设置",
-    libraryNavigation: "设计作品库",
-    workspaceTabs: "已打开的作品",
-    recentDesigns: "最近的作品",
-    openDesign: "打开{{title}}",
-    closeDesign: "关闭{{title}}",
-    favoriteDesign: "收藏{{title}}",
-    unfavoriteDesign: "取消收藏{{title}}",
-    moreActions: "{{title}}的操作",
-    search: "搜索作品",
-    searchKind: "搜索{{kind}}",
-    count: "{{count}} 个作品",
-    count_other: "{{count}} 个作品",
-    name: "名称",
-    project: "关联项目",
-    lastEdited: "上次编辑",
-    noProject: "未关联项目",
-    sort: "排序作品",
-    sortUpdated: "上次编辑",
-    sortCreated: "创建时间",
-    sortName: "名称顺序",
-    gridView: "网格视图",
-    listView: "列表视图",
-    newestFirst: "最新在前",
-    loadingLibrary: "正在加载作品…",
-    libraryUnavailable: "作品库尚未连接",
-    bridgeUnavailable: "请从已连接的工作区打开 Codex Design，查看你的作品。",
-    retry: "重试",
-    emptyTitle: "创建你的第一件作品",
-    emptyBody: "从幻灯片、设计、设计系统或数据看板开始。",
-    emptyFavorites: "喜欢的作品，就放这里。",
-    emptyFavoritesBody: "收藏一件作品，下次更快找到它。",
-    emptySearch: "没有找到匹配的作品",
-    emptySearchBody: "换个名称试试，或清除搜索。",
-    clearSearch: "清除搜索",
-    emptyTrash: "回收站是空的",
-    emptyTrashBody: "移入回收站的作品可以在这里恢复。",
-    newDesign: "新建作品",
-    newKind: "新建{{kind}}",
-    titleLabel: "名称",
-    titlePlaceholder: "为作品起个名字",
-    kindLabel: "作品类型",
-    createDesign: "创建作品",
-    cancel: "取消",
-    rename: "重命名",
-    copy: "创建副本",
-    trashAction: "移入回收站",
-    restore: "恢复",
-    renameTitle: "重命名作品",
-    renameSubmit: "保存名称",
-    copyTitle: "创建副本",
-    copySubmit: "创建副本",
-    copyName: "{{title}} — 副本",
-    trashTitle: "将这件作品移入回收站？",
-    trashBody: "“{{title}}”将从作品库中移出，你可以在回收站中恢复它。",
-    restoreTitle: "恢复作品",
-    created: "作品已创建",
-    renamed: "名称已更新",
-    copied: "副本已创建",
-    trashed: "已移入回收站",
-    restored: "作品已恢复",
-    favoriteSaved: "收藏已更新",
-    missing: "未找到作品文件",
-    invalid: "需要检查",
-    missingBody: "找不到这件作品的文件。恢复文件位置后即可打开。",
-    invalidBody: "这件作品需要检查后才能打开编辑器。",
-    loadingEditor: "正在打开作品…",
-    editorUnavailable: "暂时无法打开编辑器",
-    openEditorAgain: "重新打开",
-    editorFrame: "{{title}}编辑器",
-    editorHeading: "作品编辑器",
-    editorExternal: "在新窗口打开编辑器",
-    savedByEditor: "修改由编辑器自动保存",
-    closeKeepsRunning: "关闭此标签页不会停止正在进行的 AI 工作。",
-    boundConversation: "编辑对话",
-    minimizeConversation: "收起编辑对话",
-    expandConversation: "展开编辑对话",
-    conversationFor: "{{title}}的编辑对话",
-    conversationUnavailable: "编辑对话暂不可用",
-    conversationUnavailableBody: "当前环境尚未提供这件作品的绑定编辑对话。",
-    conversationUnbound: "这件作品尚未绑定编辑对话。",
-    conversationLoading: "正在加载对话…",
-    noMessages: "这件作品的编辑对话已就绪。",
-    continueDesign: "继续讨论这件作品…",
-    send: "发送消息",
-    sending: "正在发送…",
-    thinking: "正在处理这件作品…",
-    conversationFailed: "上次请求需要检查。",
-    conversationIdle: "仅绑定这件作品",
-    conversationReference: "其他聊天可以引用这件作品，修改留在此标签页。",
-    noSendCapability: "当前环境不支持向绑定编辑对话发送消息。",
-    language: "语言",
-    languageSystem: "跟随系统",
-    languageEnglish: "English",
-    languageChinese: "简体中文",
-    languageHelp: "只切换界面语言，作品内容和对话保留原来的语言。",
-    done: "完成",
-    justNow: "刚刚",
-    unknownDate: "—",
-    actionFailed: "暂时无法完成此操作。",
-    unsupported: "当前环境尚不支持此操作。",
-    refresh: "刷新作品库",
-    dismiss: "关闭提示",
-    closeDialog: "关闭对话框",
-    slidesDescription: "演示文稿与叙事",
-    designDescription: "画布与交互原型",
-    systemDescription: "样式、组件与使用规范",
-    dashboardDescription: "数据与它背后的故事",
-    reorderLeft: "标签页左移",
-    reorderRight: "标签页右移",
-    tabKeyboardHelp: "使用方向键切换标签页；按住 Alt+Shift 和方向键调整作品顺序。",
-    libraryEmptyFooter: "你的作品，都在这里。",
-    restoredTabMissing: "这件作品已不在作品库中。"
   };
 
   // source/ui/bridge.js
@@ -23987,6 +23805,117 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const above = anchor2.top - actualHeight - gap;
     const top = below + actualHeight <= viewportHeight - margin ? below : above >= margin ? above : margin;
     return { left, top, width: actualWidth, maxHeight: availableHeight };
+  }
+
+  // source/ui/menu-dismissal.mjs
+  function menuInputMode(event) {
+    if (event?.pointerType === "touch" || event?.pointerType === "pen") return "touch";
+    return event?.detail === 0 && !event.pointerType ? "keyboard" : "pointer";
+  }
+  function createMenuDismissal({
+    document: document2,
+    window: window2,
+    onDismiss,
+    delayMs = 220,
+    setTimeout: schedule = globalThis.setTimeout,
+    clearTimeout: cancel = globalThis.clearTimeout
+  } = {}) {
+    let current;
+    let timer;
+    const listeners = [];
+    const contains = (region, target) => {
+      if (!region || !target) return false;
+      if (region === target) return true;
+      try {
+        return Boolean(region.contains?.(target));
+      } catch {
+        return false;
+      }
+    };
+    const inside = (target) => contains(current?.trigger, target) || contains(current?.menu, target);
+    const stopTimer = () => {
+      if (timer !== void 0) cancel(timer);
+      timer = void 0;
+    };
+    function clear() {
+      stopTimer();
+      current = void 0;
+    }
+    function dismiss(returnFocus = false) {
+      if (!current) return;
+      clear();
+      onDismiss?.(returnFocus);
+    }
+    function deferDismiss() {
+      if (!current || timer !== void 0) return;
+      const opened = current;
+      timer = schedule(() => {
+        timer = void 0;
+        if (current === opened) dismiss();
+      }, delayMs);
+    }
+    function leave(event) {
+      if (!current || event.pointerType !== "mouse" || current.mode !== "pointer" || !inside(event.target) || inside(event.relatedTarget)) return;
+      deferDismiss();
+    }
+    function enter(event) {
+      if (!current) return;
+      if (inside(event.target)) {
+        stopTimer();
+        return;
+      }
+      if (event.pointerType === "mouse" && current.mode === "pointer" && event.target?.tagName === "IFRAME") deferDismiss();
+    }
+    const listen = (surface, name, handler) => {
+      surface.addEventListener(name, handler, true);
+      listeners.push(() => surface.removeEventListener(name, handler, true));
+    };
+    listen(document2, "pointerout", leave);
+    listen(document2, "pointerover", enter);
+    listen(document2, "pointerenter", enter);
+    listen(document2, "pointermove", (event) => {
+      if (current && event.pointerType === "mouse" && inside(event.target)) {
+        current.mode = "pointer";
+        stopTimer();
+      }
+    });
+    listen(document2, "pointerdown", (event) => {
+      if (!current) return;
+      if (!inside(event.target)) {
+        dismiss();
+        return;
+      }
+      current.mode = event.pointerType === "touch" || event.pointerType === "pen" ? "touch" : "pointer";
+      stopTimer();
+    });
+    listen(document2, "keydown", (event) => {
+      if (!current) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        dismiss(true);
+        return;
+      }
+      if (inside(event.target)) {
+        current.mode = "keyboard";
+        stopTimer();
+      }
+    });
+    listen(document2, "focusin", (event) => {
+      if (current && !inside(event.target)) dismiss();
+    });
+    listen(window2, "blur", () => dismiss());
+    return {
+      open({ trigger, menu, mode = "pointer" }) {
+        clear();
+        current = { trigger, menu, mode };
+      },
+      clear,
+      dispose() {
+        clear();
+        for (const remove of listeners.splice(0)) remove();
+      }
+    };
   }
 
   // source/ui/library-transfer.mjs
@@ -24295,7 +24224,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     dashboard: '<rect x="3" y="5" width="6" height="15" rx="1"/><rect x="15" y="3" width="6" height="15" rx="1"/><path d="M10 8h3v13h-3"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/>',
     trash: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
-    settings: '<path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z"/><circle cx="12" cy="12" r="3"/>',
     search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/>',
     star: '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/>',
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
@@ -24338,13 +24266,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (!root) throw new TypeError("A mount root is required.");
     const i18n = instance.createInstance();
-    let preference = "system";
-    try {
-      preference = localStorage.getItem("codex-design.ui-language") || localStorage.getItem("codexDesign.ui.language") || "system";
-    } catch {
-    }
-    const systemLanguage = () => String(bridge.language || navigator.language || "en").startsWith("zh") ? "zh" : "en";
-    await i18n.init({ lng: preference === "system" ? systemLanguage() : preference, fallbackLng: "en", resources: { en: { translation: en_default }, zh: { translation: zh_default } }, interpolation: { escapeValue: false } });
+    await i18n.init({ lng: "en", supportedLngs: ["en"], fallbackLng: "en", resources: { en: { translation: en_default } }, interpolation: { escapeValue: false } });
     const t2 = (key, values) => i18n.t(key, values);
     const state = {
       records: [],
@@ -24375,7 +24297,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let conversationSequence = 0;
     let currentSurface = null;
     let currentEditorUrl = null;
-    let currentEditorLanguage = null;
     let currentNativeEditor = null;
     const thumbnailCache = /* @__PURE__ */ new Map();
     const thumbnailPending = /* @__PURE__ */ new Set();
@@ -24398,6 +24319,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       scrim: root.querySelector(".sidebar-scrim"),
       sidebarToggle: root.querySelector(".sidebar-toggle")
     };
+    const menuDismissal = createMenuDismissal({ document, window, onDismiss: closeMenu });
     const recordFor = (id) => state.records.find((record3) => record3.id === id);
     const activeRecord = () => recordFor(state.view.activeTabId);
     async function flushCurrentEditor() {
@@ -24582,7 +24504,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const recents = state.records.filter((record3) => !isDeleted(record3)).slice().sort((a, b2) => Date.parse(b2.updatedAt) - Date.parse(a.updatedAt)).slice(0, 5);
       const navItem = (category, symbol3 = category) => '<button type="button" class="sidebar-item ' + (state.category === category ? "is-selected" : "") + '" data-action="category" data-category="' + category + '" data-focus-key="nav-' + category + '" aria-current="' + (state.category === category ? "page" : "false") + '">' + icon(symbol3) + "<span>" + escape2(t2(category)) + "</span></button>";
       elements.sidebar.setAttribute("aria-label", t2("libraryNavigation"));
-      elements.sidebar.innerHTML = '<div class="sidebar-heading"><span class="wordmark">Codex Design</span><div class="sidebar-heading-actions"><button type="button" class="icon-button sidebar-search" data-action="focus-search" aria-label="' + escape2(t2("search")) + '">' + icon("search") + '</button><button type="button" class="icon-button sidebar-collapse" data-action="toggle-sidebar" aria-label="' + escape2(t2("collapseSidebar")) + '" title="' + escape2(t2("collapseSidebar")) + '">' + icon("sidebar") + '</button></div></div><button type="button" class="sidebar-item sidebar-create" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled("library.create") + ">" + icon("plus") + "<span>" + escape2(t2("create")) + '</span></button><nav class="category-navigation" aria-label="' + escape2(t2("libraryNavigation")) + '">' + navItem("all", "library") + KINDS2.map((kind) => navItem(kind)).join("") + '</nav><div class="recent-section"><button type="button" class="section-label recent-heading" data-action="category" data-category="recent">' + escape2(t2("recent")) + '</button><div class="recent-items">' + recents.map((record3) => '<button type="button" class="sidebar-item recent-item" data-action="open" data-id="' + escape2(record3.id) + '" title="' + escape2(record3.title) + '" aria-label="' + escape2(t2("openDesign", { title: record3.title })) + '">' + icon(record3.kind) + "<span>" + escape2(record3.title) + "</span></button>").join("") + '</div></div><div class="sidebar-bottom">' + navItem("trash") + '<button type="button" class="icon-button" data-action="settings" aria-label="' + escape2(t2("settings")) + '">' + icon("settings") + "</button></div>";
+      elements.sidebar.innerHTML = '<div class="sidebar-heading"><span class="wordmark">Codex Design</span><div class="sidebar-heading-actions"><button type="button" class="icon-button sidebar-search" data-action="focus-search" aria-label="' + escape2(t2("search")) + '">' + icon("search") + '</button><button type="button" class="icon-button sidebar-collapse" data-action="toggle-sidebar" aria-label="' + escape2(t2("collapseSidebar")) + '" title="' + escape2(t2("collapseSidebar")) + '">' + icon("sidebar") + '</button></div></div><button type="button" class="sidebar-item sidebar-create" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled("library.create") + ">" + icon("plus") + "<span>" + escape2(t2("create")) + '</span></button><nav class="category-navigation" aria-label="' + escape2(t2("libraryNavigation")) + '">' + navItem("all", "library") + KINDS2.map((kind) => navItem(kind)).join("") + '</nav><div class="recent-section"><button type="button" class="section-label recent-heading" data-action="category" data-category="recent">' + escape2(t2("recent")) + '</button><div class="recent-items">' + recents.map((record3) => '<button type="button" class="sidebar-item recent-item" data-action="open" data-id="' + escape2(record3.id) + '" title="' + escape2(record3.title) + '" aria-label="' + escape2(t2("openDesign", { title: record3.title })) + '">' + icon(record3.kind) + "<span>" + escape2(record3.title) + "</span></button>").join("") + '</div></div><div class="sidebar-bottom">' + navItem("trash") + "</div>";
       elements.shell.classList.toggle("sidebar-open", state.mobileSidebar);
       elements.shell.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
       elements.scrim.hidden = !state.mobileSidebar;
@@ -24689,9 +24611,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       try {
         const native = bridge.supportsInlineEditor === true;
         const channel = native ? crypto.randomUUID() : null;
-        const result = await invoke(native ? "editor.document" : "editor.open", { id, force, ...native ? { language: i18n.language.startsWith("zh") ? "zh" : "en", channel } : {} });
+        const result = await invoke(native ? "editor.document" : "editor.open", { id, force, ...native ? { language: "en", channel } : {} });
         if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
-        currentEditorLanguage = i18n.language;
         const iframe = document.createElement("iframe");
         iframe.className = "design-editor-frame";
         iframe.title = t2("editorFrame", { title: record3.title });
@@ -24724,7 +24645,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           if (typeof result?.url !== "string" || !result.url.trim()) throw new BridgeError("The editor did not return a URL.", "INVALID_EDITOR_URL");
           url3 = new URL(result.url, location.href);
           if (!["http:", "https:"].includes(url3.protocol)) throw new BridgeError("The editor returned an unsupported URL.", "INVALID_EDITOR_URL");
-          url3.searchParams.set("codexDesignLanguage", i18n.language.startsWith("zh") ? "zh" : "en");
+          url3.searchParams.set("codexDesignLanguage", "en");
           currentEditorUrl = url3.href;
           iframe.src = url3.href;
         }
@@ -24736,7 +24657,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           loading.innerHTML = '<span class="spinner"></span><p>' + escape2(t2("loadingEditor")) + "</p>";
           host.append(loading);
         }
-        updateLanguageNotice();
         const external = elements.panel.querySelector(".editor-external");
         if (external) {
           external.hidden = native;
@@ -24756,21 +24676,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     function postEditorLanguage() {
       const frame = elements.panel.querySelector(".design-editor-frame");
       if (!frame || !currentEditorUrl) return;
-      const message = { type: "codex-design:ui-language-changed", preference: i18n.language.startsWith("zh") ? "zh" : "en", systemLocale: bridge.language || navigator.language };
+      const message = { type: "codex-design:ui-language-changed", preference: "en", systemLocale: "en" };
       if (currentNativeEditor?.post) currentNativeEditor.post(message);
       else frame.contentWindow?.postMessage(message, currentNativeEditor ? "*" : new URL(currentEditorUrl).origin);
-    }
-    function updateLanguageNotice() {
-      const workspace = elements.panel.querySelector(".editor-workspace");
-      if (!workspace) return;
-      let notice = workspace.querySelector(".editor-language-notice");
-      if (!notice) {
-        notice = document.createElement("div");
-        notice.className = "editor-language-notice";
-        workspace.insertBefore(notice, workspace.querySelector(".editor-frame-host"));
-      }
-      notice.hidden = !currentEditorLanguage || currentEditorLanguage === i18n.language;
-      notice.innerHTML = "<span>" + escape2(t2("editorLanguagePending")) + '</span><button type="button" class="button secondary" data-action="reload-language">' + escape2(t2("reopenEditorLanguage")) + "</button>";
     }
     function renderWorkspace() {
       const id = state.view.activeTabId;
@@ -24779,7 +24687,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         currentNativeEditor?.dispose();
         currentNativeEditor = null;
         currentEditorUrl = null;
-        currentEditorLanguage = null;
         if (currentSurface !== "library") thumbnailCache.clear();
         if (currentSurface !== "library") renderLibrary();
         else renderRecords();
@@ -24957,12 +24864,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }
     function closeMenu(returnFocus = false) {
       const origin = state.menu?.origin;
+      menuDismissal.clear();
       state.menu = null;
       elements.menus.replaceChildren();
       origin?.setAttribute("aria-expanded", "false");
       if (returnFocus) origin?.focus();
     }
-    function openMenu(type, origin, id) {
+    function openMenu(type, origin, id, mode = "pointer") {
       if (state.menu?.type === type && state.menu?.id === id) {
         closeMenu();
         return;
@@ -24986,6 +24894,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const measured = menuPosition(rectangle, { width: position.width, height: panel.getBoundingClientRect().height, viewportWidth: innerWidth, viewportHeight: innerHeight, align: origin.classList.contains("sidebar-create") ? "start" : "end" });
       panel.style.top = measured.top + "px";
       panel.style.left = measured.left + "px";
+      menuDismissal.open({ trigger: origin, menu: panel, mode });
       elements.menus.querySelector("button:not(:disabled)")?.focus();
     }
     async function createArtifact(kind) {
@@ -25027,17 +24936,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       closeMenu();
       const dialog = elements.dialog;
       let title, fields = "", submit;
-      if (type === "settings") {
-        title = t2("settings");
-        fields = '<label class="field-label" for="ui-language">' + escape2(t2("language")) + '</label><select id="ui-language" name="language">' + [["system", "languageSystem"], ["zh", "languageChinese"], ["en", "languageEnglish"]].map(([value, label]) => '<option value="' + value + '"' + (preference === value ? " selected" : "") + ">" + escape2(t2(label)) + "</option>").join("") + '</select><p class="field-hint">' + escape2(t2("languageHelp")) + "</p>";
-        submit = t2("done");
-      } else if (type === "reload-language") {
-        title = t2("reopenEditorLanguage");
-        fields = '<p class="dialog-description">' + escape2(t2("editorLanguageConfirm")) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape2(t2("editorLanguageSaved")) + "</span></label>";
-        submit = t2("reopenEditorLanguage");
-      } else if (type === "restore-snapshot") {
+      if (type === "restore-snapshot") {
         title = t2("restoreVersionTitle");
-        fields = '<p class="dialog-description">' + escape2(t2("restoreVersionBody")) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape2(t2("editorLanguageSaved")) + "</span></label>";
+        fields = '<p class="dialog-description">' + escape2(t2("restoreVersionBody")) + '</p><label class="reload-saved-check"><input type="checkbox" name="saved" required><span>' + escape2(t2("editorChangesSaved")) + "</span></label>";
         submit = t2("restoreVersion");
       } else if (type === "trash") {
         title = t2("trashTitle");
@@ -25049,7 +24950,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         fields += '<label class="field-label" for="design-title">' + escape2(t2("titleLabel")) + '</label><input id="design-title" name="title" type="text" required maxlength="200" autocomplete="off" value="' + escape2(value) + '" placeholder="' + escape2(t2("titlePlaceholder")) + '">';
         submit = t2(type === "rename" ? "renameSubmit" : "copySubmit");
       }
-      dialog.innerHTML = '<form class="dialog-form" data-dialog-type="' + type + '" data-id="' + escape2(record3?.id || "") + '" data-snapshot-id="' + escape2(details.snapshotId || "") + '"><header><h2 id="design-dialog-title">' + escape2(title) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape2(t2("closeDialog")) + '">' + icon("close") + '</button></header><div class="dialog-fields">' + fields + '</div><p class="dialog-error" role="alert" hidden></p><footer>' + (type !== "settings" ? '<button type="button" class="button secondary" data-action="close-dialog">' + escape2(t2("cancel")) + "</button>" : "") + '<button type="submit" class="button ' + (type === "trash" ? "destructive" : "primary") + '">' + escape2(submit) + "</button></footer></form>";
+      dialog.innerHTML = '<form class="dialog-form" data-dialog-type="' + type + '" data-id="' + escape2(record3?.id || "") + '" data-snapshot-id="' + escape2(details.snapshotId || "") + '"><header><h2 id="design-dialog-title">' + escape2(title) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape2(t2("closeDialog")) + '">' + icon("close") + '</button></header><div class="dialog-fields">' + fields + '</div><p class="dialog-error" role="alert" hidden></p><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape2(t2("cancel")) + '</button><button type="submit" class="button ' + (type === "trash" ? "destructive" : "primary") + '">' + escape2(submit) + "</button></footer></form>";
       dialog.setAttribute("aria-labelledby", "design-dialog-title");
       if (!dialog.open) dialog.showModal();
       const input2 = dialog.querySelector('input[name="title"]');
@@ -25085,18 +24986,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         } finally {
           form.removeAttribute("aria-busy");
         }
-        return;
-      }
-      if (type === "reload-language") {
-        if (!form.reportValidity()) return;
-        elements.dialog.close();
-        await openEditor(state.view.activeTabId, true);
-        return;
-      }
-      if (type === "settings") {
-        const value = new FormData(form).get("language");
-        elements.dialog.close();
-        await setLanguage(value);
         return;
       }
       if (!form.reportValidity() || form.getAttribute("aria-busy") === "true") return;
@@ -25148,17 +25037,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         toast(t2("restored"));
       });
     }
-    async function setLanguage(value) {
-      preference = ["system", "en", "zh"].includes(value) ? value : "system";
-      try {
-        localStorage.setItem("codex-design.ui-language", preference);
-        localStorage.setItem("codexDesign.ui.language", preference);
-      } catch {
-      }
-      await i18n.changeLanguage(preference === "system" ? systemLanguage() : preference);
-      root.dispatchEvent(new CustomEvent("codex-design:languagechange", { bubbles: true, detail: { language: i18n.language, preference } }));
-    }
-    function renderLocalized() {
+    function renderInterface() {
       if (state.destroyed) return;
       document.documentElement.lang = i18n.language;
       document.title = t2("appName");
@@ -25176,7 +25055,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         const menu = elements.panel.querySelector('.editor-heading-actions [data-action="item-menu"]');
         if (menu) menu.setAttribute("aria-label", t2("moreActions", { title: activeRecord()?.title || "" }));
         postEditorLanguage();
-        updateLanguageNotice();
       }
       closeMenu();
     }
@@ -25185,7 +25063,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       if (!button || button.disabled) return;
       const { action, id } = button.dataset;
       if (!["item-menu", "sort-menu", "create"].includes(action)) closeMenu();
-      if (action === "create") openMenu("create", button);
+      if (action === "create") openMenu("create", button, void 0, menuInputMode(event));
       else if (action === "create-kind") await createArtifact(button.dataset.value);
       else if (action === "import") {
         const task = transfer.importArtifact();
@@ -25206,9 +25084,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       else if (action === "snapshot-restore") {
         const record3 = recordFor(id);
         if (record3) openDialog("restore-snapshot", record3, { snapshotId: button.dataset.snapshotId });
-      } else if (action === "reload-language") openDialog("reload-language");
-      else if (action === "settings") openDialog("settings");
-      else if (action === "rename" || action === "copy" || action === "trash-dialog") {
+      } else if (action === "rename" || action === "copy" || action === "trash-dialog") {
         const record3 = recordFor(id);
         if (record3) openDialog(action === "trash-dialog" ? "trash" : action, record3);
       } else if (action === "close-dialog") elements.dialog.close();
@@ -25219,8 +25095,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       } else if (action === "layout") {
         state.layout = button.dataset.layout;
         renderLibrary();
-      } else if (action === "sort-menu") openMenu("sort", button);
-      else if (action === "item-menu") openMenu("item", button, id);
+      } else if (action === "sort-menu") openMenu("sort", button, void 0, menuInputMode(event));
+      else if (action === "item-menu") openMenu("item", button, id, menuInputMode(event));
       else if (action === "sort-value") {
         state.sort = button.dataset.value;
         renderRecords();
@@ -25283,7 +25159,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const origin = row?.querySelector('[data-action="item-menu"]');
       if (!origin) return;
       event.preventDefault();
-      openMenu("item", origin, origin.dataset.id);
+      const mode = event.pointerType === "touch" || event.pointerType === "pen" ? "touch" : event.clientX || event.clientY ? "pointer" : "keyboard";
+      openMenu("item", origin, origin.dataset.id, mode);
     }, { signal: abort.signal });
     root.addEventListener("submit", (event) => {
       if (event.target.matches(".dialog-form")) {
@@ -25296,12 +25173,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     }, { signal: abort.signal });
     root.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        closeMenu(true);
-        if (state.mobileSidebar) {
-          state.mobileSidebar = false;
-          renderSidebar();
-        }
+      if (event.key === "Escape" && state.mobileSidebar) {
+        state.mobileSidebar = false;
+        renderSidebar();
       }
       if (event.target.matches(".conversation-composer textarea") && event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
@@ -25355,22 +25229,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       changeView("reorderTabs", { ids });
       draggedTab = void 0;
     }, { signal: abort.signal });
-    document.addEventListener("pointerdown", (event) => {
-      if (state.menu && !elements.menus.contains(event.target) && !event.target.closest("[data-menu-trigger]")) closeMenu();
-    }, { signal: abort.signal });
     window.addEventListener("resize", () => closeMenu(), { signal: abort.signal });
     elements.scrim.addEventListener("click", () => {
       state.mobileSidebar = false;
       renderSidebar();
     }, { signal: abort.signal });
-    const onSystemLanguage = () => {
-      if (preference === "system") i18n.changeLanguage(systemLanguage());
-    };
-    window.addEventListener("languagechange", onSystemLanguage, { signal: abort.signal });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && state.view.activeTabId === "library") void refreshRecords(true);
     }, { signal: abort.signal });
-    i18n.on("languageChanged", renderLocalized);
     let refreshTimer;
     const unsubscribe = typeof bridge.subscribe === "function" ? bridge.subscribe((event) => {
       if (state.destroyed) return;
@@ -25396,17 +25262,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
       if (event?.viewState) applyView(event.viewState);
       else if (type === "view.changed") invoke("view.get").then(applyView).catch((error112) => toast(errorMessage(error112), true));
-      if (type === "language.changed" || type === "languagechange") {
-        if (event.language) bridge.language = event.language;
-        onSystemLanguage();
-        return;
-      }
+      if (type === "language.changed" || type === "languagechange") return;
       if (type.startsWith("conversation.") || type === "worker.changed") {
         if (!event.artifactId || event.artifactId === state.view.activeTabId) refreshConversation();
         return;
       }
       if (type === "capabilities.changed") {
-        renderLocalized();
+        renderInterface();
         refreshConversation();
         return;
       }
@@ -25415,7 +25277,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         refreshTimer = setTimeout(() => refreshRecords(true), 100);
       }
     }) : null;
-    renderLocalized();
+    renderInterface();
     renderWorkspace();
     const initial = bridge.initialState;
     if (initial?.artifacts) state.records = initial.artifacts.filter(isRecord);
@@ -25425,7 +25287,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     else if (bridge.available !== false) toast(errorMessage(results[1].reason), true);
     return {
       refresh: () => refreshRecords(true),
-      setLanguage,
       activateArtifact: (id) => changeView("openTab", { id }),
       destroy() {
         state.destroyed = true;
@@ -25437,9 +25298,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         clearTimeout(toastTimer);
         clearTimeout(conversationTimer);
         clearTimeout(refreshTimer);
+        menuDismissal.dispose();
         abort.abort();
         if (typeof unsubscribe === "function") unsubscribe();
-        i18n.off("languageChanged", renderLocalized);
         root.replaceChildren();
       }
     };
@@ -43272,7 +43133,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.4.1";
+  var PLUGIN_UI_VERSION = "0.4.2";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
@@ -43326,7 +43187,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       transport: "mcp",
       uiVersion: PLUGIN_UI_VERSION,
       supportsInlineEditor: true,
-      language: navigator.language,
+      language: "en",
       hostContext: null,
       initialState: null,
       capabilities: { actions: [...ACTIONS] },
@@ -43405,11 +43266,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       if (context?.theme) kQ(context.theme);
       if (context?.styles?.variables) bQ(context.styles.variables);
       if (context?.styles?.css?.fonts) SQ(context.styles.css.fonts);
-      const language = context?.locale || navigator.language;
-      if (bridge.language !== language) {
-        bridge.language = language;
-        for (const listener of listeners) listener({ type: "language.changed", language });
-      }
+      bridge.language = "en";
       for (const listener of listeners) listener({ type: "host-context.changed", context: bridge.hostContext });
     };
     const reportError = (error112, property, fallback) => {

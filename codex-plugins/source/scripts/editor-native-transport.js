@@ -20,6 +20,33 @@ export function installNativeEditorTransport(configuration, target) {
     target.document.documentElement?.setAttribute('data-codex-parent-isolation', 'blocked');
     target.document.documentElement?.setAttribute('data-codex-editor-origin', target.location?.origin || 'null');
   }
+  if (target.document && target.location?.origin === 'null') {
+    let temporary = false;
+    for (const name of ['localStorage', 'sessionStorage']) {
+      try {
+        const existing = target[name];
+        if (existing && typeof existing.getItem === 'function' && typeof existing.setItem === 'function') continue;
+      } catch { /* Opaque documents cannot access Web Storage. */ }
+      const values = new Map();
+      const storage = {
+        get length() { return values.size; },
+        key(index) { return [...values.keys()][index >>> 0] ?? null; },
+        getItem(key) { return values.get(String(key)) ?? null; },
+        setItem(key, value) { values.set(String(key), String(value)); },
+        removeItem(key) { values.delete(String(key)); },
+        clear() { values.clear(); },
+      };
+      try {
+        Object.defineProperty(target, name, { configurable: true, enumerable: true, value: storage });
+        temporary = true;
+      } catch {
+        target.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel,
+          message: 'Temporary editor UI preferences could not be initialized.' }, '*');
+      }
+    }
+    // This state belongs to this document only. Artwork still saves through MCP.
+    if (temporary) target.document.documentElement?.setAttribute('data-codex-ui-storage', 'memory');
+  }
   const pending = new Map();
   const pendingWrites = new Set();
   const sources = new Set();

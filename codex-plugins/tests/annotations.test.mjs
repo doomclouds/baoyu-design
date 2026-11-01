@@ -290,7 +290,7 @@ test('native toolbar receives bounded top-document metadata without any filename
   assert.doesNotMatch(browserSource, /createElement\s*\(/);
 });
 
-test('localized Slides accessible labels keep native annotation file and slide identity stable', async () => {
+test('authored Slides accessible label text keeps native annotation file and slide identity stable', async () => {
   for (const label of ['Slide 1 (thumbnail): Original title', '幻灯片 1（缩略图）：Original title']) {
     const { target, document, requests } = await browser({ skill: 'codex-slides', setupDOM({ defaultTarget }) {
       defaultTarget.setAttribute('aria-label', label);

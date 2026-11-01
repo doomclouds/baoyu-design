@@ -3,7 +3,7 @@ name: codex-design-system
 description: >-
   Create and revise design systems in the Design System artifact format (project/design-system.json,
   tokens.json, a README brand book, component previews, fonts and asset groups) as local files, then
-  open them in a local design-system page where the user can browse and edit tokens, type, components
+  open them in their Codex Design artwork Tab where the user can browse and edit tokens, type, components
   and assets. Use when the user asks for a design system or brand kit in this format, built from a
   code repository, a design tool or scratch, names codex-design-system or the Design System type, or
   wants to revise a folder that holds project/design-system.json. codex-slides and codex-design install
@@ -21,18 +21,20 @@ This skill is bundled in **codex design**. These local instructions take precede
 - Use Codex file-editing tools for requested changes. Read current files immediately before editing and preserve unrelated data.
 - Run `node "<this skill folder>/scripts/codex-artifact.mjs" <command>`. This entry point delegates to the bundled local tool. References or returned hints naming `artifact.mjs` mean this Codex entry point.
 - **Create new artwork:** Unless the user gave an explicit output folder, first run `node "<this skill folder>/scripts/codex-artifact.mjs" create "<artwork title>"`. It creates a blank native artifact in the global library and returns its UUID, exact `root`, and native `appUrl`. Use THAT root for all subsequent writes, `check`, and `open`; do not create a second project folder from later examples. Creating artwork does not start a model, queue a message, or open another chat.
+- **Open and deliver in Codex Design:** Keep the `appUrl` returned by `create`. After writing and checking, run this entry point's `open <root>` to request the artwork's existing Tab in Codex Design, and give its returned native `appUrl` as the delivery link. Do not open a localhost editor URL in a chat's browser Tab by default. `navigationRequested: true` only means the navigation request was accepted; `renderVerified: false` does not prove that the editor rendered. Report a failed native open honestly, without silently switching to HTTP. Opening artwork does not create or resume a worker or another chat.
+- **Check hints and explicit previews:** Follow `check.next` through this skill's `scripts/codex-artifact.mjs` wrapper. A non-library root has `nativeAvailable: false`; keep its files in place and explain that native opening needs an explicitly requested import. Use `preview <root>` and its HTTP `url` only when the user explicitly asks for a standalone browser preview. Do not invoke internal `open-service` / `serve-service` commands as a delivery workflow. Asset and dataset `url` values such as `/_blob/<id>` remain content references, not editor links.
 - **Read-only references:** Artwork or a design system attached as reference is context to read and follow, not permission to edit its source. Change only the user's editing target. Reading or changing a design system never automatically changes other artwork; chats, comments, worker state, and runtime records do not become reference content.
 - **Before AI edits:** For an existing library artwork, run `node "<this skill folder>/scripts/codex-artifact.mjs" checkpoint "<root>"` before changing content, and preserve the returned restore point. An active native job blocks independent checkpoints; pending jobs are reported as `pendingCount` for the parent's coordination and are not consumed. A native worker already holding a claimed job skips this command because its controller has already created that job's restore point. Freshly created blank artwork and explicitly located legacy project folders keep their existing workflow; do not import or relocate them just to checkpoint.
 - **Design system search:** `list` searches the current project and the existing global library's `~/.codex/CodexDesignLibrary/design-system` folder, without creating the library or searching its trash. Set `CODEX_DESIGN_SYSTEMS` to additional local design-system folders when needed; explicit folders keep priority. Separate paths with the platform path delimiter (semicolon on Windows, colon on macOS/Linux).
 - **Coordinate ownership from the main chat:** Before the main chat or another independent agent changes an artifact, inspect `worker-status <root>` through the Codex entry point. Do not write the same artifact while its native worker owns an active job. Pending work with no listener needs the parent's native-agent decision, not an indefinite wait. The registered worker owns its active serial job and must not wait for its own worker-status entry.
-- **Native annotations:** Use the built-in browser toolbar's **批注** control. The plugin adds object/file metadata to existing page elements and does not add an annotation panel or button. The user submits the native annotation through the host composer to the current chat. Treat that submitted selection and text as a request for the current chat; check worker status before editing its files.
-- **Editor Send to agent:** The editor's existing Comments control stays in its original position and saves `comments.json`. Explicit **Send to agent** durably records a local job; it does not wake a native agent, call an external queue, or start a model/HTTP daemon. Ordinary saved comments are not sent. Default delivery is `native`; `worker` is an alias. `--delivery main` is explicit legacy compatibility only, never a fallback.
+- **Annotations and editor comments:** In a native Codex Design artwork Tab, use Comments in that editor's existing toolbar or navigation tools. Only an explicitly requested standalone browser preview uses the browser toolbar's annotation control, where available; the plugin adds object/file metadata to existing elements. A selection submitted through the host composer is a request for the current chat; check worker status before editing its files.
+- **Editor Send to agent:** The editor's Comments control saves `comments.json`. Explicit **Send to agent** durably records a local job; it does not wake a native agent, call an external queue, or start a model/HTTP daemon. Ordinary saved comments are not sent. Default delivery is `native`; `worker` is an alias. `--delivery main` is explicit legacy compatibility only, never a fallback.
 - **Parent native-agent controller:** Inspect worker-status and the actual platform native-agent tools. Reuse the registered child when it is available; resume the existing child when needed; create one with the platform spawn tool only when the parent decides that is necessary. Do not create an agent for every comment. A real platform-spawned child appears in the native UI; never invent threadSource metadata. Listener presence is not proof of agent liveness. If native tools are unavailable or unloaded, leave durable jobs pending and have the parent arrange recovery; do not silently use a background model process or the main chat queue.
 - **Register inside the real child:** The selected child runs `worker-register <root> --name <task>` using its own actual `CODEX_THREAD_ID` environment. Never copy the parent's id or fabricate one. Registration reuses the same id; a different child requires the parent's explicit replacement decision and `--replace`.
 - **Keep the child listening:** After registration, do not end the turn with a Ready message. Run `worker-next <root> --timeout 60` as a long wait and poll that same running command instead of starting duplicate listeners. On `timedOut`, call worker-next again. On `closed`, end this listener turn. A job returns `job.id`, `request`, and `event`: read the installed skill and current artifact files, edit only that artifact, preserve unrelated content, and run its built-in check. Do not wait for your own active status.
 - **Complete each job:** Run `worker-complete <root> <jobId> -` with a concise reply on stdin, then call worker-next again. Plain text completes a successful job; JSON `{"text":"honest explanation","status":"failed","error":{"code":"...","message":"..."}}` reports failure. The controller posts the reply to the original comment with a user-revision precondition; do not also call comment-reply or comment-resolve. Acceptance is not completion. Report pending, active, completed, failed, and superseded results accurately.
 - **Pause or replace:** Before pausing/replacing a child that may still be editing, the parent uses the platform native interrupt tool, then `worker-stop <root>` and, for a different child, explicit registration with `--replace`. The CLI pauses its local listener; it cannot interrupt a native agent. Main and independent agents must not write concurrently with that worker.
-- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option opens a local editor without delivery; it does not recover or replace a native child.
+- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option disables comment delivery; it does not change native opening into a browser preview or recover or replace a native child.
 - **Verification:** Run the built-in `check`, fix structural problems, then use the available browser or document preview to inspect the affected output when useful. Check visible layout, relevant interactions, and the requested export when applicable. Reuse installed tools. State which checks ran and which could not run; a structural check alone does not prove visual correctness.
 - Use the bundled local commands and available Codex tools.
 
@@ -150,9 +152,7 @@ every reason a value drops: `format.md`.
 
 ## Creating a system
 
-A system exists (its `<root>` given, or a folder holding `project/design-system.json`)? These steps fill THAT one. No system yet?
-`<root>` = a new folder `designs/<slug>/` named for it (`designs/acme-design-system/`) in the working directory, or where the user says; its
-name goes in the index's `title` (REQUIRED: nothing else names it). Never make a second one.
+A system exists (its `<root>` given, or a folder holding `project/design-system.json`)? These steps fill THAT one. No system yet? Use the Codex execution `create` command and retain its exact `root` and native `appUrl`, unless the user explicitly named an output folder. Its name goes in the index's `title`. Never make a second one.
 
 1. Build FROM the brand's real sources (a codebase's styles and
    components, files, decks, guidelines): enumerate the whole
@@ -174,7 +174,7 @@ name goes in the index's `title` (REQUIRED: nothing else names it). Never make a
 3. The index LAST: an index already there is read again right before, and keeps its keys and
    its `title`; a new one is `project/design-system.json`, shaped as in "A system kept in files", with a `lastChange`.
    Then run `check` and fix what it names until `problems` is 0 (`notes` mostly need no change: its `next` says which do).
-4. Only now show it: run `open`, then the link, the folder, what you built from and assumed, what remains of
+4. Only now show it: run `open <root>` through the Codex wrapper, then give its native `appUrl`, the saved root, what you built from and assumed, what remains of
    the inventory; then offer, once, to take it further.
    To the user this is their design system being saved: never the mechanism.
 
@@ -187,7 +187,8 @@ leave alone stays as it is, and removing a file is deleting it. The rest goes th
 - `upload <root> <file> --group <Group>` → `{url:"/_blob/<id>", record, indexPath, shownAs, …}`: stores a copy as `project/_blobs/<id>.<ext>`; the same bytes always get the same id. Write `record` into the index at `indexPath` (with the index, LAST). `<root>` must exist.
 - `check <root>` → `problems` (0: done); `issues` (each a `file` under `project/` and its fix) and `notes`, each when any; it exits 1 while any problem remains. The generated files and whether previews render are not checked.
 - `list [dir …]` → the design systems in the working directory (or the folders given), each `{title, namespace, folder, root, readme, tokens}`.
-- `open <root>` → `{url, pid, stop, …}`: starts the page on this machine in the background (once; later calls reuse it, `reused: true`) and prints its address. `stop <root>` ends it (`serve <root>` runs it in the foreground instead). The page saves the user's edits (and the generated files) into the same folder, and shows yours as soon as you write them. `.artifact-server.json` and `.artifact-server.log` beside `project/` are its own: leave them; so is `comments.json` (the comments, see Comments), which only the comment commands below change.
+- `open <root>` → `{appUrl, navigationRequested, renderVerified, …}`: requests the existing artwork Tab in Codex Design. Give the returned native `appUrl`, retaining the same artwork UUID and saved root. An accepted navigation request does not verify rendering. A root outside the library is refused for native opening; do not copy, import, or relocate it without the user's instruction. The editor saves into the same artwork files. Runtime records and `comments.json` belong to the existing tooling; preserve them.
+- `preview <root> [--port n]` → `{url, …}`: standalone HTTP editor preview, only when the user explicitly asks for an independent browser page. This preview URL is not the default delivery link.
 
 Each result carries more keys than named here; its `next`, where it has one, says what to do with it.
 
@@ -206,7 +207,7 @@ what was asked; a re-sync (`from-design-tool.md`, `from-code.md`;
    README holding `..`, `\` or a leading `/` never names a file: stop and say so.
 3. Only those files change, `tokens.json` always
    whole; LAST in your work, the index: read it again right before, as "A system
-   kept in files" says. Then `check` until `problems` is 0.
+   kept in files" says. Then `check` until `problems` is 0, request the existing Codex Design artwork Tab with `open <root>`, and deliver its native `appUrl`.
 
 Never delete uploads unprompted.
 
@@ -256,7 +257,7 @@ The reference pages were written for a hosted Artifact tool; their FORMAT rules 
 - `reference/store.md` → this file (A system kept in files; The calls); `samples/seazar/` → not here (its tokens: `artifact-type/reference/sample-seazar-tokens.json`).
 - a CDN URL in a preview or a library "from jsDelivr" (the artifact script CDNs, cdnjs, unpkg, `cdn.tailwindcss.com`) → previews here load nothing from a CDN: React 18 comes with the page; any other library is a file in `components/lib/` with a `libraries` entry (`format.md`).
 - `design_import_asset` → `upload --group`.
-- "save to the target's url" → the files are written; then `check`, and `open` for the link.
+- "save to the target's url" → write the target files, run the Codex wrapper's `check`, then `open <root>` and return its native `appUrl`.
 
 ## Comments
 

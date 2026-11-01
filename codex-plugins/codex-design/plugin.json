@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "codex-design",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Local editable slides, canvases, design systems, and data dashboards for Codex.",
   "repository": "https://github.com/doomclouds/baoyu-design",
   "keywords": ["design", "slides", "canvas", "design-system", "dashboard", "dataviz"],

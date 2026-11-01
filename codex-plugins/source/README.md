@@ -1,6 +1,6 @@
 # codex design
 
-Codex 桌面版的本地设计插件。**0.4** 提供全局作品库、中英文界面、四种可编辑作品和五个设计技能。显示名为 **codex design**，插件标识为 `codex-design`。
+Codex 桌面版的本地设计插件。**0.4.2** 提供全局作品库、英文界面、四种可编辑作品和五个设计技能。显示名为 **codex design**，插件标识为 `codex-design`。
 
 作品库按幻灯片、设计画布、设计系统和仪表盘分类，在作品 Tab 中打开原有编辑器。浏览、切换 Tab、新建空白作品和手工编辑都不启动模型。每件作品独立绑定原生编辑聊天的功能暂未启用；库界面隐藏不可用的大聊天面板，已有技能和评论 worker 工作流继续保留。
 
@@ -12,7 +12,7 @@ Codex 桌面版的本地设计插件。**0.4** 提供全局作品库、中英文
 | `codex-dashboard` | CSV/TSV/JSON 数据驱动的看板和 Sources 数据溯源 |
 | `codex-dataviz` | 图表设计指南及配色校验器 |
 
-五个技能统一使用 `codex-` 前缀，保持与已有产物文件格式兼容。插件不需要 DeepSeek Harness，也不需要 DeepSeek 或 Anthropic API key。作品库默认保存在全局 `~/.codex/CodexDesignLibrary`，按四种类型存放，不随当前聊天项目切换。技能 CLI 仍可处理你指定的项目目录。四种编辑器都在本机 `127.0.0.1` 运行。
+五个技能统一使用 `codex-` 前缀，保持与已有产物文件格式兼容。插件不需要 DeepSeek Harness，也不需要 DeepSeek 或 Anthropic API key。作品库默认保存在全局 `~/.codex/CodexDesignLibrary`，按四种类型存放，不随当前聊天项目切换。四类作品默认在 Codex Design 工作区打开；本机 HTTP 服务只承担内部数据与编辑服务，独立网页预览需要显式使用 `preview`。
 
 ## 环境
 
@@ -39,11 +39,13 @@ marketplace 位于 `.agents/plugins/marketplace.json`；`source.path` 是相对�
 
 ### 全局作品库
 
-从 Codex 的全局导航或插件页打开 **codex design**。左侧选择分类，右侧浏览作品；新建、搜索、收藏、重命名、复制、移入回收站和恢复均保存在本机。打开作品会复用该作品唯一的 Tab；关闭 Tab 不删除作品，库的 Tab 状态会保留。
+从 Codex 的全局导航或插件页打开 **codex design**。左侧选择分类，右侧浏览作品；新建、搜索、收藏、重命名、复制、移入回收站和恢复均保存在本机。在同一工作区内，打开作品会复用其 Tab；关闭 Tab 不删除作品，库的 Tab 状态会保留。跨窗口和多实例的唯一编辑保护尚未实现。
 
 作品在四种原有编辑器中编辑，评论仍位于编辑器原有位置。原生 MCP 视图通过内联编辑器和限定作品范围的 MCP 读写运行；不再向宿主嵌入被禁止的 localhost HTTP 页面。库中的浏览和编辑不会自动创建、恢复或绑定聊天。需要 AI 设计时，先在 Codex 聊天中使用下方技能；需要处理编辑器评论时，使用后文的原生 worker 流程。
 
 0.4.1 为作品库与文件视图使用带发布版本的 UI 资源 URI，并在原生入口校验桥接版本和内联编辑能力；独立网页预览继续使用自己的通道。资源读取会向 MCP 标准错误日志记录版本、资源 URI 和 HTML 哈希，便于核对实际加载的界面，不记录作品内容或运行令牌。
+
+0.4.2 将批注并入各编辑器已有的工具栏、菜单或章节工具行，保留评论模式、列表、筛选、回复和重开。作品操作菜单支持鼠标移出延迟收起、外部交互及 Esc 关闭，并保留键盘操作。隔离编辑器无法使用 Web Storage 时，界面偏好在当前文档内保存在内存中，使属性面板等开关正常响应；这些临时偏好不承诺跨页面重开保留，作品内容仍写回原文件。
 
 当前公开宿主 API 没有开放资料空间使用的中间侧栏插槽、顶部工具栏替换或每件作品独立绑定原生聊天。插件提供可收缩的内部分类栏，但不能接管宿主的全局中间栏，也不能用插件 CSS 隐藏宿主顶部空栏；这些限制不能视为已完成的原生集成。原生验收方法见仓库的 `codex-plugins/NATIVE-TESTING.md`。
 
@@ -51,7 +53,7 @@ marketplace 位于 `.agents/plugins/marketplace.json`；`source.path` 是相对�
 
 创建菜单提供作品内容包导入，作品菜单提供导出和版本历史。恢复前先保存恢复点；原生 worker 领取作品库中的编辑任务前也建立恢复点，备份失败则保留待处理任务。界面导入导出内容包目前限 16 MiB，包中不含评论、聊天、任务或运行地址。原生下载使用宿主正式下载接口，不支持时明确提示。
 
-作品库和四种编辑器的控件、菜单、对话框、状态及错误使用 i18next 提供中英文界面：系统语言为中文时使用中文，其余使用英文。作品内容、用户评论、聊天内容、技能提示词和 CLI/JSON 协议不自动翻译。
+插件自身的作品库和编辑器界面固定为英文，语言切换及跟随系统语言已取消。作品标题、正文、用户评论和聊天保留原文；宿主界面与系统对话框仍由 Codex 和操作系统控制。
 
 ### 在聊天中使用技能
 
@@ -65,10 +67,12 @@ marketplace 位于 `.agents/plugins/marketplace.json`；`source.path` 是相对�
 新作品默认先运行对应技能的 `codex-artifact.mjs create "作品名称"`，在全局库建立独立作品并返回真实根目录与原生入口链接，再在返回目录中编写内容。已有作品和用户明确指定的目录继续使用原位置。用户在编辑器中的修改与 Codex 修改同一份文件；已有项目作品不会因安装而自动搬动，需要时通过内容导入加入作品库。技能的实际 CLI 入口是 `skills/<skill>/scripts/codex-artifact.mjs`；上游 `artifact.mjs` 保留为运行时实现。
 
 ```powershell
-node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" open "<project>/designs/q3-review"
-node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" check "<project>/designs/q3-review"
-node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" stop "<project>/designs/q3-review"
+node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" create "Q3 review"
+node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" check "<returned-root>"
+node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" open "<returned-root>"
 ```
+
+`open` 请求打开返回的原生 `appUrl`，`navigationRequested` 不代表界面已完成渲染。已有非库目录不会被自动复制或迁移；需要进入作品库时显式导入，需要独立网页时显式运行 `preview <root>`。`open-service`、`serve-service` 只供本地编辑服务生命周期使用，不作为默认交付入口。
 
 ## 原生批注和设计 worker
 
@@ -104,7 +108,7 @@ node "<installed-plugin>/skills/codex-slides/scripts/codex-artifact.mjs" worker-
 
 同一子代理 ID 再次注册会复用。更换 ID 必须由主聊天先用原生 interrupt 工具中断旧 worker，再执行 `worker-stop <root>`，最后由新子代理显式 `worker-register <root> --name <task> --replace`。CLI 只能暂停本地监听，不能中断仍在编辑的原生子代理；主聊天与其他 Agent 不得与它并发写同一项目。
 
-需要手工读取评论时使用 `comments`；未领取 worker 任务时按需使用 `comment-reply`、`comment-resolve`。不要另起 `comments --wait`。显式 `--no-agent` 仅打开本地编辑器并保存评论，不会恢复或替换子代理。
+需要手工读取评论时使用 `comments`；未领取 worker 任务时按需使用 `comment-reply`、`comment-resolve`。不要另起 `comments --wait`。显式 `preview <root> --no-agent` 提供不投递评论的独立网页预览，不会恢复或替换子代理。
 
 `codex-dataviz` 提供图表规范和配色校验器，不运行编辑器、批注面板或设计 worker。
 
