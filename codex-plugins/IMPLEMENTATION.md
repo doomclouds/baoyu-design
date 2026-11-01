@@ -1,5 +1,16 @@
 # Codex Design library implementation
 
+## 0.4.3 menu regression hotfix
+
+Fix transient menus closing during their own focus transfer. The shared window
+blur capture listener must distinguish a descendant element losing focus from
+the workspace window losing focus. This affects both Create controls, sorting,
+list/grid artwork actions, and the artwork titlebar actions. Preserve the
+existing hover grace, outside press, Escape, keyboard and touch behavior.
+
+Cross-window editing ownership remains separate future work. No ownership or
+host API changes are included in this hotfix.
+
 ## 0.4.2 agreed revision scope
 
 The revision is limited to native delivery for all four artwork types, opaque

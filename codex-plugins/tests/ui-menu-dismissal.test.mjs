@@ -8,7 +8,7 @@ function fixture() {
     return {
       addEventListener(name, handler) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(handler); },
       removeEventListener(name, handler) { listeners.get(name)?.delete(handler); },
-      emit(name, event = {}) { for (const handler of [...listeners.get(name) || []]) handler(event); },
+      emit(name, event = {}) { for (const handler of [...listeners.get(name) || []]) handler({ target: this, ...event }); },
     };
   };
   const node = (parent, tagName = 'BUTTON') => ({ parent, tagName, contains(target) { for (; target; target = target.parent) if (target === this) return true; return false; } });
@@ -118,6 +118,20 @@ test('focus leaving the menu closes it, and replacing/disposal cancels old timer
   f.open(); f.mouse('pointerout', f.item, f.outside); f.helper.dispose(); f.tick(500);
   f.window.emit('blur'); f.document.emit('pointerdown', { target: f.outside });
   assert.equal(f.dismissed.length, 1);
+});
+
+test('captured element blur cannot dismiss a menu during trigger-to-item or item-to-item focus transfer', () => {
+  const f = fixture(); f.open();
+  f.window.emit('blur', { target: f.trigger, relatedTarget: f.item });
+  f.document.emit('focusin', { target: f.item });
+  assert.deepEqual(f.dismissed, []);
+  const nextItem = f.node(f.menu);
+  f.window.emit('blur', { target: f.item, relatedTarget: nextItem });
+  f.document.emit('focusin', { target: nextItem });
+  f.tick(1000);
+  assert.deepEqual(f.dismissed, []);
+  f.window.emit('blur');
+  assert.deepEqual(f.dismissed, [false], 'genuine window blur still closes the menu');
 });
 
 test('activation modality distinguishes keyboard and touch without treating focused mouse menus as keyboard', () => {

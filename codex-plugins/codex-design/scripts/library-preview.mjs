@@ -2580,7 +2580,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.4.2";
+var PLUGIN_UI_VERSION = "0.4.3";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);

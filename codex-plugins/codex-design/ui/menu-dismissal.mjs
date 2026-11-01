@@ -68,7 +68,11 @@ export function createMenuDismissal({ document, window, onDismiss, delayMs = 220
     if (inside(event.target)) { current.mode = 'keyboard'; stopTimer(); }
   });
   listen(document, 'focusin', event => { if (current && !inside(event.target)) dismiss(); });
-  listen(window, 'blur', () => dismiss());
+  listen(window, 'blur', event => {
+    // Capture also observes descendant blur. Focusing the first menu item blurs
+    // its trigger; only the window itself losing focus should dismiss here.
+    if (event.target === window) dismiss();
+  });
   return {
     open({ trigger, menu, mode = 'pointer' }) { clear(); current = { trigger, menu, mode }; },
     clear,

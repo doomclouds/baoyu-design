@@ -20,7 +20,7 @@ class Surface {
   listeners = new Map();
   addEventListener(name, handler) { if (!this.listeners.has(name)) this.listeners.set(name, new Set()); this.listeners.get(name).add(handler); }
   removeEventListener(name, handler) { this.listeners.get(name)?.delete(handler); }
-  emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler(event); }
+  emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler({ target: this, ...event }); }
 }
 
 async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false } = {}) {
@@ -48,7 +48,12 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     contains(target) { for (; target; target = target.parent) if (target === this) return true; return false; }
     closest(selector) { if (selector === '[data-action]') return this.dataset.action ? this : null; if (selector === '.menu-panel') return this.parent?.className === 'menu-panel' ? this.parent : null; return null; }
     matches() { return false; }
-    focus() { document.activeElement = this; document.emit('focusin', { target: this }); }
+    focus() {
+      const previous = document.activeElement;
+      if (previous && previous !== this) window.emit('blur', { target: previous, relatedTarget: this });
+      document.activeElement = this;
+      document.emit('focusin', { target: this });
+    }
     select() {}
     showModal() { this.open = true; }
     close() { this.open = false; }
@@ -96,7 +101,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
   return { controller, root, bridge, document, window, actions, editorCalls, posted, storageReads, record, original, timeline,
     notify: event => subscribe(event),
     node: selector => root.querySelector(selector),
-    click(action, data = {}) { const button = new Element('BUTTON', root); button.dataset = { action, ...data }; root.emit('click', { target: button, detail: 1 }); return button; },
+    click(action, data = {}) { const button = new Element('BUTTON', root); button.dataset = { action, ...data }; button.focus(); root.emit('click', { target: button, detail: 1 }); return button; },
     submit(type, data = {}) { const form = new Element('FORM', root); form.dataset = { dialogType: type, ...data }; form.matches = selector => selector === '.dialog-form'; root.emit('submit', { target: form, preventDefault() {} }); return form; },
     frame: () => nodes.find(node => node.tagName === 'IFRAME'),
   };
@@ -190,4 +195,18 @@ test('dropdown dismissal after choosing Rename cannot close the modal dialog', a
   f.window.emit('blur');
   f.document.emit('pointerdown', { target: trigger, pointerType: 'mouse' });
   assert.equal(dialog.open, true);
+});
+
+test('Create, Sort and artwork menus survive trigger blur when their first item receives focus', async t => {
+  for (const active of [false, true]) for (const action of ['create', 'sort-menu', 'item-menu']) {
+    const f = await start(t, { active });
+    const trigger = f.click(action, { id });
+    await setImmediate();
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true', `${action} remains open after focusing its first item`);
+    assert.match(f.node('.menu-layer').innerHTML, /role="menu"/);
+    assert.notEqual(f.document.activeElement, trigger);
+    f.window.emit('blur');
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false', 'actual window blur still dismisses the menu');
+    assert.equal(f.node('.menu-layer').innerHTML, '');
+  }
 });
