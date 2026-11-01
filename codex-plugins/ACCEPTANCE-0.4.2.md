@@ -101,6 +101,22 @@ Native OS dispatch remains distinguished from rendered content:
 `navigationRequested` does not mean `renderVerified`. Complete actual-host
 interaction acceptance after reload remains an operator gate.
 
+### Actual-host resource observation, 2026-11-01
+
+The running Desktop log now records the real global route requesting
+`ui://codex-design/0.4.2/library` at **09:28:32 +08:00**, completing that resource
+read, and committing its correlated sandbox widget frame at **09:28:38**.
+The installed 0.4.2 `server/index.mjs` process was also present. This advances the
+host-resource loading gate; it does not establish a visual or interaction pass.
+
+The same log retains a failed refresh of the old `0.4.1` resource immediately
+before that navigation. It is not counted as a successful upgrade of the old
+view. The calling chat's `design_read({action: "view.get"})` still returned
+`Transport closed`, while the supported MCP Apps browser inventory exposed no
+app target. Current-chat reconnection and actual Properties, Comments and menu
+interaction checks therefore remain unverified. No ordinary browser preview,
+private host IPC or extra plugin installation was substituted for these gates.
+
 The full original objective is not claimed complete. Host shared-middle-sidebar
 content, native workspace-toolbar replacement, per-artwork bound native chat,
 cross-window single-editor ownership, and comprehensive actual-host acceptance
