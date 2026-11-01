@@ -23,18 +23,24 @@ class Surface {
   emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler({ target: this, ...event }); }
 }
 
-async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate } = {}) {
-  const document = new Surface(), window = new Surface(), nodes = [], storageReads = [], actions = [], editorCalls = [], posted = [], timeline = [];
+async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument } = {}) {
+  const document = new Surface(), window = new Surface(), nodes = [], storageReads = [], actions = [], editorCalls = [], editorInstances = [], posted = [], timeline = [];
   document.documentElement = {}; document.hidden = false; document.activeElement = null;
   class Element extends Surface {
-    attrs = new Map(); children = []; slots = new Map(); dataset = {}; innerHTML = ''; style = {}; className = '';
+    attrs = new Map(); children = []; slots = new Map(); dataset = {}; _html = ''; style = {}; className = '';
     constructor(tagName = 'DIV', parent = null) { super(); this.tagName = tagName; this.parent = parent; nodes.push(this); }
+    get innerHTML() { return this._html; }
+    set innerHTML(value) {
+      this._html = value;
+      for (const child of new Set([...this.children, ...this.slots.values()])) child.parent = null;
+      this.children = []; this.slots.clear();
+    }
     classList = { add() {}, remove() {}, toggle() {}, contains: name => this.className.split(' ').includes(name) };
     setAttribute(name, value) { this.attrs.set(name, value); }
     getAttribute(name) { return this.attrs.get(name); }
     removeAttribute(name) { this.attrs.delete(name); }
     querySelector(selector) {
-      if (selector === '.design-editor-frame' || selector === 'iframe') return nodes.find(node => node.tagName === 'IFRAME' && node.className === 'design-editor-frame') || null;
+      if (selector === '.design-editor-frame' || selector === 'iframe') return [...nodes].reverse().find(node => node.tagName === 'IFRAME' && node.className === 'design-editor-frame' && this.contains(node)) || null;
       if (selector.startsWith('button') && this === root.querySelector('.menu-layer') && this.innerHTML) return this.firstElementChild.querySelector(selector);
       if (!this.slots.has(selector)) this.slots.set(selector, new Element(selector.startsWith('button') ? 'BUTTON' : 'DIV', this));
       return this.slots.get(selector);
@@ -42,9 +48,9 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     querySelectorAll() { return []; }
     get firstElementChild() { return this.innerHTML ? this.querySelector('.menu-panel') : null; }
     getBoundingClientRect() { return { left: 100, right: 140, top: 100, bottom: 140, width: 40, height: 40 }; }
-    replaceChildren(...children) { this.children = children; this.innerHTML = ''; for (const child of children) child.parent = this; }
+    replaceChildren(...children) { this.innerHTML = ''; this.children = children; for (const child of children) child.parent = this; }
     append(child) { this.children.push(child); child.parent = this; }
-    remove() {}
+    remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; }
     contains(target) { for (; target; target = target.parent) if (target === this) return true; return false; }
     closest(selector) { if (selector === '[data-action]') return this.dataset.action ? this : null; if (selector === '.menu-panel') return this.parent?.className === 'menu-panel' ? this.parent : null; return null; }
     matches() { return false; }
@@ -76,6 +82,11 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
         libraryRecords = [...libraryRecords, created];
         return created;
       }
+      if (action === 'library.rename') {
+        const renamed = onRename ? await onRename(payload) : { ...libraryRecords.find(item => item.id === payload.id), title: payload.title };
+        libraryRecords = libraryRecords.map(item => item.id === payload.id ? renamed : item);
+        return renamed;
+      }
       if (action === 'library.purge') {
         if (purgeError) throw purgeError;
         const result = typeof purgeResult === 'function' ? await purgeResult(payload) : purgeResult || { deleted: payload.ids, failed: [] };
@@ -86,7 +97,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
       if (action === 'view.openTab') return view = { ...view, tabs: view.tabs.some(tab => tab.id === payload.id) ? view.tabs : [...view.tabs, { id: payload.id, artifactId: payload.id, type: 'artifact' }], activeTabId: payload.id };
       if (action === 'view.activateTab') return view = { ...view, activeTabId: payload.id };
       if (action === 'view.closeTab') return view = { ...view, tabs: view.tabs.filter(tab => tab.id !== payload.id), activeTabId: 'library' };
-      if (action === 'editor.document') return { html: '<html><body>editor</body></html>' };
+      if (action === 'editor.document') return onDocument ? onDocument(payload) : { html: '<html><body>' + libraryRecords.find(item => item.id === payload.id)?.title + '</body></html>' };
       if (action === 'editor.open') return { url: 'http://127.0.0.1:4321/editor/' };
       if (action === 'conversation.get') return { binding: null };
       throw new Error('Unexpected action: ' + action);
@@ -95,6 +106,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
   const controllerContext = vm.createContext({ document, window, root, bridge, i18next, en, brandIcon: 'brand.svg', BridgeError, supports, unavailableBridge, menuPosition, createMenuDismissal, menuInputMode,
     matchMedia: () => ({ matches: false }), innerWidth: 1200, innerHeight: 800, crypto: webcrypto, URL, Intl, Date, AbortController, console: { warn() {} },
     navigator: { language: 'zh-CN' }, location: { href: 'http://127.0.0.1:4321/' }, localStorage: { getItem(key) { storageReads.push(key); return key.includes('language') ? savedLanguage : null; }, setItem() { throw new Error('No preference writes expected.'); } },
+    FormData: class { constructor(form) { this.form = form; } get(name) { return this.form.values?.[name] ?? ''; } },
     setTimeout: () => 1, clearTimeout() {},
     createLibraryTransfer: () => ({
       async exportArtifact() { timeline.push('transfer.export'); },
@@ -102,24 +114,28 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
       async listSnapshots() { return []; },
       async restoreSnapshot() { timeline.push('transfer.restore'); },
     }),
-    mountNativeEditor: ({ iframe }) => {
+    mountNativeEditor: ({ iframe, artifactId, document: editorDocument }) => {
       editorCalls.push('mount'); timeline.push('mount');
-      return { url: 'data:editor', post: message => posted.push(message), flush: async () => { editorCalls.push('flush'); timeline.push('flush'); if (failSave) throw Object.assign(new Error('Unsaved'), { code: 'EDITOR_UNSAVED_CHANGES' }); editorCalls.push('saved'); timeline.push('saved'); }, dispose() { editorCalls.push('dispose'); timeline.push('dispose'); } };
+      const instance = { iframe, artifactId, document: editorDocument, disposed: false, url: 'data:editor', post: message => posted.push(message),
+        flush: async () => { editorCalls.push('flush'); timeline.push('flush'); if (onFlush) await onFlush(instance); if (failSave) throw Object.assign(new Error('Unsaved'), { code: 'EDITOR_UNSAVED_CHANGES' }); editorCalls.push('saved'); timeline.push('saved'); },
+        dispose() { instance.disposed = true; editorCalls.push('dispose'); timeline.push('dispose'); } };
+      editorInstances.push(instance);
+      return instance;
     },
   });
   vm.runInContext(source + '\nglobalThis.controllerPromise=createUi({root,bridge});', controllerContext);
   const controller = await controllerContext.controllerPromise;
   await setImmediate();
   t.after(() => controller.destroy());
-  return { controller, root, bridge, document, window, actions, editorCalls, posted, storageReads, record, original, timeline,
+  return { controller, root, bridge, document, window, actions, editorCalls, editorInstances, posted, storageReads, record, original, timeline,
     records: () => libraryRecords,
     notify: event => subscribe(event),
     node: selector => root.querySelector(selector),
     click(action, data = {}) { const button = new Element('BUTTON', root); button.dataset = { action, ...data }; button.focus(); root.emit('click', { target: button, detail: 1 }); return button; },
     check(action, checked, data = {}) { const input = new Element('INPUT', root); input.dataset = { action, ...data }; input.checked = checked; root.emit('click', { target: input, detail: 1 }); return input; },
     search(value) { const input = new Element('INPUT', root); input.value = value; input.matches = selector => selector === '.library-search'; root.emit('input', { target: input }); },
-    submit(type, data = {}) { const form = new Element('FORM', root); form.dataset = { dialogType: type, ...data }; form.matches = selector => selector === '.dialog-form'; root.emit('submit', { target: form, preventDefault() {} }); return form; },
-    frame: () => nodes.find(node => node.tagName === 'IFRAME'),
+    submit(type, data = {}) { const form = new Element('FORM', root); form.dataset = { dialogType: type, ...data }; form.values = data; form.matches = selector => selector === '.dialog-form'; root.querySelector('dialog').slots.set('.dialog-form', form); root.emit('submit', { target: form, preventDefault() {} }); return form; },
+    frame: () => root.querySelector('iframe'),
   };
 }
 
@@ -225,6 +241,183 @@ test('Create, Sort and artwork menus survive trigger blur when their first item 
     assert.equal(trigger.getAttribute('aria-expanded'), 'false', 'actual window blur still dismisses the menu');
     assert.equal(f.node('.menu-layer').innerHTML, '');
   }
+});
+
+const renameKinds = ['slides', 'design', 'design-system', 'dashboard'];
+for (const kind of renameKinds) test(`active ${kind} Rename retires the saved frame before rewriting the index and mounts its new base in the same tab`, async t => {
+  const original = { id, kind, title: 'Before rename', contentStatus: 'ok' };
+  let f;
+  f = await start(t, { active: true, records: [original], onRename: payload => {
+    assert.equal(f.editorInstances[0].disposed, true);
+    assert.equal(f.frame(), null, 'the old frame cannot autosave during the index mutation');
+    return { ...original, title: payload.title };
+  } });
+  const previousFrame = f.frame();
+  f.actions.length = 0; f.timeline.length = 0; f.editorCalls.length = 0;
+  f.click('rename', { id });
+  const form = f.submit('rename', { id, title: 'After rename' });
+  await setImmediate();
+  assert.deepEqual(f.editorCalls, ['flush', 'saved', 'dispose', 'mount']);
+  assert.ok(f.timeline.indexOf('saved') < f.timeline.indexOf('dispose'));
+  assert.ok(f.timeline.indexOf('dispose') < f.timeline.indexOf('library.rename'));
+  assert.ok(f.timeline.indexOf('library.rename') < f.timeline.indexOf('editor.document'));
+  assert.equal(f.editorInstances.length, 2);
+  assert.notEqual(f.frame(), previousFrame);
+  assert.equal(previousFrame.parent, null);
+  assert.match(f.editorInstances[1].document.html, /After rename/);
+  assert.equal(f.actions.filter(call => call.action === 'editor.document').length, 1);
+  assert.equal(f.actions.find(call => call.action === 'editor.document').payload.force, true);
+  assert.equal(f.actions.some(call => call.action.startsWith('view.') || /conversation\.(?:create|bind)|worker|stop/.test(call.action)), false);
+  assert.equal(form.getAttribute('aria-busy'), undefined);
+  assert.equal(f.node('dialog').open, false);
+});
+
+test('active Rename with a refused flush preserves the exact dirty frame and never renames or rebuilds it', async t => {
+  let finishFlush;
+  const f = await start(t, { active: true, failSave: true, onFlush: () => new Promise(resolve => { finishFlush = resolve; }) });
+  const previous = f.editorInstances[0], frame = f.frame();
+  f.actions.length = 0; f.editorCalls.length = 0;
+  f.click('rename', { id });
+  const form = f.submit('rename', { id, title: 'Must not write' });
+  await setImmediate();
+  await f.controller.refresh();
+  assert.equal(f.frame(), frame); assert.equal(previous.disposed, false);
+  finishFlush(); await setImmediate();
+  assert.deepEqual(f.editorCalls, ['flush']);
+  assert.equal(f.editorInstances.length, 1); assert.equal(previous.disposed, false);
+  assert.equal(f.frame(), frame); assert.notEqual(frame.parent, null);
+  assert.equal(f.actions.some(call => ['library.rename', 'editor.document'].includes(call.action)), false);
+  assert.equal(form.querySelector('.dialog-error').textContent, en.editorSaveFailed);
+  assert.equal(f.node('dialog').open, true);
+});
+
+test('failed Rename restores the saved disk editor without altering its tab and leaves the error available', async t => {
+  const failure = Object.assign(new Error('Rename was refused.'), { code: 'RENAME_REFUSED' });
+  const f = await start(t, { active: true, onRename: () => { throw failure; } });
+  const previousFrame = f.frame();
+  f.actions.length = 0; f.editorCalls.length = 0; f.timeline.length = 0;
+  f.click('rename', { id });
+  const form = f.submit('rename', { id, title: 'Not written' });
+  await setImmediate();
+  assert.deepEqual(f.editorCalls, ['flush', 'saved', 'dispose', 'mount']);
+  assert.equal(previousFrame.parent, null);
+  assert.match(f.editorInstances[1].document.html, /保留中文作品与批注原文/);
+  assert.doesNotMatch(f.editorInstances[1].document.html, /Not written/);
+  assert.equal(form.querySelector('.dialog-error').textContent, en.actionFailed);
+  assert.equal(f.node('dialog').open, true);
+  assert.equal(f.actions.filter(call => call.action === 'library.rename').length, 1);
+  assert.equal(f.actions.some(call => call.action.startsWith('view.')), false);
+});
+
+test('renaming a different artwork leaves the mounted editor and current tab untouched', async t => {
+  const other = { id: '22222222-2222-4222-8222-222222222222', kind: 'slides', title: 'Other', contentStatus: 'ok' };
+  const current = { id, kind: 'design', title: 'Current', contentStatus: 'ok' };
+  const f = await start(t, { active: true, records: [current, other] });
+  const frame = f.frame();
+  f.actions.length = 0; f.editorCalls.length = 0;
+  f.submit('rename', { id: other.id, title: 'Other renamed' });
+  await setImmediate();
+  assert.deepEqual(f.editorCalls, []); assert.equal(f.frame(), frame);
+  assert.equal(f.editorInstances[0].disposed, false); assert.equal(f.editorInstances.length, 1);
+  assert.equal(f.actions.some(call => call.action === 'editor.document' || call.action.startsWith('view.')), false);
+  assert.equal(f.records().find(record => record.id === other.id).title, 'Other renamed');
+});
+
+test('Rename remains single-flight across new forms, refresh and Reopen while the index write is pending', async t => {
+  let finish;
+  const f = await start(t, { active: true, onRename: payload => new Promise(resolve => {
+    finish = () => resolve({ ...f.record, title: payload.title });
+  }) });
+  f.actions.length = 0;
+  f.click('rename', { id });
+  f.submit('rename', { id, title: 'First rename' });
+  await setImmediate();
+  assert.equal(f.frame(), null); assert.equal(f.editorInstances.length, 1);
+  await f.controller.refresh();
+  f.click('retry-editor', { id });
+  const secondForm = f.submit('rename', { id, title: 'Duplicate rename' });
+  await setImmediate();
+  assert.equal(f.actions.filter(call => call.action === 'library.rename').length, 1);
+  assert.equal(f.actions.some(call => call.action === 'editor.document'), false);
+  assert.equal(f.frame(), null);
+  finish(); await setImmediate();
+  assert.equal(f.editorInstances.length, 2);
+  assert.match(f.editorInstances[1].document.html, /First rename/);
+  assert.equal(secondForm.getAttribute('aria-busy'), undefined);
+  assert.equal(f.node('dialog').open, true, 'completion cannot close a replacement dialog/form');
+});
+
+test('an editor.document response already in flight cannot remount the old base during Rename', async t => {
+  let finishRename, finishOldDocument, documents = 0;
+  const f = await start(t, { active: true,
+    onDocument: () => ++documents === 1 ? new Promise(resolve => { finishOldDocument = () => resolve({ html: 'Old index base' }); }) : { html: 'Renamed index base' },
+    onRename: payload => new Promise(resolve => { finishRename = () => resolve({ ...f.record, title: payload.title }); }),
+  });
+  assert.equal(f.editorInstances.length, 0);
+  f.submit('rename', { id, title: 'New title' }); await setImmediate();
+  finishOldDocument(); await setImmediate();
+  assert.equal(f.editorInstances.length, 0); assert.equal(f.frame(), null);
+  finishRename(); await setImmediate();
+  assert.equal(f.editorInstances.length, 1); assert.equal(documents, 2);
+  assert.equal(f.editorInstances[0].document.html, 'Renamed index base');
+});
+
+test('Rename completion after navigation never reopens its target over the newly active artwork', async t => {
+  let finish;
+  const other = { id: '22222222-2222-4222-8222-222222222222', kind: 'slides', title: 'Other', contentStatus: 'ok' };
+  const original = { id, kind: 'design', title: 'Current', contentStatus: 'ok' };
+  const f = await start(t, { active: true, records: [original, other], onRename: payload => new Promise(resolve => { finish = () => resolve({ ...original, title: payload.title }); }) });
+  f.submit('rename', { id, title: 'Renamed' }); await setImmediate();
+  await f.controller.activateArtifact(other.id); await setImmediate();
+  const activeEditor = f.editorInstances.at(-1);
+  assert.equal(activeEditor.artifactId, other.id);
+  const mounts = f.editorInstances.length;
+  finish(); await setImmediate();
+  assert.equal(f.editorInstances.length, mounts); assert.equal(activeEditor.disposed, false);
+  assert.equal(f.frame(), activeEditor.iframe);
+});
+
+test('switching A to B and back during Rename retires B before mounting A from its renamed base', async t => {
+  let finish;
+  const other = { id: '22222222-2222-4222-8222-222222222222', kind: 'slides', title: 'Other', contentStatus: 'ok' };
+  const original = { id, kind: 'design', title: 'Current', contentStatus: 'ok' };
+  const f = await start(t, { active: true, records: [original, other], onRename: payload => new Promise(resolve => { finish = () => resolve({ ...original, title: payload.title }); }) });
+  f.submit('rename', { id, title: 'New base' }); await setImmediate();
+  await f.controller.activateArtifact(other.id); await setImmediate();
+  const otherEditor = f.editorInstances.at(-1);
+  await f.controller.activateArtifact(id); await setImmediate();
+  assert.equal(otherEditor.disposed, true); assert.equal(f.frame(), null);
+  const mounts = f.editorInstances.length;
+  finish(); await setImmediate();
+  assert.equal(f.editorInstances.length, mounts + 1);
+  assert.equal(f.editorInstances.at(-1).artifactId, id);
+  assert.match(f.editorInstances.at(-1).document.html, /New base/);
+  assert.equal(f.frame(), f.editorInstances.at(-1).iframe);
+});
+
+test('a view change during the Rename flush cannot dispose the newly active editor', async t => {
+  let finishFlush, firstFlush = true;
+  const other = { id: '22222222-2222-4222-8222-222222222222', kind: 'slides', title: 'Other', contentStatus: 'ok' };
+  const original = { id, kind: 'design', title: 'Current', contentStatus: 'ok' };
+  const f = await start(t, { active: true, records: [original, other], onFlush: () => firstFlush ? (firstFlush = false, new Promise(resolve => { finishFlush = resolve; })) : undefined });
+  f.submit('rename', { id, title: 'Renamed inactive' }); await setImmediate();
+  f.notify({ viewState: { version: 1, tabs: [{ id: 'library', type: 'library' }, { type: 'artifact', artifactId: id }, { type: 'artifact', artifactId: other.id }], activeTabId: other.id } });
+  await setImmediate();
+  const activeEditor = f.editorInstances.at(-1);
+  assert.equal(activeEditor.artifactId, other.id);
+  finishFlush(); await setImmediate();
+  assert.equal(activeEditor.disposed, false); assert.equal(f.frame(), activeEditor.iframe);
+  assert.equal(f.records().find(record => record.id === id).title, 'Renamed inactive');
+});
+
+test('Rename completion after workspace disposal cannot mount another iframe', async t => {
+  let finish;
+  const f = await start(t, { active: true, onRename: payload => new Promise(resolve => { finish = () => resolve({ ...f.record, title: payload.title }); }) });
+  f.submit('rename', { id, title: 'Renamed' }); await setImmediate();
+  f.controller.destroy();
+  finish(); await setImmediate();
+  assert.equal(f.editorInstances.length, 1); assert.equal(f.editorInstances[0].disposed, true);
+  assert.equal(f.actions.filter(call => call.action === 'editor.document').length, 1, 'only the initial document was requested');
 });
 
 const creationKinds = ['slides', 'design', 'design-system', 'dashboard'];
