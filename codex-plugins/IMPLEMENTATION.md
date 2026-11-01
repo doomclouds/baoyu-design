@@ -27,8 +27,12 @@ and empty state. All-page and sidebar global creation retain the type menu.
 The later staged code also adds a shared app-only Save As folder browser and
 verified filesystem save path, host theme/font token mapping for editor UI,
 thumbnail aspect/letterbox repairs, and a host-colored seam separator. It passed
-392 tests and portable relocation with 181 owned files. The earlier 340-test
-result remains a baseline for the prior prepared source.
+409 tests and portable relocation with 182 owned files after the additional
+Canvas export-caller correction. Native save errors terminate their original
+operation, registered export requests complete without consuming a newer
+queued request, and missing-content warning cards wait for explicit Download.
+The earlier 340/392-test results remain baselines for prior prepared source;
+the intermediate 403/404 fixture failure is retained in the acceptance report.
 This prepared revision has not replaced installed 0.5.0. The current header
 target is a named, nonclosable native home tab visible from first open, with a
 quiet separator below it. A real full-view command reveals the sole home tab,

@@ -73,18 +73,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker4 = markers[0];
+  const marker5 = markers[0];
   let owner;
-  if (marker4) {
+  if (marker5) {
     try {
-      owner = readJson(path.join(directory, marker4));
+      owner = readJson(path.join(directory, marker5));
     } catch (error113) {
       if (error113.code !== "INVALID_BRIDGE_STATE") throw error113;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker4) fs.rmSync(path.join(directory, marker4), { force: true });
+  if (marker5) fs.rmSync(path.join(directory, marker5), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error113) {
@@ -93,12 +93,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker4 = `owner-${token}.json`;
+  const marker5 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker4), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker5), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -109,7 +109,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error113;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker4), { force: true });
+      fs.rmSync(path.join(directory, marker5), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error113) {
@@ -118,7 +118,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker4), { force: true });
+      fs.rmSync(path.join(staging, marker5), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error113) {
@@ -459,11 +459,11 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker4 = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker4, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker4, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker5 = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker5, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker5, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker4, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker5, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
@@ -690,9 +690,9 @@ var init_library = __esm({
           const needed = /* @__PURE__ */ new Set([INDEX_FILES[record3.kind], "project/tokens.json", "db/files/index.html.json"]);
           const files = [];
           for (const file3 of listed) files.push({ ...file3, data: needed.has(file3.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path) ? (await readBytes(root, file3.path, this.limits.maxFileBytes)).toString("base64") : "" });
-          const native4 = validateFiles(record3.kind, files);
+          const native5 = validateFiles(record3.kind, files);
           const changedAt = listed.reduce((latest, file3) => file3.modifiedAt > latest ? file3.modifiedAt : latest, manifest.updatedAt);
-          Object.assign(result, manifest, { title: native4.title, updatedAt: changedAt });
+          Object.assign(result, manifest, { title: native5.title, updatedAt: changedAt });
         } catch (error113) {
           result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error113.code) ? "missing" : "invalid";
           result.contentError = { code: error113.code || "INVALID_CONTENT", message: error113.message };
@@ -800,8 +800,8 @@ var init_library = __esm({
         await this._busy(record3);
         const root = await this._artifactPath(record3);
         const files = await collectContent(root, record3.kind, this.limits);
-        const native4 = validateFiles(record3.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native4.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
+        const native5 = validateFiles(record3.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native5.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -848,8 +848,8 @@ var init_library = __esm({
           if (bytes.toString("base64") !== file3.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
           files.push({ path: relative, encoding: "base64", data: file3.data });
         }
-        const native4 = validateFiles(bundle.kind, files);
-        return { kind: bundle.kind, title: native4.title, files };
+        const native5 = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native5.title, files };
       }
       async _source(sourcePath, kind) {
         if (typeof sourcePath !== "string" || !path5.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
@@ -871,8 +871,8 @@ var init_library = __esm({
         const busy = await this.isBusy({ id: null, kind, path: sourcePath });
         if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
         const files = await collectContent(sourcePath, kind, this.limits);
-        const native4 = validateFiles(kind, files);
-        return { kind, title: native4.title, files };
+        const native5 = validateFiles(kind, files);
+        return { kind, title: native5.title, files };
       }
       async importArtifact({ bundle, sourcePath, kind, title } = {}) {
         await this._checkRoot();
@@ -967,8 +967,8 @@ var init_library = __esm({
       }
       async _purgeNativeIdle(record3, root) {
         const inspected = record3.title ? await this._inspect(record3) : { ...record3, path: root, deleted: true, contentStatus: "missing" };
-        const native4 = await nativeTrashActivity({ ...inspected, path: root });
-        if (native4?.busy) throw new LibraryError("ARTIFACT_BUSY", native4.reason);
+        const native5 = await nativeTrashActivity({ ...inspected, path: root });
+        if (native5?.busy) throw new LibraryError("ARTIFACT_BUSY", native5.reason);
         const external = await this.isBusy(inspected);
         if (external === true || external?.busy) throw new LibraryError("ARTIFACT_BUSY", external?.reason || "An external artwork task still owns this trash item.");
       }
@@ -54189,21 +54189,6 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
 // source/server/editor-document.mjs
 import { createHash as createHash8 } from "node:crypto";
 
-// source/scripts/editor-runtime-adapter.mjs
-function repairEditorRuntime(source) {
-  const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
-  const initialize = /\([\w$]+,"initializeSheetMeasurement",\(\)=>([\w$]+)/.exec(source)?.[1];
-  if (hookName && initialize) {
-    const escaped = hookName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const hook = new RegExp(`function ${escaped}\\([^)]*\\)\\{(?=let [\\w$]+=[\\w$]+\\.useContext\\([\\w$]+\\.sheetParentContext\\))`);
-    source = source.replace(hook, (match) => `${match}${initialize}();`);
-  }
-  return source.replace(
-    /([\w$]+)\.jsx\(([\w$]+)\.baseFieldsetRoot,\{(?=ref:[\w$]+,"data-cds":"Form",)/g,
-    (match, jsx, registry3) => `${jsx}.jsx(${registry3}.baseFieldsetRoot,{render:${jsx}.jsx("form",{}),`
-  );
-}
-
 // source/scripts/comment-toolbar-adapter.mjs
 var native = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
 var marker = "/* codex-design:native-comment-toolbar */";
@@ -54274,13 +54259,125 @@ function adaptCommentToolbar(source) {
   return changed ? marker + "\n" + source : source;
 }
 
-// source/scripts/comment-draft-adapter.mjs
+// source/scripts/editor-export-adapter.mjs
+var marker2 = "/* codex-design:native-export-save-results */";
 var native2 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
-var marker2 = "/* codex-design:native-comment-drafts */";
+var escape5 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function throwNativeEditorExportFailure(error113, code) {
+  if (error113?.nativeExportSaveFailure === true) throw error113;
+  const failureCode = typeof code === "string" && code ? code : "EXPORT_FAILED";
+  const message = typeof error113?.message === "string" && error113.message ? error113.message : failureCode === "EXPORT_UNCONFIRMED" ? "The export save result could not be confirmed. The file may already exist. Check the selected folder before starting another export." : `Save As did not complete (${failureCode}). The export was not retried automatically.`;
+  throw Object.assign(new Error(message), { code: failureCode, nativeExportSaveFailure: true });
+}
+function definitionFor(source, property) {
+  const matches = [...source.matchAll(new RegExp(`\\b[at]\\(e,"${escape5(property)}",\\(\\)=>(${String.raw`[\w$]+`})\\)`, "g"))];
+  if (matches.length !== 1) throw new Error(`The canonical ${property} export changed; native export recovery was refused.`);
+  const exported = matches[0];
+  const start = source.lastIndexOf("function " + exported[1] + "(", exported.index);
+  const part = start < 0 ? null : readCommentComponent(source.slice(start), new RegExp(`^function ${escape5(exported[1])}\\([^)]*\\)\\{`));
+  if (!part) throw new Error(`The canonical ${property} function changed; native export recovery was refused.`);
+  return { ...part, start, end: start + part.end };
+}
+function adaptEditorExportFallbacks(source) {
+  if (source.includes(marker2) || !source.includes('"saveThroughHost"')) return source;
+  const part = definitionFor(source, "saveThroughHost");
+  const replaceOnce = (text, expression, transform3) => {
+    let count = 0;
+    const replacement = text.replace(expression, (...values) => {
+      count++;
+      return transform3(...values);
+    });
+    if (count !== 1) throw new Error("The canonical Canvas save error handler changed; native export recovery was refused.");
+    return replacement;
+  };
+  let save = replaceOnce(
+    part.text,
+    /catch\(([\w$]+)\)\{let ([\w$]+)=([\w$]+)\(\1\);return\{outcome:\2==="declined"\?"declined":"unsupported",code:\2\}/g,
+    (match, error113, code) => match.replace(";return", `;if(${native2}&&${code}!=="declined")__codexThrowNativeExportFailure(${error113},${code});return`)
+  );
+  save = replaceOnce(
+    save,
+    /if\(([\w$]+)===null\)return\{outcome:"unsupported",code:"no_shell_save"\}/g,
+    (match, capability) => `if(${capability}===null){if(${native2})__codexThrowNativeExportFailure(new Error("Save As is unavailable in this editor."),"no_shell_save");return{outcome:"unsupported",code:"no_shell_save"}}`
+  );
+  source = source.slice(0, part.start) + save + source.slice(part.end);
+  const producer = definitionFor(source, "runExportProducer");
+  const delivery = /\}let ([\w$]+)=([\w$]+)\(([\w$]+),([\w$]+)\);if\(\1\.released===!0&&[\w$]+\.aborted\)return/.exec(producer.text);
+  const finalResult = /return\{format:([\w$]+),\.\.\.([\w$]+),outcome:[\w$]+,code:[\w$]+\.code,filename:([\w$]+)\.filename,/.exec(producer.text);
+  if (!delivery || !finalResult || delivery[3] !== finalResult[1] || !producer.text.endsWith("}")) {
+    throw new Error("The canonical registered export delivery changed; native export recovery was refused.");
+  }
+  const request = delivery[1], resolve = delivery[2], format2 = delivery[3], execution = delivery[4];
+  const variants = finalResult[2], file3 = finalResult[3];
+  const declaration = `let ${request}=${resolve}(${format2},${execution});`;
+  const deliveryStart = delivery.index + 1 + declaration.length;
+  const catchDelivery = `}catch(__codexNativeDeliveryError){if(${native2}&&__codexNativeDeliveryError?.nativeExportSaveFailure===true){if(${request}.released!==!0)(0,e.declineFrameExport)(${request}.request);return{format:${format2},...${variants},outcome:"failed",code:__codexNativeDeliveryError.code,filename:${file3}.filename}}throw __codexNativeDeliveryError}`;
+  const producerText = producer.text.slice(0, deliveryStart) + "try{" + producer.text.slice(deliveryStart, -1) + catchDelivery + "}";
+  source = source.slice(0, producer.start) + producerText + source.slice(producer.end);
+  const image = definitionFor(source, "exportArtboardImage");
+  const imageText = replaceOnce(
+    image.text,
+    /&&\(\(0,e\.triggerBrowserDownload\)\(/g,
+    () => `&&(!${native2}&&(0,e.triggerBrowserDownload)(`
+  );
+  source = source.slice(0, image.start) + imageText + source.slice(image.end);
+  const pdf = definitionFor(source, "exportPdf");
+  const pdfText = replaceOnce(
+    pdf.text,
+    /(if\([\w$]+==="unsupported"\)\{)try\{(?=let [\w$]+=document\.createElement\("a"\))/g,
+    (match, condition) => `${condition}if(!${native2})try{`
+  );
+  source = source.slice(0, pdf.start) + pdfText + source.slice(pdf.end);
+  let cardCount = 0;
+  source = source.replace(
+    /id:"dUR5426EKh"\}\)\)\}finally\{([\w$]+)\(!1\)\}\}\)\(\)\};return ([\w$]+)\.jsxs\("div",\{className:"flex flex-col gap-1\.5",children:\[\2\.jsxs\("div",\{"data-testid":"export-delivery-card"/g,
+    (match, busy, jsx, offset) => {
+      const start = source.lastIndexOf("function ", offset);
+      const prefix = source.slice(start, offset);
+      const toast = /let\{showToast:([\w$]+)\}=\(0,e\.useToast\)\(\)/.exec(prefix)?.[1];
+      if (!toast || prefix.length > 1e4) throw new Error("The canonical export warning card changed; native export recovery was refused.");
+      cardCount++;
+      const caught = `}catch(__codexNativeSaveError){if(${native2}&&__codexNativeSaveError?.nativeExportSaveFailure===true){${toast}(__codexNativeSaveError.message,"error");return{outcome:"failed",code:__codexNativeSaveError.code}}throw __codexNativeSaveError}finally{`;
+      return match.replace("}finally{", caught);
+    }
+  );
+  if (cardCount !== 1) throw new Error("The canonical export warning card changed; native export recovery was refused.");
+  let catchCount = 0;
+  source = source.replace(
+    /\}catch\(([\w$]+)\)\{e\.healthReporter\.report\(\.\.\.\(0,e\.classifyExportFailure\)\("zip"\)\),([\w$]+)\("Couldn't build the HTML zip: "\+String\(\1\),"error"\)\}finally\{([\w$]+)\(!1\)\}/g,
+    (match, error113, toast) => {
+      catchCount++;
+      const guard = `if(${native2}&&${error113}?.nativeExportSaveFailure===true){e.healthReporter.report(...(0,e.classifyExportFailure)("zip"));${toast}(${error113}.message,"error");return{outcome:"failed",code:${error113}.code}}`;
+      return match.replace(`}catch(${error113}){`, `}catch(${error113}){${guard}`);
+    }
+  );
+  if (catchCount !== 1) throw new Error("The canonical HTML zip error handler changed; native export recovery was refused.");
+  return marker2 + "\nconst __codexThrowNativeExportFailure=" + throwNativeEditorExportFailure.toString() + ";\n" + source;
+}
+
+// source/scripts/editor-runtime-adapter.mjs
+function repairEditorRuntime(source) {
+  source = adaptEditorExportFallbacks(source);
+  const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
+  const initialize = /\([\w$]+,"initializeSheetMeasurement",\(\)=>([\w$]+)/.exec(source)?.[1];
+  if (hookName && initialize) {
+    const escaped = hookName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hook = new RegExp(`function ${escaped}\\([^)]*\\)\\{(?=let [\\w$]+=[\\w$]+\\.useContext\\([\\w$]+\\.sheetParentContext\\))`);
+    source = source.replace(hook, (match) => `${match}${initialize}();`);
+  }
+  return source.replace(
+    /([\w$]+)\.jsx\(([\w$]+)\.baseFieldsetRoot,\{(?=ref:[\w$]+,"data-cds":"Form",)/g,
+    (match, jsx, registry3) => `${jsx}.jsx(${registry3}.baseFieldsetRoot,{render:${jsx}.jsx("form",{}),`
+  );
+}
+
+// source/scripts/comment-draft-adapter.mjs
+var native3 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker3 = "/* codex-design:native-comment-drafts */";
 var rowPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+),current:[\w$]+\}\)\{/;
 var threadPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+)\}\)\{/;
 var composerPattern = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,win:[\w$]+,pinSide:[\w$]+\}\)\{/;
-var escape5 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var escape6 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function nativeCommentPresentation(thread) {
   const request = thread?.agent?.nativeRequest;
   const replied = thread?.messages?.at(-1)?.author?.kind === "agent";
@@ -54371,16 +54468,16 @@ function addActions(text, component) {
   return replaceRequired(
     text,
     /items:([\w$]+)(?=\})/g,
-    (_, items) => `items:${native2}?[...${items},...__codexNativeCommentActions(${controller},${thread},${state})]:${items}`,
+    (_, items) => `items:${native3}?[...${items},...__codexNativeCommentActions(${controller},${thread},${state})]:${items}`,
     1,
     "comment action menu"
   );
 }
 function addPresentation(text, component) {
-  return text.replace(component.match[0], component.match[0] + `const __codexComment=${native2}?__codexNativeCommentPresentation(${component.match[4]}):null;`);
+  return text.replace(component.match[0], component.match[0] + `const __codexComment=${native3}?__codexNativeCommentPresentation(${component.match[4]}):null;`);
 }
 function adaptCommentDrafts(source) {
-  if (source.includes(marker2)) return source;
+  if (source.includes(marker3)) return source;
   const row = readCommentComponent(source, rowPattern);
   const thread = readCommentComponent(source, threadPattern);
   const composer = readCommentComponent(source, composerPattern);
@@ -54392,15 +54489,15 @@ function adaptCommentDrafts(source) {
   }
   if (!row || !thread || !composer) throw new Error("The canonical comment components are incomplete; native comment adaptation was refused.");
   const label = /label:([\w$]+),checked:/.exec(thread.text)?.[1];
-  if (!label || !new RegExp(`\\b${escape5(label)}="Send to agent"`).test(source)) {
+  if (!label || !new RegExp(`\\b${escape6(label)}="Send to agent"`).test(source)) {
     throw new Error("The canonical send-to-agent label changed; native comment adaptation was refused.");
   }
   let rowText = addActions(addPresentation(row.text, row), row);
-  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native2}?"Add to chat":"Send to agent"`, 1, "comment edit label");
+  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native3}?"Add to chat":"Send to agent"`, 1, "comment edit label");
   rowText = replaceRequired(
     rowText,
     /"aria-label":"Sent to agent"/g,
-    `"aria-label":${native2}?(__codexComment?.label??"Added to chat"):"Sent to agent"`,
+    `"aria-label":${native3}?(__codexComment?.label??"Added to chat"):"Sent to agent"`,
     1,
     "comment sent indicator"
   );
@@ -54409,43 +54506,43 @@ function adaptCommentDrafts(source) {
   rowText = replaceRequired(
     rowText,
     /,([\w$]+)>0&&!([\w$]+)&&!([\w$]+)&&/g,
-    (_, replies, editing, deleting) => `,${native2}&&__codexComment&&${jsx}("span",{role:"status","data-codex-comment-status":__codexComment.status,className:"text-caption text-muted",children:__codexComment.label+(__codexComment.message?": "+__codexComment.message:"")}),${replies}>0&&!${editing}&&!${deleting}&&`,
+    (_, replies, editing, deleting) => `,${native3}&&__codexComment&&${jsx}("span",{role:"status","data-codex-comment-status":__codexComment.status,className:"text-caption text-muted",children:__codexComment.label+(__codexComment.message?": "+__codexComment.message:"")}),${replies}>0&&!${editing}&&!${deleting}&&`,
     1,
     "comment list status"
   );
   let threadText = addActions(addPresentation(thread.text, thread), thread);
-  const labels = new RegExp(`label:${escape5(label)},checked:`, "g");
-  threadText = replaceRequired(threadText, labels, `label:${native2}?"Add to chat":${label},checked:`, 2, "comment reply/edit labels");
+  const labels = new RegExp(`label:${escape6(label)},checked:`, "g");
+  threadText = replaceRequired(threadText, labels, `label:${native3}?"Add to chat":${label},checked:`, 2, "comment reply/edit labels");
   const pending = /([\w$]+)=([\w$]+)==="pending"\?"queued":\2==="delivered"\?"working":void 0/.exec(threadText);
   if (!pending) throw new Error("The canonical comment delivery state changed; native comment adaptation was refused.");
   const activity = pending[1];
-  threadText = threadText.replace(pending[0], `${activity}=${native2}?(__codexComment?.activity?__codexComment:void 0):(${pending[0].slice(activity.length + 1)})`);
+  threadText = threadText.replace(pending[0], `${activity}=${native3}?(__codexComment?.activity?__codexComment:void 0):(${pending[0].slice(activity.length + 1)})`);
   threadText = replaceRequired(
     threadText,
-    new RegExp(`working:${escape5(activity)},footnote:(${escape5(activity)}==="queued"\\?"Waiting for the agent":"Working(?:…|\\\\u2026)")`, "g"),
-    (_, footnote) => `working:${native2}?__codexComment.working:${activity},footnote:${native2}?__codexComment.label+(__codexComment.message?": "+__codexComment.message:""):${footnote}`,
+    new RegExp(`working:${escape6(activity)},footnote:(${escape6(activity)}==="queued"\\?"Waiting for the agent":"Working(?:…|\\\\u2026)")`, "g"),
+    (_, footnote) => `working:${native3}?__codexComment.working:${activity},footnote:${native3}?__codexComment.label+(__codexComment.message?": "+__codexComment.message:""):${footnote}`,
     1,
     "comment activity label"
   );
-  const composerText = replaceRequired(composer.text, labels, `label:${native2}?"Add to chat":${label},checked:`, 1, "new comment label");
+  const composerText = replaceRequired(composer.text, labels, `label:${native3}?"Add to chat":${label},checked:`, 1, "new comment label");
   for (const part of [{ ...row, replacement: rowText }, { ...thread, replacement: threadText }, { ...composer, replacement: composerText }].sort((a, b) => b.start - a.start)) {
     source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
   }
   source = replaceRequired(
     source,
     /agentAvailable\(\)\{return /g,
-    `agentAvailable(){if(${native2}?.canDraftComments===false)return false;return `,
+    `agentAvailable(){if(${native3}?.canDraftComments===false)return false;return `,
     1,
     "native draft capability"
   );
   const helpers = [nativeCommentPresentation, nativeCommentCanAdd, nativeCommentActions].map((fn) => fn.toString().replace(/\bnativeCommentPresentation\b/g, "__codexNativeCommentPresentation").replace(/\bnativeCommentCanAdd\b/g, "__codexNativeCommentCanAdd").replace(/\bnativeCommentActions\b/g, "__codexNativeCommentActions")).join("\n");
-  return marker2 + "\n" + helpers + "\n" + source;
+  return marker3 + "\n" + helpers + "\n" + source;
 }
 
 // source/scripts/agent-draft-adapter.mjs
-var native3 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
-var marker3 = "/* codex-design:native-agent-drafts */";
-var escape6 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var native4 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker4 = "/* codex-design:native-agent-drafts */";
+var escape7 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function createNativeAgentDraft() {
   const attempts = /* @__PURE__ */ new Map();
   const send = async (input2, target = globalThis) => {
@@ -54519,30 +54616,30 @@ function nativeAgentDraftMessage(status, suffix = "", detail = "") {
   if (status === "unanswered" || status === "failed") return "Could not add this request to chat. " + (detail || "Try again from this editor.");
   return null;
 }
-function definitionFor(source, property) {
-  const matches = [...source.matchAll(new RegExp(`\\b[at]\\(e,"${escape6(property)}",\\(\\)=>(${String.raw`[\w$]+`})\\)`, "g"))];
+function definitionFor2(source, property) {
+  const matches = [...source.matchAll(new RegExp(`\\b[at]\\(e,"${escape7(property)}",\\(\\)=>(${String.raw`[\w$]+`})\\)`, "g"))];
   if (!matches.length) return null;
   if (matches.length !== 1) throw new Error(`The canonical ${property} export changed; native artwork drafting was refused.`);
   const exported = matches[0];
   const start = source.lastIndexOf("function " + exported[1] + "(", exported.index);
   if (start < 0) throw new Error(`The canonical ${property} declaration changed; native artwork drafting was refused.`);
-  const part = readCommentComponent(source.slice(start), new RegExp(`^function ${escape6(exported[1])}\\(([^)]*)\\)\\{`));
+  const part = readCommentComponent(source.slice(start), new RegExp(`^function ${escape7(exported[1])}\\(([^)]*)\\)\\{`));
   if (!part) throw new Error(`The canonical ${property} signature changed; native artwork drafting was refused.`);
   const parameters = part.match[1] ? part.match[1].split(",").map((value) => value.split("=")[0]) : [];
   if (parameters.some((value) => !/^[\w$]+$/.test(value))) throw new Error(`The canonical ${property} parameters changed; native artwork drafting was refused.`);
   return { ...part, start, end: start + part.end, parameters, async: source.slice(start - 6, start) === "async " };
 }
 function adaptAgentDrafts(source) {
-  if (source.includes(marker3)) return source;
+  if (source.includes(marker4)) return source;
   const updates = [];
   const insert = (property, make, expected) => {
-    const part = definitionFor(source, property);
+    const part = definitionFor2(source, property);
     if (!part) {
       if (expected) throw new Error(`The canonical ${property} helper is missing; native artwork drafting was refused.`);
       return false;
     }
     const prefix = make(part.parameters, part);
-    updates.push({ ...part, replacement: part.text.replace(part.match[0], part.match[0] + `if(${native3}){${prefix}}`) });
+    updates.push({ ...part, replacement: part.text.replace(part.match[0], part.match[0] + `if(${native4}){${prefix}}`) });
     return true;
   };
   const stringResult = ([input2]) => `return __codexNativeAgentDraft(${input2});`;
@@ -54572,7 +54669,7 @@ function adaptAgentDrafts(source) {
     insert("sendSelectionToClaude", stringResult, true);
     insert("suggestOrCopyPrompt", stringResult, true);
     insert("describePromptSendOutcome", message, true);
-    for (const property of ["useCanAskClaude", "useHasSessionPane"]) insert(property, () => `return ${native3}.canDraftComments===true;`, true);
+    for (const property of ["useCanAskClaude", "useHasSessionPane"]) insert(property, () => `return ${native4}.canDraftComments===true;`, true);
     insert("handOffSelectionToSession", ([selection, request, , callback]) => `void __codexNativeAgentDraft({selection:${selection},request:${request}}).then(status=>{const message=__codexNativeAgentMessage(status,"",__codexNativeAgentDraft.lastError);if(status==="staged")(0,e.announceLiveMessage)(message);else(0,e.showToastMessage)(message);${callback}?.(status==="staged")});return true;`, true);
   }
   if (!updates.length) {
@@ -54588,18 +54685,18 @@ function adaptAgentDrafts(source) {
     });
     if (count !== expected) throw new Error("The canonical artwork request label changed; native artwork drafting was refused.");
   };
-  if (kind === "slides") label(/children:"Ask the agent to fix"/g, () => `children:${native3}?"Add fix to chat":"Ask the agent to fix"`, 1);
-  if (kind === "design") label(/children:([\w$]+)\.ask(?=[,}])/g, (_, value) => `children:${native3}?"Add fix to chat":${value}.ask`, 2);
+  if (kind === "slides") label(/children:"Ask the agent to fix"/g, () => `children:${native4}?"Add fix to chat":"Ask the agent to fix"`, 1);
+  if (kind === "design") label(/children:([\w$]+)\.ask(?=[,}])/g, (_, value) => `children:${native4}?"Add fix to chat":${value}.ask`, 2);
   if (kind === "dashboard") {
-    label(/([\w$]+)="Ask the agent to fix"/g, (_, value) => `${value}=${native3}?"Add fix to chat":"Ask the agent to fix"`, 1);
-    label(/([\w$]+)="Ask the agent to limit"/g, (_, value) => `${value}=${native3}?"Add limit request to chat":"Ask the agent to limit"`, 1);
+    label(/([\w$]+)="Ask the agent to fix"/g, (_, value) => `${value}=${native4}?"Add fix to chat":"Ask the agent to fix"`, 1);
+    label(/([\w$]+)="Ask the agent to limit"/g, (_, value) => `${value}=${native4}?"Add limit request to chat":"Ask the agent to limit"`, 1);
   }
   if (kind === "design-system") {
     const instruction = "Read the claude-design-system skill’s SKILL.md, artifact-type/reference/format.md and craft.md beside it";
     const prefix = "`\nAgent: put it in the Design System format, in this same directory, editing its files in the working directory. ";
-    label(new RegExp(escape6(prefix + instruction), "g"), () => prefix + "${" + native3 + "?" + JSON.stringify(instruction.replace("claude-design-system", "codex-design-system")) + ":" + JSON.stringify(instruction) + "}", 1);
+    label(new RegExp(escape7(prefix + instruction), "g"), () => prefix + "${" + native4 + "?" + JSON.stringify(instruction.replace("claude-design-system", "codex-design-system")) + ":" + JSON.stringify(instruction) + "}", 1);
   }
-  return marker3 + "\nconst __codexNativeAgentDraft=(" + createNativeAgentDraft.toString() + ")();\n" + nativeAgentDraftMessage.toString().replace("nativeAgentDraftMessage", "__codexNativeAgentMessage") + "\n" + source;
+  return marker4 + "\nconst __codexNativeAgentDraft=(" + createNativeAgentDraft.toString() + ")();\n" + nativeAgentDraftMessage.toString().replace("nativeAgentDraftMessage", "__codexNativeAgentMessage") + "\n" + source;
 }
 
 // source/server/editor-document.mjs
