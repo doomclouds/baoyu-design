@@ -72,9 +72,34 @@ System comment/wide-mode screenshots, and the old Properties failure record.
 
 ## Installation and remaining gates
 
-Formal GitHub marketplace installation and installed hashes are to be recorded
-after publication. Native OS dispatch is distinguished from rendered content:
-`navigationRequested` does not mean `renderVerified`.
+Code commit `98cb7d73329bb40c923bfe347e222bcc7daf8724` was pushed to
+`codex/plugin` and installed from the formal GitHub marketplace as **0.4.2**.
+All **174** installed file hashes match the generated package. Actual Codex
+Desktop runtime discovery found the five enabled skills, global/file
+entrypoints and tools without a loading error. GitHub run listing was empty;
+no workflow or tag was used.
+
+The first install attempt encountered the existing Windows cache-backup access
+denial. Only four identity-verified old 0.4.1 MCP index processes were stopped;
+artwork editor processes and files were preserved. The supported install then
+succeeded. The current Desktop connection needs a normal reload/restart to
+consume the replacement package.
+
+The older global validation UUID was no longer on disk; that failed check is
+retained and its folder was not recreated. A fresh installed-CLI create/check
+smoke ran with an isolated temporary user home instead. It reported zero
+problems, a native `appUrl`, and a wrapper `open` next-step without localhost or
+the raw CLI. This did not navigate the real Desktop or mutate the user's global
+artwork library.
+
+Installed evidence in the local acceptance archive:
+`codex-design-0.4.2-installed-verification.txt`,
+`codex-design-0.4.2-installed-hashes.json`, and
+`codex-design-0.4.2-installed-delivery.json`.
+
+Native OS dispatch remains distinguished from rendered content:
+`navigationRequested` does not mean `renderVerified`. Complete actual-host
+interaction acceptance after reload remains an operator gate.
 
 The full original objective is not claimed complete. Host shared-middle-sidebar
 content, native workspace-toolbar replacement, per-artwork bound native chat,
