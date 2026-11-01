@@ -1,4 +1,4 @@
-# Codex Design 0.5.1 prepared revision
+# Codex Design 0.5.1 acceptance
 
 ## Included code
 
@@ -162,8 +162,9 @@ The current requirement, reproduction and supported-API boundary are collected
 separately in [native-home-tab-acceptance.md](research/native-home-tab-acceptance.md)
 so the superseded whole-row-removal investigation is not mistaken for this gate.
 
-This revision is prepared in source; it has not been published to the primary
-GitHub marketplace branch or installed. The active installation remains 0.5.0.
+The earlier release hold was lifted when the user explicitly accepted retaining
+the current top-bar limitation for 0.5.1. This revision is now published to the
+primary GitHub marketplace branch and installed; see the release record below.
 The operator's successful single-comment native interaction is recorded in
 [ACCEPTANCE-0.5.0.md](ACCEPTANCE-0.5.0.md). The new error/fix actions and steered
 request correction still need installed-host operator checks.
@@ -175,5 +176,92 @@ was incomplete and is retained/corrected in
 No host code was modified and no native header fix is claimed.
 
 Cross-window single-editor ownership is not established by this revision; its
-scope was explained to the user and is not presented as completed. The goal
-remains open, and the user still holds the primary release at installed 0.5.0.
+scope was explained to the user and is not presented as completed. The top-bar
+limitation is accepted for this release, not fixed or reported as passed.
+
+## GitHub release and installed verification
+
+The user authorized publishing 0.5.1, installing it from the existing GitHub
+marketplace, and retaining the current top bar. Release code commit
+`40146a6374288683072181648860297e33acafa3` was fast-forwarded to `codex/plugin`
+and pushed to `doomclouds/baoyu-design`. Existing commits contain `[skip ci]`;
+no tag or workflow was invoked, and `gh run list --branch codex/plugin` returned
+no workflow runs.
+
+The Desktop's actual CLI, `0.166.0-alpha.5.1`, refreshed the configured
+`codex-design-marketplace` Git snapshot and installed
+`codex-design@codex-design-marketplace` as **0.5.1**. The first attempt failed
+with Windows Access Denied while four exact old 0.5.0 MCP entry processes held
+their cache directory. Their path, executable, parent and creation time were
+revalidated before stopping only those entries; the second supported install
+succeeded. No artwork data service or model worker was stopped for that retry.
+
+An independent three-way comparison verified all **182 owned files plus the
+generation manifest** across the release checkout, downloaded GitHub marketplace
+snapshot and installed cache. Missing/extra files, hash differences and symlinks
+were zero. Snapshot provenance and its install marker identify the same GitHub
+URL, `codex/plugin` ref and release code commit.
+
+A fresh real Desktop app-server discovered five enabled skills, six MCP tools,
+the global entrypoint and `ui://codex-design/0.5.1/library`, without plugin
+diagnostics. Its successful discovery is separate from the current long-lived
+chat connection, which still returned **Transport closed** after old MCP
+replacement. That current-chat failure is retained; it needs normal reconnect
+or restart before the new request/steering operator gate can pass.
+
+### Actual installed UI observations
+
+The native plugin page displayed version **0.5.1** and five skills. The real
+left-rail entry opened the global library; the running main Desktop app-server
+spawned the MCP entry from the installed 0.5.1 cache. These observations use the
+actual native host, not the earlier isolated browser fixture.
+
+- Dashboards showed **New dashboard**. Clicking it directly created and loaded
+  one real dashboard, without a type picker. Rename to
+  `Codex Design 0.5.1 - Dashboard QA` persisted in the global library.
+- The dashboard Sources panel opened and closed normally. The artwork action
+  menu opened, and clicking outside dismissed it.
+- Export artwork opened the real Save As UI. Enter in Location navigated to a
+  chosen folder containing spaces without writing a file. Cancel also wrote
+  nothing. A subsequent explicit Save wrote a **737-byte**, three-file dashboard
+  bundle; the UI showed the exact saved path. Its top-level fields were only
+  `format`, `version`, `kind`, `title`, and `files`.
+- The next export remembered the saved folder. The same name required Replace
+  confirmation. Cancelling retained the existing file byte-for-byte, with
+  SHA-256 `be2aa456bb6dc845fb24fe88e40d6b86286ffaba8098693aa122ba1d46620e6a`.
+- Design showed **New design** and opened a real empty canvas. Its global
+  Properties control opened the visible Properties/Code/Tweaks/Theme panel.
+  This establishes the control action, not successful content persistence.
+
+### Discovered rename/save conflict: failed acceptance case
+
+In `Codex Design 0.5.1 - Canvas QA`, renaming the open blank canvas and then
+adding an artboard displayed a white artboard, but the editor reported that a
+newer version of the page had saved first. A normal click on its red sync/retry
+control did not recover during this observation. The disk index still had zero
+boards and zero order entries, and only `project/canvas.json` existed. The tab
+is retained because its new blank artboard is only in memory. This is **not a
+passed save/reopen case** and not an edit to preexisting user artwork.
+
+The active Rename path flushes and changes the index title while retaining the
+loaded editor instance; it does not refresh that instance's base. This is a
+concrete conflict trigger. The upstream publisher does have reload/merge and
+base-refresh retry logic, so the persistent failure must not be described as
+an absolute absence of retry. Its exact continuing conflict path is not yet
+fully established. A separate unpublished repair branch is preparing a safe
+editor lifecycle change; it does not alter the already published 0.5.1 bytes.
+
+Native Slides/Design System controls, current-chat Add to chat/Send/steering,
+and complete save/reopen remain pending. The actual UI actions above must not
+be expanded into an all-features/native-operator pass.
+
+Retained evidence includes `codex-design-0.5.1-marketplace-upgrade.txt`,
+`codex-design-0.5.1-install-first-access-denied.txt`,
+`codex-design-0.5.1-install-final.txt`,
+`codex-design-0.5.1-installed-hashes.json`,
+`codex-design-0.5.1-installed-runtime.txt`,
+`codex-design-0.5.1-native-ui-artifacts.json`,
+`codex-design-0.5.1-native-save-as.png`,
+`codex-design-0.5.1-native-export-saved.png`,
+`codex-design-0.5.1-native-export-result.json`, and
+`codex-design-0.5.1-native-canvas-save-conflict.png` in the local archive.
