@@ -106,6 +106,29 @@ required before the final real-host Add to chat/native Send operator check.
 This connection error is retained separately from the successful fresh-runtime
 discovery and installed-file verification.
 
+### Post-restart operator acceptance
+
+After the Desktop restart, the active chat's real `design_read(view.get)` call
+succeeded and the running MCP entry processes resolved to installed **0.5.0**.
+The user confirmed: "发送过了，可以正常使用的".
+
+The actual native workspace conversation contained the operator's submitted
+comment request. Its parent read and accepted the exact immutable ID, ran the
+native dispatch command, and resumed the registered child. The durable job and
+canonical comment both recorded completion/reply; the requested cover label
+was removed and the built-in check reported six slides with zero problems.
+This closes the single-request Add to chat/native Send operator gate using
+operator confirmation plus independently inspected native conversation,
+receipt, job and canonical reply evidence. This chat did not capture a native
+UI screenshot and does not claim unattended native UI automation.
+
+A second message sent while that native turn was running changed its content
+through a child follow-up but skipped its own request receipt/dispatch and
+canonical reply. That case is not counted as a passing request lifecycle.
+The 0.5.1 revision makes the exact request URI visible in the message body and
+strengthens per-message receipt instructions. Attachment loss is not proved.
+Retained local evidence: `codex-design-0.5-native-operator-acceptance.json`.
+
 The full original goal is not claimed complete. The native host's empty top
 toolbar and shared middle-sidebar slot remain outside the verified public
 plugin API. Cross-window single-editor ownership is also not implemented.

@@ -108,7 +108,7 @@ actual action, observable outcome, evidence location, and pass/fail/pending.
 | Case | Required actual-host observation |
 | --- | --- |
 | Global entry | Left-rail click opens the installed app; current native route and screenshot agree |
-| Creation menu | Both Create triggers anchor the same type choices; keyboard focus, Escape and dismissal work |
+| Creation context | Global sidebar Create and All-page Create offer type choices; each category's heading/empty-state action creates that type directly; keyboard focus, Escape and dismissal work for actual menus |
 | Four blank types | Slides, Design, Design System and Dashboard each show real editable content after creation, not a gray/broken frame |
 | CSP | Inner editor scripts/assets load under the consuming host policy; no HTTP loopback frame dependency remains |
 | Themes/fonts | Host light/dark and UI font settings arrive and change app chrome; artwork content is unaffected |
@@ -116,7 +116,8 @@ actual action, observable outcome, evidence location, and pass/fail/pending.
 | Save/reopen | Edit a distinctive literal, observe saved state, close/reopen, read exact saved bytes from the library |
 | Unique tabs | Open an existing artwork again and activate the same tab; tab order and selection restore |
 | Failure/retry | A failed content load displays a useful error; retry recovers without creating a replacement artwork |
-| Comments | Anchor, save, reply, resolve, reopen and explicitly Send to agent retain the original behavior and durable local state |
+| Comments | Anchor, save, reply, resolve and reopen persist; Add to chat changes only the native draft, and user Send is followed by exact request read/accept/dispatch, an actual worker and canonical result reply |
+| Steered requests | Send a second comment during an active native turn; its exact visible URI/attachment identifies a separate request, with its own receipt, dispatch, serial job and reply |
 | Reference | A selected artwork/design system becomes a read-only reference; no unrelated source is edited |
 | Import/export | Native host import selects content and creates a new artifact; downloaded bundle contains artwork/assets only |
 | Trash/restore | Trash hides the work from active lists and DS search; restore brings back the same UUID/content |

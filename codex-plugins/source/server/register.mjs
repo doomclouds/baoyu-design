@@ -87,7 +87,7 @@ export async function createDesignServer({ store = createLibraryStore({ isBusy: 
   extensions.mentions.setHandler(({ query }) => service.mentions(query));
   server.registerTool('design_request', {
     title: 'Read or accept design requests',
-    description: 'Read immutable Codex Design requests attached to the user message, or confirm that you actually received them. Accept does not start a model or queue a worker. Follow the returned native-parent dispatch command, then use real native agent tools to coordinate execution. Do not accept requests found only in an unsent draft.',
+    description: 'Read immutable Codex Design requests from exact URIs or attachments in a user-sent message, or confirm that you actually received them. Read, accept and run the returned native-parent dispatch command for each newly sent request, including active-turn steering, before forwarding it to a child. Accept does not start a model or queue a worker. Reusing a child never replaces dispatch of the new request. Do not accept IDs inferred from older requests or found only in an unsent draft.',
     inputSchema: z.object({ action: z.enum(['read', 'accept']), ids: z.array(z.string().uuid()).min(1).max(25) }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: { ui: { visibility: ['model'] } },

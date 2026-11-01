@@ -23,7 +23,7 @@ class Surface {
   emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler({ target: this, ...event }); }
 }
 
-async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false } = {}) {
+async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate } = {}) {
   const document = new Surface(), window = new Surface(), nodes = [], storageReads = [], actions = [], editorCalls = [], posted = [], timeline = [];
   document.documentElement = {}; document.hidden = false; document.activeElement = null;
   class Element extends Surface {
@@ -71,6 +71,11 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     async invoke(action, payload) {
       actions.push({ action, payload }); timeline.push(action);
       if (action === 'library.list') return libraryRecords;
+      if (action === 'library.create') {
+        const created = onCreate ? await onCreate(payload) : { ...record, id: '33333333-3333-4333-8333-333333333333', kind: payload.kind, title: payload.title };
+        libraryRecords = [...libraryRecords, created];
+        return created;
+      }
       if (action === 'library.purge') {
         if (purgeError) throw purgeError;
         const result = typeof purgeResult === 'function' ? await purgeResult(payload) : purgeResult || { deleted: payload.ids, failed: [] };
@@ -78,7 +83,8 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
         return result;
       }
       if (action === 'view.get') return view;
-      if (action === 'view.activateTab' || action === 'view.openTab') return view = { ...view, activeTabId: payload.id };
+      if (action === 'view.openTab') return view = { ...view, tabs: view.tabs.some(tab => tab.id === payload.id) ? view.tabs : [...view.tabs, { id: payload.id, artifactId: payload.id, type: 'artifact' }], activeTabId: payload.id };
+      if (action === 'view.activateTab') return view = { ...view, activeTabId: payload.id };
       if (action === 'view.closeTab') return view = { ...view, tabs: view.tabs.filter(tab => tab.id !== payload.id), activeTabId: 'library' };
       if (action === 'editor.document') return { html: '<html><body>editor</body></html>' };
       if (action === 'editor.open') return { url: 'http://127.0.0.1:4321/editor/' };
@@ -218,6 +224,93 @@ test('Create, Sort and artwork menus survive trigger blur when their first item 
     f.window.emit('blur');
     assert.equal(trigger.getAttribute('aria-expanded'), 'false', 'actual window blur still dismisses the menu');
     assert.equal(f.node('.menu-layer').innerHTML, '');
+  }
+});
+
+const creationKinds = ['slides', 'design', 'design-system', 'dashboard'];
+function primaryCreationButton(html) {
+  const markup = html.match(/<button\b[^>]*class="button primary"[^>]*>[\s\S]*?<\/button>/)?.[0];
+  assert.ok(markup, 'a primary creation control is rendered');
+  return { markup, action: markup.match(/data-action="([^"]+)"/)?.[1], value: markup.match(/data-value="([^"]+)"/)?.[1] };
+}
+
+for (const kind of creationKinds) test(`${kind} category heading and empty action create that kind directly`, async t => {
+  for (const surface of ['heading', 'empty']) {
+    const f = await start(t, { records: [] });
+    f.click('category', { category: kind }); await setImmediate();
+    const empty = renderedRecords(f);
+    assert.ok(empty.includes(en.emptyCategory[kind].title));
+    assert.ok(empty.includes(en.emptyCategory[kind].body));
+    assert.doesNotMatch(empty, /Create your first artwork|Start with slides/);
+    const control = primaryCreationButton(surface === 'heading' ? f.node('.workspace-panel').innerHTML : empty);
+    assert.equal(control.action, 'create-kind');
+    assert.equal(control.value, kind);
+    assert.ok(control.markup.includes(en.newArtwork[kind]));
+    assert.doesNotMatch(control.markup, /aria-haspopup|data-menu-trigger|M6 9l6 6 6-6/);
+    f.click(control.action, { value: control.value }); await setImmediate();
+    assert.equal(f.node('.menu-layer').innerHTML, '');
+    const calls = f.actions.filter(call => call.action === 'library.create');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].payload.kind, kind);
+    assert.equal(calls[0].payload.title, en.untitled[kind]);
+    const created = f.records().find(record => record.kind === kind);
+    assert.equal(f.actions.find(call => call.action === 'view.openTab')?.payload.id, created.id);
+    assert.equal(f.actions.find(call => call.action === 'editor.document')?.payload.id, created.id);
+  }
+});
+
+test('All heading, All empty action and the global sidebar retain the universal creation picker', async t => {
+  for (const surface of ['heading', 'empty', 'sidebar']) {
+    const f = await start(t, { records: [] });
+    if (surface === 'sidebar') { f.click('category', { category: 'dashboard' }); await setImmediate(); }
+    const markup = surface === 'sidebar'
+      ? f.node('.design-sidebar').innerHTML.match(/<button\b[^>]*class="sidebar-item sidebar-create"[^>]*>[\s\S]*?<\/button>/)?.[0]
+      : primaryCreationButton(surface === 'heading' ? f.node('.workspace-panel').innerHTML : renderedRecords(f)).markup;
+    assert.ok(markup);
+    assert.match(markup, /data-action="create"/);
+    assert.match(markup, /aria-haspopup="menu"/);
+    f.click('create'); await setImmediate();
+    const menu = f.node('.menu-layer').innerHTML;
+    for (const kind of creationKinds) assert.ok(menu.includes(`data-value="${kind}"`));
+    assert.match(menu, /Import artwork/);
+    assert.equal(f.actions.some(call => call.action === 'library.create'), false);
+  }
+});
+
+test('direct category creation remains single-flight and preserves search and favorites on return', async t => {
+  let release;
+  const f = await start(t, { records: [], onCreate: payload => new Promise(resolve => { release = () => resolve({ id: '33333333-3333-4333-8333-333333333333', kind: payload.kind, title: payload.title, contentStatus: 'ok' }); }) });
+  f.click('category', { category: 'dashboard' }); await setImmediate();
+  f.search('needle'); f.click('filter', { value: 'favorites' });
+  assert.match(renderedRecords(f), /No matching designs/);
+  assert.doesNotMatch(renderedRecords(f), /data-action="create-kind"/);
+  const control = primaryCreationButton(f.node('.workspace-panel').innerHTML);
+  f.click(control.action, { value: control.value }); f.click(control.action, { value: control.value });
+  await setImmediate();
+  assert.equal(f.actions.filter(call => call.action === 'library.create').length, 1);
+  assert.equal(f.actions.some(call => call.action === 'view.openTab'), false);
+  release(); await setImmediate();
+  f.click('activate-tab', { id: 'library' }); await setImmediate();
+  const panel = f.node('.workspace-panel').innerHTML;
+  assert.match(panel, /<h1>Dashboards<\/h1>/);
+  assert.match(panel, /value="needle"/);
+  assert.match(panel, /class="filter-tab is-selected" data-action="filter" data-value="favorites"/);
+});
+
+test('creation from the global picker keeps the current editor save barrier before navigation', async t => {
+  for (const failSave of [false, true]) {
+    const f = await start(t, { active: true, failSave });
+    f.timeline.length = 0; f.actions.length = 0; f.editorCalls.length = 0;
+    f.click('create'); f.click('create-kind', { value: 'dashboard' }); await setImmediate();
+    assert.equal(f.actions.filter(call => call.action === 'library.create').length, 1);
+    assert.ok(f.editorCalls.includes('flush'));
+    if (failSave) {
+      assert.equal(f.actions.some(call => call.action === 'view.openTab'), false);
+      assert.equal(f.editorCalls.includes('dispose'), false);
+    } else {
+      assert.ok(f.timeline.indexOf('saved') < f.timeline.indexOf('view.openTab'));
+      assert.ok(f.editorCalls.includes('dispose'));
+    }
   }
 });
 

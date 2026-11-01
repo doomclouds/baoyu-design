@@ -1,5 +1,36 @@
 # Codex Design library implementation
 
+## 0.5.1 request and category corrections (prepared)
+
+Native draft text includes the exact immutable request URI before the bounded
+comment summary, alongside its matching resource attachment. Every newly sent
+request, including active-turn steering, requires its own read/accept/dispatch
+before a child is reused or receives a follow-up. An earlier request cannot
+authorize a new comment. Missing exact IDs require re-adding from the editor;
+the agent must not scan or infer an unsent draft.
+
+The operator confirmed the installed 0.5.0 Add to chat/native Send workflow.
+Post-restart live MCP reads and an actual completed request with a saved reply
+were independently observed. A second steered message skipped its own receipt
+path; the source fix makes the identifier explicit but does not claim that the
+host dropped an attachment or that prompt compliance is structurally enforced.
+
+Non-comment AI actions in all four editors now use the canonical request/draft
+path instead of the legacy send-or-copy fallback. Exact diagnostic files,
+slide/artboard identities and errors are retained; a saved append failure
+retries the existing comment. Purposeful Copy commands and ordinary standalone
+delivery keep their original behavior. The request audit is recorded in
+[AI-REQUEST-ACCEPTANCE.md](AI-REQUEST-ACCEPTANCE.md).
+
+Specific library categories create their own type directly from the heading
+and empty state. All-page and sidebar global creation retain the type menu.
+The staged code passed 340 tests and portable relocation with 179 owned files.
+This prepared revision has not replaced installed 0.5.0. The user's full-row
+native-header requirement is still under separate host-level investigation;
+neither removing inner controls nor filling the row with file tabs is accepted
+as that fix. Comment pins retain the upstream author avatar by explicit user
+choice.
+
 ## 0.5.0 global native draft workflow
 
 The confirmed design is a global Codex Design workspace with a host-managed

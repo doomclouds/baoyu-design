@@ -54,7 +54,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, app 
       const result = await extensions.message.send({
         role: 'user',
         content: [
-          { type: 'text', text: `Apply the attached Codex Design edit request for ${request.title}.\n${request.summary.slice(0, 1000)}${request.summary.length > 1000 ? '\nRead the attached request for the full comment.' : ''}` },
+          { type: 'text', text: `Apply the attached Codex Design edit request for ${request.title}.\nRequest: ${request.uri}\n${request.summary.slice(0, 1000)}${request.summary.length > 1000 ? '\nRead the attached request for the full comment.' : ''}` },
           { type: 'resource_link', uri: request.uri, name: `edit-request-${request.requestId}.json`, title: request.title, mimeType: 'application/json' },
         ],
         _meta: { 'openai/message': { target: 'active', send: false } },

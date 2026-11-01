@@ -275,16 +275,24 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     elements.panel.setAttribute('aria-labelledby', 'tab-' + state.view.activeTabId);
     restoreFocus(focused);
   }
+  function createButton(empty = false) {
+    const kind = KINDS.includes(state.category) ? state.category : null;
+    return '<button type="button" class="button primary" data-action="' + (kind ? 'create-kind' : 'create') + '"'
+      + (kind ? ' data-value="' + kind + '"' : ' data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"')
+      + disabled('library.create') + '>' + (kind ? icon(kind) : empty ? icon('plus') : '')
+      + escape(t(kind ? 'newArtwork.' + kind : empty ? 'createArtwork' : 'create')) + (!kind && !empty ? icon('chevron') : '') + '</button>';
+  }
   function renderEmpty(records) {
     let heading = 'emptyTitle', body = 'emptyBody', symbol = 'library';
     if (state.error) { heading = 'libraryUnavailable'; body = 'bridgeUnavailable'; symbol = 'warning'; }
     else if (state.query) { heading = 'emptySearch'; body = 'emptySearchBody'; symbol = 'search'; }
     else if (state.category === 'trash') { heading = 'emptyTrash'; body = 'emptyTrashBody'; symbol = 'trash'; }
     else if (state.favorites) { heading = 'emptyFavorites'; body = 'emptyFavoritesBody'; symbol = 'star'; }
+    else if (KINDS.includes(state.category)) { heading = 'emptyCategory.' + state.category + '.title'; body = 'emptyCategory.' + state.category + '.body'; symbol = state.category; }
     return '<section class="library-empty"><div class="empty-symbol">' + icon(symbol) + '</div><h2>' + escape(t(heading)) + '</h2><p>' + escape(t(body)) + '</p>'
       + (state.query ? '<button type="button" class="button secondary" data-action="clear-search">' + escape(t('clearSearch')) + '</button>'
         : state.error ? '<button type="button" class="button secondary" data-action="refresh"' + disabled('library.list') + '>' + icon('refresh') + escape(t('retry')) + '</button>'
-          : state.category !== 'trash' && !state.favorites ? '<button type="button" class="button primary" data-action="create"' + disabled('library.create') + '>' + icon('plus') + escape(t('newDesign')) + '</button>' : '') + '</section>';
+          : state.category !== 'trash' && !state.favorites ? createButton(true) : '') + '</section>';
   }
   function recordActions(record) {
     if (isDeleted(record)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape(record.id) + '"' + (busy('purge-trash') ? ' disabled' : disabled('library.restore')) + '>' + icon('restore') + escape(t('restore')) + '</button>'
@@ -340,7 +348,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const categoryTitle = t(state.category);
     elements.panel.classList.add('library-panel');
     elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape(t('libraryNavigation')) + '" aria-expanded="' + state.mobileSidebar + '">' + icon('menu') + '</button><div><h1>' + escape(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon('search') + '<span class="sr-only">' + escape(t('search')) + '</span><input type="search" class="library-search" placeholder="' + escape(t('searchKind', { kind: categoryTitle })) + '" value="' + escape(state.query) + '" autocomplete="off"></label>'
-      + (state.category !== 'trash' ? '<button type="button" class="button primary" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled('library.create') + '>' + escape(t('create')) + icon('chevron') + '</button>' : '') + '</div></header>'
+      + (state.category !== 'trash' ? createButton() : '') + '</div></header>'
       + '<div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape(t('favorites')) + '"><button type="button" class="filter-tab ' + (!state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape(t('all')) + '</button><button type="button" class="filter-tab ' + (state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape(t('favorites')) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape(t('sort')) + '">' + icon('sort') + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === 'grid' ? 'is-selected' : '') + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === 'grid') + '" aria-label="' + escape(t('gridView')) + '">' + icon('grid') + '</button><button type="button" class="icon-button ' + (state.layout === 'list' ? 'is-selected' : '') + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === 'list') + '" aria-label="' + escape(t('listView')) + '">' + icon('list') + '</button></div></div>' + (state.category === 'trash' ? '<div class="trash-selection-bar"></div>' : '') + '<div class="records-container"></div></section>';
     renderRecords();
   }

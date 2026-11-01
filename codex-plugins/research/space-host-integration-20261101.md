@@ -62,18 +62,75 @@ acceptable plugin implementation.
 
 ### 2. The empty top strip with the plus button is owned by the host
 
-`view-c43892ae83d7.js.readable.txt:288-298` destructures an internal React
-`mainToolbar` prop in `McpWorkspace`.
-At `377-386`, an undefined prop causes the default toolbar to render a new-chat
-button plus current-chat title. The screenshot's upper empty strip is this
-native workspace toolbar, outside the plugin iframe.
+The user clarified that the entire native workspace tab row must be absent:
+the Codex Design chip, plus button, overflow menu and layout controls, not just
+an empty Chat toolbar. There are separate control-registration, secondary
+toolbar and unified-tab-row paths. The earlier three-prop null-forwarding
+proposal addresses only the secondary toolbar; it is not a fix for this full
+requirement.
 
-The global view path is assembled in
-`view-page-9c174d682b3b.js.readable.txt:350-415`; it does not accept a third-party
-metadata option to pass a replacement toolbar. The public UI metadata schema has
-no such field. Plugin CSS cannot remove this strip across the sandbox boundary.
-Remove redundant bars *inside* Codex Design, but do not claim that hides the
-native toolbar.
+`view-page-9c174d682b3b.js.readable.txt:385-390` calls `McpWorkspace` with
+`view`, `mcpAppId`, `deepLink` and `session`, without a toolbar override.
+`view-c43892ae83d7.js.readable.txt:294,381-390` accepts an internal
+`mainToolbar` prop and uses its undefined/default case to register a new-chat
+action and current-chat title. However, the `mt` workspace frame at `250-253`
+does not forward that prop into `PersistentLayout`. Therefore setting only
+`McpWorkspace.mainToolbar = null` is not sufficient evidence of a height fix.
+
+The secondary Chat-toolbar reservation follows this chain:
+
+1. `persistent-layout-f29542da2f2c.js.readable.txt:13,45` accepts and forwards
+   `mainToolbar` to `ThreadAppShellChrome`; `49-51` separately selects the
+   `thread-edge-scroll` content layout.
+2. `thread-app-shell-chrome-acabd0086f14.js.readable.txt:2197-2212` creates the
+   default `Ms` Chat toolbar when `mainToolbar` is undefined. Explicit `null`
+   avoids that default. At `2346`, its result reaches
+   `UnifiedTabStrip.mainToolbar`.
+3. `app-primary-998934e837fc.js.readable.txt:26234` enables the main toolbar
+   only when `Te.mainToolbar != null` and the other shell placement predicates
+   hold. `26502-26520` then creates the fixed-height wrapper using
+   `--app-shell-header-height` / `--height-toolbar`. Delivering explicit null
+   through the full chain removes this secondary wrapper and its controls.
+
+The whole native row has an independent path. At
+`thread-app-shell-chrome-acabd0086f14.js.readable.txt:2332-2353`, the shell
+registers `UnifiedTabStrip` with its own `children` node and `isVisible`
+predicate. At `2359-2377`, its native tab portal is populated separately; at
+`2405-2418`, `unified-workspace-controls` is registered as a separate header
+action. `app-primary-998934e837fc.js.readable.txt:22244-22251` renders
+`U.mode === 'full' ? U.node : null` independently of `U.mainToolbar`.
+Consequently even fully forwarded `mainToolbar: null` does not remove the
+Codex Design home tab, native tab strip, plus button and all header controls.
+
+No matching user-facing layout preference was established. The inspected
+`Hide tabs` action explicitly hides content and leaves Chat visible
+(`app-initial-4267e52fe5b0.js.readable.txt:298001-298003`), which is a different
+outcome. The single-home-tab automatic hide predicate at `196976-196984`
+refuses content-primary workspaces. MCP global routes choose
+`primarySurface: 'content'` (`app-primary-998934e837fc.js.readable.txt:125783-125795`),
+and that route field is not public plugin metadata.
+
+Space uses a different composition. `app-runtime-e4b4e09bd942.js.readable.txt:2321`
+loads `SpacesLandingRoute`, whose `landing-route-ac2fb68c4c3e.js.readable.txt:152-160`
+selects `SlateSpacePage`. Its nonembedded path registers
+`MainContentLayout layout="custom-titlebar"` at
+`slate-page-a8ff51e2333c.js.readable.txt:2453-2455`, with its own library header.
+`app-primary-998934e837fc.js.readable.txt:22155` suppresses the generic floating
+page-header fallback for this layout; it does not itself disable an independently
+registered `UnifiedTabStrip.node`. Space also has its own
+`SpacesWorkspaceShell`, not the MCP `PersistentLayout` composition. Its route
+selects the primary surface differently. The custom-titlebar, secondary-toolbar
+and unified-tab-row predicates are distinct; changing one is not proof that the
+others disappear.
+
+The installed `@openai/mcp-extensions@0.2.1` strict metadata schema exposes
+global/thread/file entrypoints and display modes, but no native toolbar field.
+Fullscreen, widget border preferences and CSS inside the plugin cannot supply
+the missing host chrome contract. There is no verified plugin-only switch in this
+host version. A corrected host chrome/API proposal, its portable release
+boundary and required actual-host checks are documented in
+[native-shell-layout-proposal.md](native-shell-layout-proposal.md). No host
+modification or native visual pass is claimed here.
 
 ### 3. Host typography and theme inheritance are supported and were missing
 

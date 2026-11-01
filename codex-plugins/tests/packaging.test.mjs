@@ -293,7 +293,12 @@ test('all five generated skills use Codex routing, validation, and supported ent
       assert.match(text, /Native Add to chat/);
       assert.match(text, /does not enqueue a worker, start a model, select a user chat, or send the draft/);
       assert.match(text, /The user presses the native Send button/);
+      assert.match(text, /visible `Request: codex-design:\/\/edit-requests\/<UUID>` line/);
       assert.match(text, /design_request.*read and accept only those request IDs/);
+      assert.match(text, /every newly sent request, including active-turn steering/);
+      assert.match(text, /Before forwarding a new request to any child, read\/accept that request and run its own dispatchCommand/);
+      assert.match(text, /A follow-up or child reuse never replaces this receipt and dispatch step/);
+      assert.match(text, /lacks its exact immutable URI\/ID, ask the user to Add to chat again/);
       assert.match(text, /Do not scan prepared drafts and accept them automatically/);
       assert.match(text, /dispatchCommand.*actual native parent environment/);
       assert.match(text, /cannot interrupt a native agent/);

@@ -23675,6 +23675,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     clearSearch: "Clear search",
     emptyTrash: "The trash is empty",
     emptyTrashBody: "Designs you move to the trash can be restored here.",
+    createArtwork: "Create artwork",
+    newArtwork: { slides: "New slides", design: "New design", "design-system": "New design system", dashboard: "New dashboard" },
+    emptyCategory: {
+      slides: { title: "Create your first slide deck", body: "Build presentations and visual stories." },
+      design: { title: "Create your first design", body: "Explore ideas on an editable canvas." },
+      "design-system": { title: "Create your first design system", body: "Define tokens, components, and reusable guidance." },
+      dashboard: { title: "Create your first dashboard", body: "Bring metrics, charts, and data together." }
+    },
     newDesign: "New design",
     newKind: "New {{kind}}",
     titleLabel: "Name",
@@ -24666,6 +24674,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       elements.panel.setAttribute("aria-labelledby", "tab-" + state.view.activeTabId);
       restoreFocus(focused);
     }
+    function createButton(empty = false) {
+      const kind = KINDS2.includes(state.category) ? state.category : null;
+      return '<button type="button" class="button primary" data-action="' + (kind ? "create-kind" : "create") + '"' + (kind ? ' data-value="' + kind + '"' : ' data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"') + disabled("library.create") + ">" + (kind ? icon(kind) : empty ? icon("plus") : "") + escape2(t2(kind ? "newArtwork." + kind : empty ? "createArtwork" : "create")) + (!kind && !empty ? icon("chevron") : "") + "</button>";
+    }
     function renderEmpty(records) {
       let heading = "emptyTitle", body = "emptyBody", symbol3 = "library";
       if (state.error) {
@@ -24684,8 +24696,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         heading = "emptyFavorites";
         body = "emptyFavoritesBody";
         symbol3 = "star";
+      } else if (KINDS2.includes(state.category)) {
+        heading = "emptyCategory." + state.category + ".title";
+        body = "emptyCategory." + state.category + ".body";
+        symbol3 = state.category;
       }
-      return '<section class="library-empty"><div class="empty-symbol">' + icon(symbol3) + "</div><h2>" + escape2(t2(heading)) + "</h2><p>" + escape2(t2(body)) + "</p>" + (state.query ? '<button type="button" class="button secondary" data-action="clear-search">' + escape2(t2("clearSearch")) + "</button>" : state.error ? '<button type="button" class="button secondary" data-action="refresh"' + disabled("library.list") + ">" + icon("refresh") + escape2(t2("retry")) + "</button>" : state.category !== "trash" && !state.favorites ? '<button type="button" class="button primary" data-action="create"' + disabled("library.create") + ">" + icon("plus") + escape2(t2("newDesign")) + "</button>" : "") + "</section>";
+      return '<section class="library-empty"><div class="empty-symbol">' + icon(symbol3) + "</div><h2>" + escape2(t2(heading)) + "</h2><p>" + escape2(t2(body)) + "</p>" + (state.query ? '<button type="button" class="button secondary" data-action="clear-search">' + escape2(t2("clearSearch")) + "</button>" : state.error ? '<button type="button" class="button secondary" data-action="refresh"' + disabled("library.list") + ">" + icon("refresh") + escape2(t2("retry")) + "</button>" : state.category !== "trash" && !state.favorites ? createButton(true) : "") + "</section>";
     }
     function recordActions(record3) {
       if (isDeleted(record3)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape2(record3.id) + '"' + (busy("purge-trash") ? " disabled" : disabled("library.restore")) + ">" + icon("restore") + escape2(t2("restore")) + '</button><button type="button" class="button trash-delete-button" data-action="purge-dialog" data-id="' + escape2(record3.id) + '" aria-label="' + escape2(t2("deletePermanentlyTitle", { title: record3.title })) + '"' + (busy("purge-trash") ? " disabled" : disabled("library.purge")) + ">" + escape2(t2("deletePermanently")) + "</button>";
@@ -24736,7 +24752,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     function renderLibrary() {
       const categoryTitle = t2(state.category);
       elements.panel.classList.add("library-panel");
-      elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape2(t2("libraryNavigation")) + '" aria-expanded="' + state.mobileSidebar + '">' + icon("menu") + "</button><div><h1>" + escape2(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon("search") + '<span class="sr-only">' + escape2(t2("search")) + '</span><input type="search" class="library-search" placeholder="' + escape2(t2("searchKind", { kind: categoryTitle })) + '" value="' + escape2(state.query) + '" autocomplete="off"></label>' + (state.category !== "trash" ? '<button type="button" class="button primary" data-action="create" data-menu-trigger="true" aria-haspopup="menu" aria-expanded="false"' + disabled("library.create") + ">" + escape2(t2("create")) + icon("chevron") + "</button>" : "") + '</div></header><div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape2(t2("favorites")) + '"><button type="button" class="filter-tab ' + (!state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape2(t2("all")) + '</button><button type="button" class="filter-tab ' + (state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape2(t2("favorites")) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape2(t2("sort")) + '">' + icon("sort") + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === "grid" ? "is-selected" : "") + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === "grid") + '" aria-label="' + escape2(t2("gridView")) + '">' + icon("grid") + '</button><button type="button" class="icon-button ' + (state.layout === "list" ? "is-selected" : "") + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === "list") + '" aria-label="' + escape2(t2("listView")) + '">' + icon("list") + "</button></div></div>" + (state.category === "trash" ? '<div class="trash-selection-bar"></div>' : "") + '<div class="records-container"></div></section>';
+      elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape2(t2("libraryNavigation")) + '" aria-expanded="' + state.mobileSidebar + '">' + icon("menu") + "</button><div><h1>" + escape2(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon("search") + '<span class="sr-only">' + escape2(t2("search")) + '</span><input type="search" class="library-search" placeholder="' + escape2(t2("searchKind", { kind: categoryTitle })) + '" value="' + escape2(state.query) + '" autocomplete="off"></label>' + (state.category !== "trash" ? createButton() : "") + '</div></header><div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape2(t2("favorites")) + '"><button type="button" class="filter-tab ' + (!state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape2(t2("all")) + '</button><button type="button" class="filter-tab ' + (state.favorites ? "is-selected" : "") + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape2(t2("favorites")) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape2(t2("sort")) + '">' + icon("sort") + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === "grid" ? "is-selected" : "") + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === "grid") + '" aria-label="' + escape2(t2("gridView")) + '">' + icon("grid") + '</button><button type="button" class="icon-button ' + (state.layout === "list" ? "is-selected" : "") + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === "list") + '" aria-label="' + escape2(t2("listView")) + '">' + icon("list") + "</button></div></div>" + (state.category === "trash" ? '<div class="trash-selection-bar"></div>' : "") + '<div class="records-container"></div></section>';
       renderRecords();
     }
     async function openEditor(id, force = false) {
@@ -43383,7 +43399,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.5.0";
+  var PLUGIN_UI_VERSION = "0.5.1";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
@@ -43479,6 +43495,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           role: "user",
           content: [
             { type: "text", text: `Apply the attached Codex Design edit request for ${request.title}.
+Request: ${request.uri}
 ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the attached request for the full comment." : ""}` },
             { type: "resource_link", uri: request.uri, name: `edit-request-${request.requestId}.json`, title: request.title, mimeType: "application/json" }
           ],

@@ -98,7 +98,7 @@ test('native comments append an immutable request to the active editable draft w
   assert.deepEqual(f.requests.filter(request => request.method === 'ui/message').map(request => request.params), [{
     role: 'user',
     content: [
-      { type: 'text', text: 'Apply the attached Codex Design edit request for Nimbus.\nIncrease the heading contrast.' },
+      { type: 'text', text: `Apply the attached Codex Design edit request for Nimbus.\nRequest: ${commentDraft.uri}\nIncrease the heading contrast.` },
       { type: 'resource_link', uri: commentDraft.uri, name: `edit-request-${commentDraft.requestId}.json`, title: 'Nimbus', mimeType: 'application/json' },
     ],
     _meta: { 'openai/message': { target: 'active', send: false } },
@@ -109,6 +109,35 @@ test('native comments append an immutable request to the active editable draft w
   assert.equal(bridge.canDraftComments, false);
   assert.equal(bridge.capabilities.canDraftComments, false);
   await assert.rejects(bridge.draftComment(commentDraft), { code: 'BRIDGE_UNAVAILABLE' });
+});
+
+test('each native draft retains its own immutable URI in visible text before a bounded long comment', async t => {
+  const f = host(t, { hostCapabilities: { experimental: { 'openai/message': {} } } });
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  const longSummary = 'Distinct comment content. '.repeat(80) + 'UNABRIDGED-COMMENT-END';
+  const drafts = [commentDraft, { ...commentDraft, requestId: secondId,
+    uri: `codex-design://edit-requests/${secondId}`, summary: longSummary }];
+  for (const draft of drafts) await bridge.draftComment(draft);
+  const messages = f.requests.filter(request => request.method === 'ui/message').map(request => request.params);
+  assert.equal(messages.length, 2);
+  for (const [index, message] of messages.entries()) {
+    const visible = message.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
+    const attachment = message.content.find(item => item.type === 'resource_link');
+    const uriLine = visible.match(/^Request: (codex-design:\/\/edit-requests\/[0-9a-f-]+)$/m);
+    assert.equal(uriLine?.[1], drafts[index].uri);
+    assert.equal(attachment.uri, uriLine[1]);
+    assert.equal(attachment.name, `edit-request-${drafts[index].requestId}.json`);
+    assert.ok(visible.indexOf(uriLine[0]) < visible.indexOf(drafts[index].summary.slice(0, 60)));
+    assert.deepEqual(message._meta, { 'openai/message': { target: 'active', send: false } });
+  }
+  assert.notEqual(messages[0].content[0].text, messages[1].content[0].text);
+  assert.ok(messages[1].content[0].text.includes(longSummary.slice(0, 1000)));
+  assert.ok(!messages[1].content[0].text.includes('UNABRIDGED-COMMENT-END'));
+  assert.match(messages[1].content[0].text, /Read the attached request for the full comment\.$/);
+  assert.ok(messages[1].content[0].text.length < 1300);
+  assert.equal(f.calls().length, 0);
+  assert.equal(f.requests.some(request => request.method === 'sampling/createMessage' || request.method === 'ui/update-model-context'), false);
 });
 
 test('native draft capability requires the negotiated OpenAI message extension and never falls back', async t => {
