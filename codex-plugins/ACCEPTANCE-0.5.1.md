@@ -205,9 +205,10 @@ URL, `codex/plugin` ref and release code commit.
 A fresh real Desktop app-server discovered five enabled skills, six MCP tools,
 the global entrypoint and `ui://codex-design/0.5.1/library`, without plugin
 diagnostics. Its successful discovery is separate from the current long-lived
-chat connection, which still returned **Transport closed** after old MCP
-replacement. That current-chat failure is retained; it needs normal reconnect
-or restart before the new request/steering operator gate can pass.
+chat connection, which initially returned **Transport closed** after old MCP
+replacement. That failure is retained. The user then restarted Codex; direct
+current-chat reads and the first native operator request passed afterwards,
+as recorded below. The later successful reads do not erase the initial failure.
 
 ### Actual installed UI observations
 
@@ -251,9 +252,10 @@ an absolute absence of retry. Its exact continuing conflict path is not yet
 fully established. A separate unpublished repair branch is preparing a safe
 editor lifecycle change; it does not alter the already published 0.5.1 bytes.
 
-Native Slides/Design System controls, current-chat Add to chat/Send/steering,
-and complete save/reopen remain pending. The actual UI actions above must not
-be expanded into an all-features/native-operator pass.
+Targeted native Slides/Design System controls and save/reopen now have the
+additional evidence below. Active-turn steering, worker reuse and complete
+0.5.2 repair save/reopen remain pending. These actual UI actions must not be
+expanded into an all-features/native-operator pass.
 
 Retained evidence includes `codex-design-0.5.1-marketplace-upgrade.txt`,
 `codex-design-0.5.1-install-first-access-denied.txt`,
@@ -265,3 +267,109 @@ Retained evidence includes `codex-design-0.5.1-marketplace-upgrade.txt`,
 `codex-design-0.5.1-native-export-saved.png`,
 `codex-design-0.5.1-native-export-result.json`, and
 `codex-design-0.5.1-native-canvas-save-conflict.png` in the local archive.
+
+## Post-restart request and selected-text acceptance
+
+After the user's normal restart, this same chat successfully called installed
+`design_read` routes for view, artwork metadata and content-only references.
+The read-only reference carried no mounted UI; requesting `comments.json`
+through the content route was refused with `CONTENT_ONLY`.
+
+A separate pre-named disposable canvas saved its first artboard and the text
+`Native QA original` without prior active Rename. The text toolbar's Properties
+action opened the actual selected-text controls. This successful control case
+narrows the earlier failure; it does not pass the Rename case. The live UI also
+temporarily called a newly CLI-created artwork missing despite a valid current
+MCP record. Refreshing Library recovered it; 0.5.2 contains a separate metadata
+hydration repair that is not yet installed.
+
+An object-located comment, with Add to chat selected, staged an immutable
+request and attachment in the real native composer. Before the user's Send,
+the worker journal had no pending/active job or registered child. No native
+Send was automated. After the user sent request
+`f5b1c29e-43eb-4313-b9c5-9e9599edfc26`, the real native parent read, accepted
+and dispatched that request and created child
+`01a199c8-d2c6-7dc3-986c-16e080e86dd8`. The parent used the host's default
+local Documents/Codex environment. The child created a before-edit snapshot,
+changed only the literal to `Native QA verified`, ran the checker and posted
+the canonical reply `Verified in Codex 0.5.1.`. Independent disk comparison
+confirmed an unchanged canvas index and an otherwise byte-identical component;
+the native UI displayed both the new text and the original comment's reply.
+
+The checker reported **one pre-existing missing DCLogic/data-dc-script error**.
+Execution and reply passed; structural checking did not. Both the raw upstream
+and installed blank factory produce that incomplete document, so no stripping
+by the Codex adapter is claimed. The text-only request was respected. A separate
+0.5.2 source repair adds the contract only to generated blank artboards and
+keeps their preview dimensions in sync; it does not alter these installed bytes.
+
+The native compact composer overlapped a long comment's lower controls. Panning
+the canvas exposed them for this test. A native-only comment viewport repair is
+prepared for 0.5.2, with an explicit limit: public safe-area hints do not guarantee
+the geometry of a long native input draft. A second request asking the same child
+to repair the QA document and finish listening is staged, awaiting the user's
+separate Send. No unsent request has been accepted or counted as worker reuse.
+
+Evidence: `codex-design-0.5.1-native-operator-result.json`,
+`codex-design-0.5.1-native-no-rename-baseline.png`,
+`codex-design-0.5.1-native-text-properties.png`,
+`codex-design-0.5.1-native-comment-completed.png` and
+`codex-design-0.5.1-native-canonical-reply.png` in the local acceptance archive.
+
+## Additional native Slides, Design System and Trash checks
+
+These checks used the actually installed 0.5.1 in Codex. They did not install
+or validate the separate 0.5.2 candidate.
+
+### Slides Properties, text save and same-artwork reopen
+
+The Slides category's **New slides** action directly created artwork
+`b6df303a-1e17-4e2a-8a49-5398b2e787e8`, without Rename. Its actual Properties
+panel opened. The Text tool accepted `Native slides QA`, and the edit saved to
+`project/slides/cover.html` with SHA-256
+`39A346C72B3B24311520D51F3A6DB069069FB6EDE79ECD38C130FF2D52E1D07A`.
+Closing its artwork Tab removed that Tab. Opening it again from Recent showed
+the same text under the same artwork ID, and the component hash was unchanged.
+
+The original checker returned **problems: 0**, with a default-font warning
+retained. This establishes this structural/save/reopen case; it is not a
+complete visual or typography-quality check.
+
+### Design System token save and reopen
+
+The Design System category's **New design system** action directly created
+artwork `302c2803-cc94-4618-b590-b306a7ddc2c6`. Colors and the Add color dialog
+worked, and the token `qa/qa-gray` with value `#888888` saved. Its color-value
+editing popover opened. The original checker returned **problems: 0**.
+
+A long unsent native draft obscured the dialog's Add button. The first click
+did not save a token and is not counted as a successful Add. Temporarily
+minimizing the native chat exposed the control; a later explicit Add succeeded.
+The native draft was preserved and was not sent.
+
+Closing and reopening this same artwork showed the saved token. The
+`project/tokens.json` SHA-256 was
+`98211697E210D7437D595BE0F16EA69A37AF7B20DC1E3E8789D62D64745D4372`
+before and after reopen.
+
+### QA-only Trash, cancelled permanent deletion and Restore
+
+Only that Design System QA artwork was moved to Trash after confirmation.
+Its active `library.get` returned `NOT_FOUND`, and its artwork Tab disappeared.
+Trash displayed the one QA artwork. Select all selected that one item; Delete
+selected opened the permanent-deletion confirmation. Cancel did not permanently
+delete it. Restore then returned the same UUID to the active library with
+`deleted: false`; the token file retained the SHA-256 recorded above. No
+permanent deletion is claimed as executed by this case.
+
+Screenshots retained in the local acceptance archive:
+`codex-design-0.5.1-native-slides-properties.png`,
+`codex-design-0.5.1-native-slides-edited.png`,
+`codex-design-0.5.1-native-slides-reopened.png`,
+`codex-design-0.5.1-native-ds-token.png`,
+`codex-design-0.5.1-native-ds-reopened.png`, and
+`codex-design-0.5.1-native-trash-confirmation.png`.
+
+These observations do not establish every export format, every editor control,
+or the 0.5.2 repairs as passed. The second native request still awaits the
+user's Send in its draft; it has not been accepted or counted as worker reuse.
