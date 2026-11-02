@@ -2,9 +2,9 @@
 // claude-design: local Artifact tool (prebuilt; do not edit).
 
 import { spawn } from "node:child_process";
-import fs9 from "node:fs";
-import fsp2 from "node:fs/promises";
-import path11 from "node:path";
+import fs11 from "node:fs";
+import fsp3 from "node:fs/promises";
+import path13 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 var BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
@@ -1477,15 +1477,15 @@ function normalizeCssLength(value, allowFullRadius) {
   return CSS_LENGTH_PATTERN.test(normalized) ? normalized : void 0;
 }
 var colorAliasTarget = (value) => value === void 0 ? void 0 : COLOR_ALIAS_PATTERN.exec(value)?.[1];
-function explainColorAliasError(token, themeId, baseThemeId, byName) {
-  const seen = /* @__PURE__ */ new Set([token.name]);
-  let current = token;
+function explainColorAliasError(token2, themeId, baseThemeId, byName) {
+  const seen = /* @__PURE__ */ new Set([token2.name]);
+  let current = token2;
   for (let index = 0; index <= TOKENS_LIMITS.colorAliasDepth; index++) {
     const target = colorAliasTarget(current.value[themeId] ?? current.value[baseThemeId]);
     if (target === void 0) return void 0;
     const entry = byName.get(target);
     if (entry === void 0) return { why: `${index === 0 ? "" : `reaches {${target}}, which `}names no color token`, own: index === 0 };
-    if (seen.has(target)) return { why: "is a cycle", own: target === token.name };
+    if (seen.has(target)) return { why: "is a cycle", own: target === token2.name };
     seen.add(target);
     current = entry;
   }
@@ -1496,30 +1496,30 @@ function removeInvalidColorAliases(themes, tokens, dropped) {
   for (; ; ) {
     const byName = new Map(tokens.map((t) => [t.name, t]));
     const items = [];
-    for (const token of tokens) {
+    for (const token2 of tokens) {
       for (const theme of themes) {
-        if (colorAliasTarget(token.value[theme.id]) === void 0) continue;
-        const error = explainColorAliasError(token, theme.id, baseThemeId, byName);
-        if (error !== void 0) items.push([token, theme.id, error.why, error.own]);
+        if (colorAliasTarget(token2.value[theme.id]) === void 0) continue;
+        const error = explainColorAliasError(token2, theme.id, baseThemeId, byName);
+        if (error !== void 0) items.push([token2, theme.id, error.why, error.own]);
       }
     }
     if (items.length === 0) return;
     const anyOwn = items.some((item) => item[3]);
-    for (const [token, themeId, why, own] of items) {
+    for (const [token2, themeId, why, own] of items) {
       if (anyOwn && !own) continue;
-      dropped.push(`color ${token.name} [${themeId}]: ${String(token.value[themeId])} ${why}`);
-      delete token.value[themeId];
+      dropped.push(`color ${token2.name} [${themeId}]: ${String(token2.value[themeId])} ${why}`);
+      delete token2.value[themeId];
     }
     for (let index = 0; index < tokens.length; index++) {
-      const token = tokens[index];
-      if (Object.hasOwn(token.value, baseThemeId)) continue;
-      const theme = themes.find((t) => Object.hasOwn(token.value, t.id));
+      const token2 = tokens[index];
+      if (Object.hasOwn(token2.value, baseThemeId)) continue;
+      const theme = themes.find((t) => Object.hasOwn(token2.value, t.id));
       if (theme === void 0) {
-        dropped.push(`color ${token.name}: no valid value`);
+        dropped.push(`color ${token2.name}: no valid value`);
         tokens.splice(index--, 1);
       } else {
-        token.value[baseThemeId] = token.value[theme.id];
-        delete token.value[theme.id];
+        token2.value[baseThemeId] = token2.value[theme.id];
+        delete token2.value[theme.id];
       }
     }
   }
@@ -1575,23 +1575,23 @@ function checkTokensText(text) {
     problems.push('color has both "tokens" and a legacy "groups"; only "tokens" is read');
   }
   if (sourceColorTokens.length > TOKENS_LIMITS.colors) problems.push(`color tokens capped at ${TOKENS_LIMITS.colors}; the rest are ignored`);
-  for (const token of sourceColorTokens) {
+  for (const token2 of sourceColorTokens) {
     if (colorTokens.length >= TOKENS_LIMITS.colors) break;
-    if (!isObject(token)) continue;
-    const name = typeof token.name === "string" ? token.name.trim().replace(/^--/, "") : "";
+    if (!isObject(token2)) continue;
+    const name = typeof token2.name === "string" ? token2.name.trim().replace(/^--/, "") : "";
     if (!TOKEN_NAME_PATTERN.test(name) || colorNames.has(name)) {
       dropped.push(`color ${JSON.stringify(name)}: bad or duplicate name`);
       continue;
     }
     const value = {};
-    if (isObject(token.value)) {
+    if (isObject(token2.value)) {
       for (const theme of themes) {
-        const normalized = Object.hasOwn(token.value, theme.id) ? normalizeColorOrAlias(token.value[theme.id]) : void 0;
+        const normalized = Object.hasOwn(token2.value, theme.id) ? normalizeColorOrAlias(token2.value[theme.id]) : void 0;
         if (normalized !== void 0) value[theme.id] = normalized;
-        else if (Object.hasOwn(token.value, theme.id)) dropped.push(`color ${name} [${theme.id}]: not a color value`);
+        else if (Object.hasOwn(token2.value, theme.id)) dropped.push(`color ${name} [${theme.id}]: not a color value`);
       }
     } else {
-      const normalized = normalizeColorOrAlias(token.value);
+      const normalized = normalizeColorOrAlias(token2.value);
       if (normalized !== void 0) value[baseThemeId] = normalized;
     }
     if (!Object.hasOwn(value, baseThemeId)) {
@@ -1676,10 +1676,10 @@ function checkTokensText(text) {
     const tokens = asArray(isObject(input) ? input.tokens : void 0);
     if (tokens.length > TOKENS_LIMITS.tokensPerFamily) problems.push(`${family} has ${tokens.length} tokens; at most ${TOKENS_LIMITS.tokensPerFamily} are read`);
     let count = 0;
-    for (const token of tokens) {
+    for (const token2 of tokens) {
       if (count >= TOKENS_LIMITS.tokensPerFamily) break;
-      if (!isObject(token)) continue;
-      const name = typeof token.name === "string" ? token.name.trim().replace(/^--/, "") : "";
+      if (!isObject(token2)) continue;
+      const name = typeof token2.name === "string" ? token2.name.trim().replace(/^--/, "") : "";
       const other = familyOf.get(name);
       if (!TOKEN_NAME_PATTERN.test(name) || other === family) {
         dropped.push(`${family} ${JSON.stringify(name)}: bad or duplicate name`);
@@ -1689,7 +1689,7 @@ function checkTokensText(text) {
         dropped.push(`${family} ${name}: a ${other} token already has that name (one --${name} across every family)`);
         continue;
       }
-      if (normalize(token.value, name) === void 0) {
+      if (normalize(token2.value, name) === void 0) {
         dropped.push(`${family} ${name}: bad value`);
         continue;
       }
@@ -2337,7 +2337,10 @@ function parseDoc(text) {
   const threads = data.threads.filter(
     (t) => isRecord4(t) && typeof t.id === "string" && typeof t.anchor === "string" && typeof t.label === "string" && (t.status === "open" || t.status === "resolved") && Array.isArray(t.messages) && t.messages.every((m) => isRecord4(m) && typeof m.text === "string" && isRecord4(m.author) && (m.author.kind === "user" || m.author.kind === "agent"))
   );
-  for (const t of threads) if (!isRecord4(t.location)) t.location = {};
+  for (const t of threads) {
+    if (!isRecord4(t.location)) t.location = {};
+    for (const m of t.messages) if (m.author.principal !== void 0 && typeof m.author.principal !== "string") delete m.author.principal;
+  }
   return { version: COMMENTS_VERSION, threads };
 }
 var formatDoc = (doc) => `${JSON.stringify(doc, null, 2)}
@@ -2471,6 +2474,7 @@ import fs8 from "node:fs";
 import path10 from "node:path";
 var STATE_FILE = ".artifact-server.json";
 var LOG_FILE = ".artifact-server.log";
+var EXPORTS_DIR = "exports";
 function readState(root) {
   try {
     return JSON.parse(fs8.readFileSync(path10.join(root, STATE_FILE), "utf8"));
@@ -2496,6 +2500,386 @@ async function runningServer(root, kind, probe) {
     return null;
   }
 }
+var DEFAULT_PORTS = { slides: 4710, design: 4720, "design-system": 4730, dashboard: 4740, docs: 4750, motion: 4760 };
+
+import fs10 from "node:fs";
+import fsp2 from "node:fs/promises";
+import path12 from "node:path";
+import { promisify } from "node:util";
+import zlib from "node:zlib";
+
+import crypto from "node:crypto";
+import fs9 from "node:fs";
+import path11 from "node:path";
+var GUEST_ROLES = ["editor", "commenter", "viewer"];
+var isGuestRole = (value) => typeof value === "string" && GUEST_ROLES.includes(value);
+var SHARING_FILE = ".sharing.json";
+var MAX_GUESTS = 200;
+var MAX_NAME = 40;
+var token = (bytes = 18) => crypto.randomBytes(bytes).toString("base64url");
+var isRecord5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function fresh() {
+  return { lan: false, links: { editor: { token: token(), on: true }, commenter: { token: token(), on: true }, viewer: { token: token(), on: true } }, guests: [] };
+}
+function cleanName(raw) {
+  const name = typeof raw === "string" ? raw.replace(/[\u0000-\u001f\u007f@<>]/g, "").replace(/\s+/g, " ").trim() : "";
+  return [...name].slice(0, MAX_NAME).join("");
+}
+var Sharing = class _Sharing {
+  file;
+  state;
+  constructor(root) {
+    this.file = path11.join(root, SHARING_FILE);
+    this.state = _Sharing.read(this.file);
+  }
+  static read(file) {
+    let raw;
+    try {
+      raw = JSON.parse(fs9.readFileSync(file, "utf8"));
+    } catch {
+      return fresh();
+    }
+    const state = fresh();
+    if (!isRecord5(raw)) return state;
+    state.lan = raw.lan === true;
+    if (typeof raw.port === "number" && Number.isInteger(raw.port) && raw.port > 0 && raw.port < 65536) state.port = raw.port;
+    if (isRecord5(raw.links)) {
+      for (const role of GUEST_ROLES) {
+        const link = raw.links[role];
+        if (isRecord5(link) && typeof link.token === "string" && link.token.length >= 16) state.links[role] = { token: link.token, on: link.on !== false };
+      }
+    }
+    if (Array.isArray(raw.guests)) {
+      for (const g of raw.guests) {
+        if (!isRecord5(g) || typeof g.id !== "string" || typeof g.secret !== "string" || !isGuestRole(g.role) || typeof g.link !== "string") continue;
+        state.guests.push({
+          id: g.id,
+          secret: g.secret,
+          name: cleanName(g.name) || "Guest",
+          role: g.role,
+          link: g.link,
+          joined: typeof g.joined === "string" ? g.joined : (/* @__PURE__ */ new Date(0)).toISOString(),
+          ...typeof g.seen === "string" ? { seen: g.seen } : {}
+        });
+      }
+    }
+    return state;
+  }
+  save() {
+    const tmp = `${this.file}.${process.pid}.tmp`;
+    fs9.writeFileSync(tmp, `${JSON.stringify(this.state, null, 2)}
+`, { mode: 384 });
+    fs9.renameSync(tmp, this.file);
+  }
+  /** The role whose link has this token, while that link is on. */
+  linkRole(tokenGiven) {
+    for (const role of GUEST_ROLES) {
+      const link = this.state.links[role];
+      if (link.on && tokenGiven.length === link.token.length && crypto.timingSafeEqual(Buffer.from(tokenGiven), Buffer.from(link.token))) return role;
+    }
+    return null;
+  }
+  /** The guest a cookie names, if they still have access (their link on and not reset). */
+  guest(secret) {
+    if (!secret) return null;
+    const guest = this.state.guests.find((g) => g.secret === secret);
+    return guest && this.valid(guest) ? guest : null;
+  }
+  valid(guest) {
+    const link = this.state.links[guest.role];
+    return link.on && link.token === guest.link && this.state.guests.includes(guest);
+  }
+  join(role, name) {
+    const guest = { id: token(4), secret: token(24), name: cleanName(name) || "Guest", role, link: this.state.links[role].token, joined: (/* @__PURE__ */ new Date()).toISOString() };
+    this.state.guests.push(guest);
+    if (this.state.guests.length > MAX_GUESTS) this.state.guests.splice(0, this.state.guests.length - MAX_GUESTS);
+    this.save();
+    return guest;
+  }
+  /** Marks a guest seen now (saved at most once a minute per guest). */
+  seen(guest) {
+    const now = /* @__PURE__ */ new Date();
+    if (guest.seen && now.getTime() - Date.parse(guest.seen) < 6e4) return;
+    guest.seen = now.toISOString();
+    this.save();
+  }
+  setLan(on, port) {
+    this.state.lan = on;
+    if (on && port) this.state.port = port;
+    this.save();
+  }
+  setLink(role, on) {
+    this.state.links[role].on = on;
+    this.save();
+  }
+  /** A new token for the link: the old link stops working and the guests who came through it are dropped. */
+  resetLink(role) {
+    const old = this.state.links[role].token;
+    this.state.links[role] = { token: token(), on: this.state.links[role].on };
+    this.state.guests = this.state.guests.filter((g) => g.link !== old);
+    this.save();
+  }
+  /**
+   * Gives a guest another role. They now hang on that role's link (turning it off or resetting it drops them), so a role
+   * whose link is off would shut them out: false then, as for a guest who isn't there.
+   */
+  setRole(id, role) {
+    const guest = this.state.guests.find((g) => g.id === id);
+    if (!guest || !this.state.links[role].on) return false;
+    guest.role = role;
+    guest.link = this.state.links[role].token;
+    this.save();
+    return true;
+  }
+  removeGuest(id) {
+    const before = this.state.guests.length;
+    this.state.guests = this.state.guests.filter((g) => g.id !== id);
+    if (this.state.guests.length === before) return false;
+    this.save();
+    return true;
+  }
+};
+
+var LOCAL_FILES = /* @__PURE__ */ new Set([STATE_FILE, LOG_FILE, SHARING_FILE]);
+var LOCAL_DIRS = /* @__PURE__ */ new Set([EXPORTS_DIR]);
+var JUNK_FILES = /* @__PURE__ */ new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
+var isTemp = (name) => name.endsWith(".tmp") || name.startsWith(".tmp-");
+var STORED = /* @__PURE__ */ new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".heic", ".mp4", ".m4v", ".mov", ".webm", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".woff", ".woff2", ".zip", ".gz", ".br", ".zst", ".7z"]);
+var MAX_ENTRIES = 65535;
+var MAX_BYTES = 4294967295;
+var ArchiveTooLarge = class extends Error {
+  code = "TOO_LARGE";
+};
+async function archiveEntries(root, skip = []) {
+  const folder = path12.basename(path12.resolve(root)) || "artifact";
+  const skipped = new Set(skip.map((file) => path12.resolve(file)));
+  const entries = [];
+  const walk = async (dir, rel) => {
+    let names;
+    try {
+      names = await fsp2.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (rel && error.code === "ENOENT") return;
+      throw error;
+    }
+    for (const dirent of names.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
+      const name = dirent.name;
+      if (JUNK_FILES.has(name) || isTemp(name) || !rel && (LOCAL_FILES.has(name) || LOCAL_DIRS.has(name) && dirent.isDirectory())) continue;
+      const file = path12.join(dir, name);
+      if (skipped.has(file)) continue;
+      const inner = rel ? `${rel}/${name}` : name;
+      if (dirent.isDirectory()) await walk(file, inner);
+      else if (dirent.isFile()) {
+        const stat = await fsp2.stat(file).catch(() => null);
+        if (stat?.isFile()) entries.push({ name: `${folder}/${inner}`, file, size: stat.size, mode: stat.mode & 511, mtime: stat.mtime });
+      }
+    }
+  };
+  await walk(path12.resolve(root), "");
+  if (entries.length > MAX_ENTRIES) throw new ArchiveTooLarge(`The folder holds ${entries.length} files, more than a zip holds (${MAX_ENTRIES}); copy the folder itself instead.`);
+  const bound = entries.reduce((sum, entry) => sum + entry.size + 2 * (46 + Buffer.byteLength(entry.name)), 22);
+  if (bound > MAX_BYTES) throw new ArchiveTooLarge(`The folder holds ${(bound / 2 ** 30).toFixed(1)} GiB, more than a zip holds (4 GiB); copy the folder itself instead.`);
+  return entries;
+}
+var CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+function crc32(bytes) {
+  let crc = 4294967295;
+  for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 255] ^ crc >>> 8;
+  return (crc ^ 4294967295) >>> 0;
+}
+function dosTime(date) {
+  const year = date.getFullYear();
+  if (year < 1980) return { time: 0, date: 1 << 5 | 1 };
+  if (year > 2107) return { time: 23 << 11 | 59 << 5 | 29, date: 127 << 9 | 12 << 5 | 31 };
+  return {
+    time: date.getHours() << 11 | date.getMinutes() << 5 | date.getSeconds() >> 1,
+    date: year - 1980 << 9 | date.getMonth() + 1 << 5 | date.getDate()
+  };
+}
+var deflateRaw = promisify(zlib.deflateRaw);
+var UTF8 = 1 << 11;
+async function writeZip(entries, write) {
+  const central = [];
+  let offset = 0;
+  const put = async (chunk) => {
+    await write(chunk);
+    offset += chunk.length;
+  };
+  for (const entry of entries) {
+    let data;
+    try {
+      data = await fsp2.readFile(entry.file);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    const crc = crc32(data);
+    let method = 0;
+    let body = data;
+    if (data.length > 0 && !STORED.has(path12.extname(entry.name).toLowerCase())) {
+      const deflated = await deflateRaw(data);
+      if (deflated.length < data.length) {
+        method = 8;
+        body = deflated;
+      }
+    }
+    if (offset + body.length > MAX_BYTES) throw new ArchiveTooLarge("The folder grew past what a zip holds (4 GiB) while it was being zipped.");
+    const name = Buffer.from(entry.name, "utf8");
+    const { time, date } = dosTime(entry.mtime);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(67324752, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(UTF8, 6);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt16LE(time, 10);
+    local.writeUInt16LE(date, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(33639248, 0);
+    header.writeUInt16LE(3 << 8 | 20, 4);
+    header.writeUInt16LE(20, 6);
+    header.writeUInt16LE(UTF8, 8);
+    header.writeUInt16LE(method, 10);
+    header.writeUInt16LE(time, 12);
+    header.writeUInt16LE(date, 14);
+    header.writeUInt32LE(crc, 16);
+    header.writeUInt32LE(body.length, 20);
+    header.writeUInt32LE(data.length, 24);
+    header.writeUInt16LE(name.length, 28);
+    header.writeUInt32LE((32768 | (entry.mode || 420) | 384) << 16 >>> 0, 38);
+    header.writeUInt32LE(offset, 42);
+    central.push(header, name);
+    await put(Buffer.concat([local, name]));
+    await put(body);
+  }
+  const start = offset;
+  const directory = Buffer.concat(central);
+  await put(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(101010256, 0);
+  end.writeUInt16LE(central.length / 2, 8);
+  end.writeUInt16LE(central.length / 2, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(start, 16);
+  await put(end);
+  return offset;
+}
+function archiveFileName(root, now = /* @__PURE__ */ new Date()) {
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return `${path12.basename(path12.resolve(root)) || "artifact"}-${day}.zip`;
+}
+async function writeArchive(root, out) {
+  const file = path12.resolve(out);
+  const entries = await archiveEntries(root, [file]);
+  const tmp = path12.join(path12.dirname(file), `.${path12.basename(file)}.${process.pid}.tmp`);
+  const handle = await fsp2.open(tmp, "w");
+  let bytes;
+  try {
+    bytes = await writeZip(entries, async (chunk) => {
+      await handle.write(chunk);
+    });
+    await handle.close();
+  } catch (error) {
+    await handle.close().catch(() => {
+    });
+    await fsp2.rm(tmp, { force: true });
+    throw error;
+  }
+  await fsp2.rename(tmp, file);
+  return { file, files: entries.length, bytes };
+}
+async function archiveCommand(root, out) {
+  const where = out ? path12.resolve(out) : path12.dirname(path12.resolve(root));
+  const target = fs10.statSync(where, { throwIfNoEntry: false })?.isDirectory() ? path12.join(where, archiveFileName(root)) : where;
+  const { file, files, bytes } = await writeArchive(root, target);
+  return { file, folder: path12.basename(path12.resolve(root)), files, bytes, leftOut: [...LOCAL_FILES] };
+}
+
+async function shareCall(url, action, fail2) {
+  const response = await fetch(new URL("/__share", url), action ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action) } : {});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) fail2("SHARE_REFUSED", String(body.message ?? `the server answered ${response.status}`));
+  return body;
+}
+function rolesOf(flags, key, fail2) {
+  const given = flags.get(key);
+  if (given === void 0) return [];
+  const roles = given === "all" || given === "true" ? [...GUEST_ROLES] : given.split(",").map((r) => r.trim());
+  for (const role of roles) if (!isGuestRole(role)) fail2("INVALID_ROLE", `--${key}: editor, commenter, viewer or all (got ${role}).`);
+  return roles;
+}
+function guestRoles(flags, fail2) {
+  const given = flags.get("role");
+  if (given === void 0) return [];
+  return given.split(",").map((pair) => {
+    const [guest = "", role = ""] = pair.split("=").map((part) => part.trim());
+    if (!guest || !isGuestRole(role)) fail2("INVALID_ROLE", `--role: <guest id>=editor|commenter|viewer, comma separated (got ${pair}).`);
+    return { action: "role", guest, role };
+  });
+}
+async function shareCommand(o) {
+  const off = o.flags.has("off");
+  const changes = [
+    ...rolesOf(o.flags, "reset", o.fail).map((role) => ({ action: "reset", role })),
+    ...rolesOf(o.flags, "enable", o.fail).map((role) => ({ action: "link", role, on: true })),
+    ...rolesOf(o.flags, "disable", o.fail).map((role) => ({ action: "link", role, on: false })),
+    ...guestRoles(o.flags, o.fail)
+  ];
+  let server = await o.running();
+  if (!server) {
+    const sharing = new Sharing(o.root);
+    for (const change of changes) {
+      if (change.action === "reset") sharing.resetLink(change.role);
+      else if (change.action === "role") {
+        if (!sharing.setRole(String(change.guest), change.role)) o.fail("SHARE_REFUSED", `No guest ${String(change.guest)}, or the ${String(change.role)} link is off.`);
+      } else sharing.setLink(change.role, change.on === true);
+    }
+    if (off) {
+      sharing.setLan(false);
+      return { lan: false, message: "Not shared on the local network. Guests already in get their place back when it is shared again (unless their link was reset)." };
+    }
+    server = await o.startShared();
+    if (!server) o.fail("SERVER_FAILED", `The server did not start. Run ${o.serveCommand} in the foreground to see why.`);
+  }
+  let view = await shareCall(server.url, null, o.fail);
+  for (const change of changes) view = await shareCall(server.url, change, o.fail);
+  if (off || !view.lan) view = await shareCall(server.url, { action: "lan", on: !off }, o.fail);
+  const links = view.links;
+  const shown = (list) => Object.fromEntries(Object.entries(list).map(([role, link]) => [role, link.on ? link.url : "off"]));
+  const tailnet = view.lan ? view.tailnet : void 0;
+  return {
+    lan: view.lan,
+    ...view.lan ? { addresses: lanUrls(view) } : {},
+    links: shown(links),
+    ...tailnet ? {
+      tailscale: shown(tailnet.links),
+      tailscaleNote: `This computer has a Tailscale address (${tailnet.address}): the tailscale links open the same roles for people on your tailnet, from any network. Use the links above for people on this Wi-Fi or LAN.`
+    } : {},
+    guests: view.guests,
+    ...view.lan ? {
+      note: "Send the link for the role you want to give: editor edits, commenter comments, viewer reads. Anyone on this network with a link joins under a name they type. The owner (this computer) shares from the Share button too.",
+      security: "It is plain http: others on the network can read what passes. A link is the permission: whoever has it gets its role, so send it only to the people meant to have it, and reset a role's link if it went further.",
+      stop: o.offCommand
+    } : { note: "Not shared on the network: the links work on this computer only." }
+  };
+}
+var lanUrls = (view) => (Array.isArray(view.addresses) ? view.addresses : []).map((a) => `http://${String(a)}:${String(view.port)}/`);
+async function lanOn(url, flags, fail2) {
+  if (!flags.has("lan")) return {};
+  return { lan: lanUrls(await shareCall(url, { action: "lan", on: true }, fail2)) };
+}
 
 var emitWarning = process.emitWarning.bind(process);
 process.emitWarning = ((warning, ...rest) => {
@@ -2504,8 +2888,8 @@ process.emitWarning = ((warning, ...rest) => {
 });
 var KIND = "design";
 var SCRIPT = fileURLToPath2(import.meta.url);
-var EDITOR_DIR = path11.join(path11.dirname(SCRIPT), "editor");
-var SERVER_SCRIPT = path11.join(path11.dirname(SCRIPT), "server.mjs");
+var EDITOR_DIR = path13.join(path13.dirname(SCRIPT), "editor");
+var SERVER_SCRIPT = path13.join(path13.dirname(SCRIPT), "server.mjs");
 var MAX_LISTED = 200;
 var UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 var INDEX_FILE = KIND === "slides" ? "deck.json" : KIND === "design" ? CANVAS_FILE : DESIGN_SYSTEM_FILE;
@@ -2518,7 +2902,7 @@ var CliError = class extends Error {
     this.code = code;
   }
 };
-var SWITCHES = /* @__PURE__ */ new Set(["all", "wait", "resolve", "reopen"]);
+var SWITCHES = /* @__PURE__ */ new Set(["all", "wait", "resolve", "reopen", "lan", "off"]);
 function parseArgs(argv) {
   const positional = [];
   const flags = /* @__PURE__ */ new Map();
@@ -2544,13 +2928,13 @@ function quote(s) {
 }
 function resolveArtifact(given, mustExist = true) {
   if (!given) throw new CliError("MISSING_ROOT", `Give the artifact folder: the one that holds project/${INDEX_FILE}.`);
-  let root = path11.resolve(given);
-  if (path11.basename(root) === "project" && fs9.existsSync(path11.join(root, INDEX_FILE)) && !fs9.existsSync(path11.join(root, "project"))) {
-    root = path11.dirname(root);
+  let root = path13.resolve(given);
+  if (path13.basename(root) === "project" && fs11.existsSync(path13.join(root, INDEX_FILE)) && !fs11.existsSync(path13.join(root, "project"))) {
+    root = path13.dirname(root);
   }
-  const project = path11.join(root, "project");
+  const project = path13.join(root, "project");
   if (mustExist) {
-    const stat = fs9.statSync(project, { throwIfNoEntry: false });
+    const stat = fs11.statSync(project, { throwIfNoEntry: false });
     if (!stat?.isDirectory()) {
       throw new CliError("NOT_FOUND", `${project} does not exist. Write project/${INDEX_FILE} and the other files under ${root} first.`);
     }
@@ -2572,7 +2956,7 @@ function localize(value) {
 function designSystemNotes(project, indexFile) {
   let index;
   try {
-    index = JSON.parse(fs9.readFileSync(path11.join(project, indexFile), "utf8"));
+    index = JSON.parse(fs11.readFileSync(path13.join(project, indexFile), "utf8"));
   } catch {
     return [];
   }
@@ -2586,10 +2970,10 @@ function designSystemNotes(project, indexFile) {
       notes.push(`designSystems namespace ${JSON.stringify(ns)} is not a folder name ([a-z0-9][a-z0-9_-]{0,63}): the page skips it. Use the lower-case folder (list prints it as folder), the same in the record and in project/ds/<folder>/.`);
       continue;
     }
-    const folder = path11.join(project, "ds", ns);
-    if (!fs9.existsSync(folder)) {
+    const folder = path13.join(project, "ds", ns);
+    if (!fs11.existsSync(folder)) {
       notes.push(`designSystems names "${ns}" but project/ds/${ns}/ does not exist: copy the system's project/tokens.json (and the files you use) there, or take the record out.`);
-    } else if (!fs9.existsSync(path11.join(folder, "tokens.json"))) {
+    } else if (!fs11.existsSync(path13.join(folder, "tokens.json"))) {
       notes.push(`project/ds/${ns}/ has no tokens.json, so the Theme and color menus show bare hexes: copy the system's project/tokens.json there (a system with none: nothing to do).`);
     }
   }
@@ -2601,9 +2985,9 @@ async function check(a) {
     try {
       rt = loadSlidesCompiler(EDITOR_DIR);
     } catch {
-      throw new CliError("COMPILER_MISSING", `The slides compiler is missing (${path11.join(EDITOR_DIR, "node", "compiler.cjs")}); reinstall the skill.`);
+      throw new CliError("COMPILER_MISSING", `The slides compiler is missing (${path13.join(EDITOR_DIR, "node", "compiler.cjs")}); reinstall the skill.`);
     }
-    if (!fs9.existsSync(path11.join(a.project, "deck.json"))) {
+    if (!fs11.existsSync(path13.join(a.project, "deck.json"))) {
       return {
         problems: 1,
         result: {
@@ -2667,11 +3051,11 @@ async function check(a) {
   }
   const r = await checkDesignSystem(a.project);
   const problems = r.issues.length;
-  if (fs9.existsSync(path11.join(a.project, DESIGN_SYSTEM_FILE))) {
-    if (!fs9.existsSync(path11.join(a.project, "README.md"))) {
+  if (fs11.existsSync(path13.join(a.project, DESIGN_SYSTEM_FILE))) {
+    if (!fs11.existsSync(path13.join(a.project, "README.md"))) {
       r.notes.push({ file: "README.md", message: "missing: every system includes project/README.md; every reader starts there (Creating, step 1)" });
     }
-    if (!fs9.existsSync(path11.join(a.project, "components", "Cover", "preview.html"))) {
+    if (!fs11.existsSync(path13.join(a.project, "components", "Cover", "preview.html"))) {
       r.notes.push({ file: "components/Cover/preview.html", message: "missing: every system gets a cover, written last before the index (cover.md)" });
     }
   }
@@ -2697,11 +3081,11 @@ function formatBytes(n) {
 }
 async function upload(a, given, group) {
   if (!given) throw new CliError("MISSING_FILE", "Give the file to upload.");
-  const file = path11.resolve(given);
-  const stat = await fsp2.stat(file).catch(() => null);
+  const file = path13.resolve(given);
+  const stat = await fsp3.stat(file).catch(() => null);
   if (!stat) throw new CliError("FILE_NOT_FOUND", `No such file: ${given}`);
   if (!stat.isFile()) throw new CliError("NOT_A_FILE", `${given} is not a regular file.`);
-  const ext = path11.extname(file).slice(1).toLowerCase();
+  const ext = path13.extname(file).slice(1).toLowerCase();
   const type = contentTypeOf(file);
   const isMedia = type.startsWith("image/") || type.startsWith("font/");
   let limit = UPLOAD_MAX_BYTES;
@@ -2724,9 +3108,9 @@ async function upload(a, given, group) {
     limit = designSystemUploadLimit(type);
   }
   if (stat.size > limit) throw new CliError("FILE_TOO_LARGE", `${given} is ${formatBytes(stat.size)}, over the ${formatBytes(limit)} limit: compress or shrink it first.`);
-  const bytes = await fsp2.readFile(file);
+  const bytes = await fsp3.readFile(file);
   const uploaded = await new DeckStore(a.project, LAYOUT).putBlob(bytes, type);
-  const base = path11.basename(file);
+  const base = path13.basename(file);
   if (KIND !== "design-system") {
     return {
       url: uploaded.url,
@@ -2758,12 +3142,12 @@ function folderName(name) {
 }
 var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", "dist", "build", "out", "vendor", "target"]);
 async function listSystems(dirs) {
-  const extra = (process.env.CLAUDE_DESIGN_SYSTEMS ?? "").split(path11.delimiter).filter(Boolean);
-  const starts = [...dirs.length > 0 ? dirs : [process.cwd()], ...extra].map((d) => path11.resolve(d));
+  const extra = (process.env.CLAUDE_DESIGN_SYSTEMS ?? "").split(path13.delimiter).filter(Boolean);
+  const starts = [...dirs.length > 0 ? dirs : [process.cwd()], ...extra].map((d) => path13.resolve(d));
   const found = /* @__PURE__ */ new Map();
   const visit = async (dir, depth) => {
-    const project = path11.join(dir, "project");
-    if (fs9.existsSync(path11.join(project, DESIGN_SYSTEM_FILE)) && !found.has(dir)) {
+    const project = path13.join(dir, "project");
+    if (fs11.existsSync(path13.join(project, DESIGN_SYSTEM_FILE)) && !found.has(dir)) {
       const info = await readDesignSystemInfo(project).catch(() => null);
       if (info) {
         const namespace = info.namespace;
@@ -2772,17 +3156,17 @@ async function listSystems(dirs) {
           namespace: namespace ?? null,
           folder: folderName(typeof namespace === "string" && namespace.trim() ? namespace : String(info.title ?? "")),
           root: dir,
-          readme: fs9.existsSync(path11.join(project, "README.md")) ? path11.join(project, "README.md") : null,
-          tokens: fs9.existsSync(path11.join(project, "tokens.json")) ? path11.join(project, "tokens.json") : null
+          readme: fs11.existsSync(path13.join(project, "README.md")) ? path13.join(project, "README.md") : null,
+          tokens: fs11.existsSync(path13.join(project, "tokens.json")) ? path13.join(project, "tokens.json") : null
         });
         return;
       }
     }
     if (depth <= 0) return;
-    const entries = await fsp2.readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await fsp3.readdir(dir, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".") || SKIP_DIRS.has(entry.name) || entry.name === "project") continue;
-      await visit(path11.join(dir, entry.name), depth - 1);
+      await visit(path13.join(dir, entry.name), depth - 1);
     }
   };
   for (const start of starts) await visit(start, 4);
@@ -2794,16 +3178,22 @@ function serverArgs(flags) {
   if (flags.has("port")) out.push("--port", flags.get("port"));
   if (flags.has("host")) out.push("--host", flags.get("host"));
   if (flags.get("agent-hook")) out.push("--agent-hook", flags.get("agent-hook"));
+  if (flags.has("lan")) out.push("--lan");
   return out;
 }
+var fail = (code, message) => {
+  throw new CliError(code, message);
+};
+var shareCall2 = (url, action) => shareCall(url, action, fail);
+var lanOn2 = (url, flags) => lanOn(url, flags, fail);
 function reusedNote(a, flags) {
   return flags.get("agent-hook") ? { note: `--agent-hook was not applied: the server was already running. To use it: ${script("stop", a.root)}, then open again.` } : {};
 }
 function assertServerFiles() {
-  if (!fs9.existsSync(path11.join(EDITOR_DIR, "index.html"))) {
+  if (!fs11.existsSync(path13.join(EDITOR_DIR, "index.html"))) {
     throw new CliError("EDITOR_MISSING", `The editor page is missing (${EDITOR_DIR}); reinstall the skill.`);
   }
-  if (!fs9.existsSync(SERVER_SCRIPT)) {
+  if (!fs11.existsSync(SERVER_SCRIPT)) {
     throw new CliError("EDITOR_MISSING", `The editor server is missing (${SERVER_SCRIPT}); reinstall the skill.`);
   }
 }
@@ -2814,15 +3204,15 @@ async function serve(a, flags) {
   assertServerFiles();
   const existing = await runningServer2(a.root);
   if (existing && existing.pid !== process.pid) {
-    print({ url: existing.url, root: a.root, pid: existing.pid, reused: true, ...reusedNote(a, flags) });
+    print({ url: existing.url, root: a.root, pid: existing.pid, reused: true, ...await lanOn2(existing.url, flags), ...reusedNote(a, flags) });
     return;
   }
   const host = flags.get("host") ?? "127.0.0.1";
-  const port = Number(flags.get("port") ?? 0);
+  const port = flags.has("port") ? Number(flags.get("port")) : DEFAULT_PORTS[KIND];
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new CliError("INVALID_PORT", "--port is a number from 0 to 65535.");
   const server = await import(pathToFileURL(SERVER_SCRIPT).href);
-  const state = await server.serveForeground({ root: a.root, port, host, agentHook: flags.get("agent-hook") || void 0 });
-  print({ url: state.url, root: a.root, pid: state.pid });
+  const state = await server.serveForeground({ root: a.root, port, host, agentHook: flags.get("agent-hook") || void 0, lan: flags.has("lan"), portGiven: flags.has("port") });
+  print({ url: state.url, root: a.root, pid: state.pid, ...state.lan ? { lan: state.lan } : {} });
 }
 async function open(a, flags) {
   if (!await readInfo(a.project)) {
@@ -2831,36 +3221,38 @@ async function open(a, flags) {
   assertServerFiles();
   const existing = await runningServer2(a.root);
   if (existing) {
-    print({ url: existing.url, root: a.root, pid: existing.pid, reused: true, ...reusedNote(a, flags) });
+    print({ url: existing.url, root: a.root, pid: existing.pid, reused: true, ...await lanOn2(existing.url, flags), log: path13.join(a.root, LOG_FILE), stop: script("stop", a.root), ...reusedNote(a, flags) });
     return;
   }
+  const state = await startBackground(a, flags);
+  const view = await shareCall2(state.url, null).catch(() => null);
+  print({ url: state.url, root: a.root, pid: state.pid, ...view?.lan ? { lan: lanUrls(view) } : {}, log: path13.join(a.root, LOG_FILE), stop: script("stop", a.root) });
+}
+async function startBackground(a, flags) {
   const port = Number(flags.get("port") ?? 0);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new CliError("INVALID_PORT", "--port is a number from 0 to 65535.");
-  const logFile = path11.join(a.root, LOG_FILE);
-  const fd = fs9.openSync(logFile, "a");
+  const logFile = path13.join(a.root, LOG_FILE);
+  const fd = fs11.openSync(logFile, "a");
   const child = spawn(process.execPath, [SERVER_SCRIPT, a.root, ...serverArgs(flags)], { detached: true, stdio: ["ignore", "ignore", fd] });
   child.unref();
-  fs9.closeSync(fd);
+  fs11.closeSync(fd);
   let exited = false;
   child.once("exit", () => exited = true);
   const deadline = Date.now() + 15e3;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 150));
     const state = readState(a.root);
-    if (state && state.pid === child.pid) {
-      print({ url: state.url, root: a.root, pid: state.pid, log: logFile, stop: script("stop", a.root) });
-      return;
-    }
+    if (state && state.pid === child.pid) return state;
     if (exited) break;
   }
-  const tail = fs9.existsSync(logFile) ? fs9.readFileSync(logFile, "utf8").split("\n").slice(-12).join("\n") : "";
+  const tail = fs11.existsSync(logFile) ? fs11.readFileSync(logFile, "utf8").split("\n").slice(-12).join("\n") : "";
   throw new CliError("SERVER_FAILED", `The editor server did not start. Run ${script("serve", a.root)} in the foreground to see why.${tail ? `
 ${tail}` : ""}`);
 }
 async function stop(a) {
   const state = readState(a.root);
   if (!state || !alive(state.pid)) {
-    fs9.rmSync(path11.join(a.root, STATE_FILE), { force: true });
+    fs11.rmSync(path13.join(a.root, STATE_FILE), { force: true });
     print({ stopped: false, message: "No editor server is running for this folder." });
     return;
   }
@@ -2871,8 +3263,27 @@ async function stop(a) {
     print({ stopped: false, pid: state.pid, message: `The server did not exit within 5 s; end it with: kill ${state.pid}` });
     return;
   }
-  fs9.rmSync(path11.join(a.root, STATE_FILE), { force: true });
+  fs11.rmSync(path13.join(a.root, STATE_FILE), { force: true });
   print({ stopped: true, pid: state.pid });
+}
+async function share(a, flags) {
+  if (!await readInfo(a.project)) {
+    throw new CliError("NOT_A_" + KIND.toUpperCase().replace("-", "_"), `project/${INDEX_FILE} is missing or not a valid ${NOUN} index; write it, then run ${script("check", a.root)}.`);
+  }
+  print(
+    await shareCommand({
+      root: a.root,
+      flags,
+      running: () => runningServer2(a.root),
+      startShared: async () => {
+        assertServerFiles();
+        return startBackground(a, new Map([...flags, ["lan", "true"]]));
+      },
+      offCommand: script("share", a.root, "--off"),
+      serveCommand: script("serve", a.root, "--lan"),
+      fail
+    })
+  );
 }
 var WAIT_CHUNK_S = 300;
 function commentHints(a) {
@@ -2896,7 +3307,7 @@ async function listComments(a, all) {
 async function artifactTitle(a) {
   const info = await readInfo(a.project).catch(() => null);
   const title = typeof info?.title === "string" ? info.title.trim() : "";
-  return title && title !== "project" ? title : path11.basename(a.root);
+  return title && title !== "project" ? title : path13.basename(a.root);
 }
 async function waitComments(a, flags) {
   const timeout = flags.has("timeout") ? Number(flags.get("timeout")) : Infinity;
@@ -2913,7 +3324,8 @@ async function waitComments(a, flags) {
     let body;
     try {
       const response = await fetch(new URL(`__comments/agent/wait?timeout=${Math.max(1, Math.round(left))}`, state.url), {
-        signal: AbortSignal.timeout((left + 30) * 1e3)
+        // A whole number of ms: AbortSignal.timeout refuses a fraction (and --timeout leaves one in `left`).
+        signal: AbortSignal.timeout(Math.ceil((left + 30) * 1e3))
       });
       if (response.status === 404) {
         throw new CliError(
@@ -2982,7 +3394,12 @@ Usage:
   node scripts/artifact.mjs serve  <root> [--port n] [--host h]   run the editor server in the foreground
                                    [--agent-hook "<command>"]     open/serve: run this for each comment sent to the agent
                                                                   (the comment as JSON on stdin)
+                                   [--lan]                        open/serve: also share on the local network, as share does
   node scripts/artifact.mjs stop   <root>                         stop the background editor server
+  node scripts/artifact.mjs share  <root>                         share on the local network; prints a link per role
+                                   [--reset R] [--enable R] [--disable R]   R: editor, commenter, viewer (comma list) or all
+                                   [--role G=R,...]               give guest G (an id it prints) role R
+                                   [--off]                        stop sharing (guests keep their place for next time)
   node scripts/artifact.mjs check  <root>                         validate project/; exit 1 while problems remain
   node scripts/artifact.mjs upload <root> <file>${KIND === "design-system" ? " --group G  " : "            "}      store an upload; prints its /_blob/<id> url
   node scripts/artifact.mjs list   [dir \u2026]                        find design systems (folders holding project/design-system.json)
@@ -2990,6 +3407,8 @@ Usage:
   node scripts/artifact.mjs comments <root> --wait [--timeout s]  wait for a comment sent to the agent from the open editor
   node scripts/artifact.mjs comment-reply <root> <id> <text|->    reply as the agent (-: text on stdin) [--resolve]
   node scripts/artifact.mjs comment-resolve <root> <id> [--reopen]   mark a comment resolved (or open again)
+  node scripts/artifact.mjs archive <root> [--out file.zip|dir]   the whole folder as one zip (backup, another computer,
+                                                                  someone else); beside the folder unless --out says
 
 <root> is the artifact folder: its files live at <root>/project/<path> (project/${INDEX_FILE}, \u2026).`;
 async function main() {
@@ -3005,6 +3424,9 @@ async function main() {
     case "stop":
       await stop(resolveArtifact(positional[0], false));
       return 0;
+    case "share":
+      await share(resolveArtifact(positional[0]), flags);
+      return 0;
     case "check": {
       const { result, problems } = await check(resolveArtifact(positional[0]));
       print(localize(result));
@@ -3012,10 +3434,10 @@ async function main() {
     }
     case "upload": {
       const a = resolveArtifact(positional[0], false);
-      if (!fs9.statSync(a.root, { throwIfNoEntry: false })?.isDirectory()) {
+      if (!fs11.statSync(a.root, { throwIfNoEntry: false })?.isDirectory()) {
         throw new CliError("NOT_FOUND", `${a.root} does not exist. Make the artifact folder first.`);
       }
-      fs9.mkdirSync(a.project, { recursive: true });
+      fs11.mkdirSync(a.project, { recursive: true });
       print(await upload(a, positional[1], flags.get("group")));
       return 0;
     }
@@ -3033,6 +3455,12 @@ async function main() {
     case "comment-resolve":
       print(await resolveComment(resolveArtifact(positional[0]), positional[1], flags.has("reopen")));
       return 0;
+    case "archive": {
+      const a = resolveArtifact(positional[0]);
+      const made = await archiveCommand(a.root, flags.get("out"));
+      print({ ...made, open: `unzip it anywhere, then ${script("open", `<there>/${made.folder}`)}` });
+      return 0;
+    }
     case void 0:
     case "help":
     case "--help":

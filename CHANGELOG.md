@@ -4,6 +4,75 @@ English | [中文](./CHANGELOG.zh.md)
 
 All notable changes to `baoyu-design` are tracked in this file.
 
+## 2.7.1 - 2026-11-02
+
+### Fixes
+- DeepSeek Harness: the **Artifacts** page and the comments wait no longer depend on how the agent spells the command. An `open` run through a shell variable (`"$SKILL/scripts/artifact.mjs" open …`), after a `cd`, or from the copy of the skill the workspace carries in `.agents/skills/` or `.dsh/skills/`, is now recorded and starts the comments wait. Before, none of these were, so the card never showed and **Send to Agent** comments went nowhere without a word ([#27](https://github.com/JimLiu/baoyu-design/issues/27)).
+- Running `open` again on an editor that is already running prints its `log` and `stop` lines, as the first `open` does.
+
+## 2.7.0 - 2026-11-02
+
+### Features
+- Share has an **Export** tab. It lists everything the page can be downloaded as, in rows with an icon and a description (slides: PDF, HTML, PNG, PPTX; design: Standalone page and the rest), with the owner's **Whole folder (.zip)** at the end. The design system and the dashboard, which had no local download button, get theirs here.
+- Download the whole artifact folder as a zip from every editor, or with `archive <root> [--out file.zip|dir]` from the command line. The zip leaves out the editor's own state, log, sharing file, `exports/`, temporary files and symlinks.
+- Slides and design: the **Theme** tab links to a read-only page for the design system in use, with its colours by theme, text styles, other tokens, components and guide. The page runs no script and reads nothing through a symlink.
+- The exported standalone HTML of a canvas follows links between artboards: a relative `<a href="B.dc.html">` opens the linked page in the same frame, and Back works ([#25](https://github.com/JimLiu/baoyu-design/issues/25)).
+- Slides HTML and PPTX exports and the design Standalone page carry the fonts in use. A family whose licence the lists cannot vouch for goes in with a note asking you to check it, and the file points at its licence page when one is known. PPTX embeds one subset file for a font cut into unicode-range blocks, and the font budget goes from 4 MiB to 16 MiB.
+- **Copy link** gives the address other people on the network can open, and shares the page on the network as it copies. A guest can pass the page on but not export it: no Export tab, no folder zip, no downloads.
+- A new project gets a default `.gitignore` the first time an editor opens it (state, log, sharing, `history/`, temporary files). An existing one is left alone. Each `SKILL.md` has a "Keeping it in git" section ([#24](https://github.com/JimLiu/baoyu-design/issues/24)).
+- Share: a Tailscale address is offered as a separate link, not as the main one, and the panel and `share` explain it is plain http and that a link is the permission.
+- DeepSeek Harness: an **Artifacts** page in the left sidebar lists every folder the agent opened an editor on, in cards tinted by type with a tab per type and search. A card opens its conversation and the editor in that conversation's Browser. All the plugins share the one entry.
+- DeepSeek Harness: downloads are saved. Its browser drops every download, so exports, and the folder zip now land in `exports/` in the project (never over an existing file), and a toast names the path.
+- The Artifacts sidebar icon is two overlapping cards, after claude.ai's.
+
+### Fixes
+- `claude-slides`: choosing **PDF** in the Download dialog crashed the page, and then its Download button did nothing. Both work.
+- A save that omits the version it started from is refused with a conflict when someone else has saved that path since, instead of silently overwriting.
+- `claude-dashboard`: when two pages create the same document, the second no longer replaces the first. Their fields are merged, and a value both set is recorded in History.
+- DeepSeek Harness: the comments wait starts, and the artifact is recorded, when the agent runs `open` after other script commands in the same shell call.
+
+### Documentation
+- The READMEs and each `SKILL.md` describe the Export tab, the folder zip, the Theme tab's design system page and Keeping it in git.
+
+## 2.6.1 - 2026-11-01
+
+### Fixes
+- `claude-dashboard`: when someone else saved the page while you were editing it, and you click **Save** after "This dashboard changed. Save to overwrite that change", it now counts as your choice, as **Keep mine** does in slides. History marks the version "Saved over <name>'s change", the other person's notice says you saved over their change (not that you changed it right after them), and you get no notice yourself. Edits to different lines are still merged and both kept, and **Bring back** still restores only the lines that were replaced.
+
+## 2.6.0 - 2026-11-01
+
+### Features
+- Version history in `claude-slides`, `claude-design`, `claude-design-system` and `claude-dashboard`: every change is kept as a version in the project's `history/` folder, with who made it (a guest by the name they typed, the owner, or **Agent** for a change made to the files on this computer). The **History** button, beside Share, lists the versions by day; open one to see what it changed line by line, preview the whole thing as it was, or restore all of it or one part as a new version.
+- When one person's save replaces another's change, the version records whose change it replaced and that person gets a notice with **Compare** and **Bring back**. Bring back puts back only what was replaced and leaves the other person's other changes.
+- Who is here: while others have the page open, their avatars sit beside History. In the slides and canvas editors each card says which slide or artboard the person is on and whether they are editing, and their cursors and selections show; when someone starts editing what you are looking at, you get a short note. Nothing is locked. The agent shows up there too for a short while after it changes the files.
+- Someone else's save updates your page in place in the slides, design and design-system editors, instead of reloading it.
+- Two people on the same slide, artboard or file: the two are merged first, element by element on a canvas and line by line in slides and design-system files (a token file token by token), so changes to different elements or lines both stay. Only when the merge cannot sort it out, such as both changing the same line, a bar asks whether to use theirs, keep yours, or keep both.
+- `claude-dashboard`: a write from the page merges with what others saved since, field by field and, for a page file, line by line; only a change to the same value gets a notice. Editing a page saves against the version the draft started from.
+- The agent is called **Agent**, with a robot avatar, in History, in the avatars and on the comment buttons (**Send to Agent**).
+
+### Fixes
+- `open` works beside a TUN-mode proxy, whose interface answered on every port and made `open` fail with `PORT_IN_USE`; share links leave out that interface's address ([#23](https://github.com/JimLiu/baoyu-design/issues/23)).
+- `comments --wait --timeout` no longer exits at random with `SERVER_GONE` ("The value of \"delay\" is out of range").
+- DeepSeek Harness plugins: the comments wait starts even when the agent runs `open` through shell variables, and a comment sent while the agent is still working waits until its turn is over instead of arriving mid-turn.
+
+### Documentation
+- Each editor's `SKILL.md` has a History section: where the versions are, what the notices mean, and how to read `history/index.json` when asked who changed something. The READMEs describe the history, the notices, who is here and the merging.
+
+## 2.5.0 - 2026-10-31
+
+### Features
+- Share on your local network: `claude-slides`, `claude-design`, `claude-design-system` and `claude-dashboard` open a project to the same Wi‑Fi or LAN. `share <root>` (or `open <root> --lan`) prints a link per role: `editor` edits and comments, `commenter` comments without editing, `viewer` only looks. Whoever opens a link types a name and is in; a save shows on every other open page, and each comment is its writer's own. The DeepSeek Harness plugins carry it too.
+- The owner, at this computer, gets a **Share** button after claude.ai's share dialog: who joined and who is online, a role menu and remove for each person, general access (only this computer, or anyone on the network with a link), and Copy, turn off and reset for each link. From the command line: `share <root> --disable <role>`, `--enable <role>`, `--reset <role>`, `--role <guest>=<role>` and `--off`.
+- Guests get a Share button too: the links they may pass on (their own role's and the ones below it) and Copy link for the page's address, which only people with access can open; anyone else gets a "No access" page.
+- Roles hold everywhere: commenters and viewers get the editor's read-only mode, viewers only read comments, only a message's author edits it, and only the owner sends comments to the agent. On a dashboard, the owner and editors write; commenters and viewers write nothing, their own `data/users` included.
+- Each skill's server has its own port: slides 4710, design 4720, design system 4730, dashboard 4740, or the next free one when that is taken. `--port n` starts from n, `--port 0` takes any free port.
+- `claude-design-system`: comments and Share sit in a bar across the top of the page, like claude.ai's artifact header.
+- `claude-dashboard`: the page is served at `/dashboard/<id>/`, an address that stays the same across restarts, so a tab left open never shows another folder that took the port.
+- The Share button takes the look of the bar it sits in, in light and dark.
+
+### Documentation
+- Each editor's `SKILL.md` has a Sharing section. The READMEs describe sharing on the local network and name the dashboard page among those with comments.
+
 ## 2.4.1 - 2026-10-31
 
 ### Features

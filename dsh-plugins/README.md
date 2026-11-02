@@ -9,10 +9,10 @@ sidebar, next to the chat.
 
 | Plugin | npm package | What it does | Comments |
 |---|---|---|---|
-| [Claude Slides](dsh-claude-slides/)<br>`/claude-slides` | [`dsh-claude-slides`](https://www.npmjs.com/package/dsh-claude-slides) | The agent writes editable slide decks as files and opens them in a local slide editor where you can present, edit, and export PDF, HTML, or PowerPoint. | Send to agent |
-| [Claude Design](dsh-claude-design/)<br>`/claude-design` | [`dsh-claude-design`](https://www.npmjs.com/package/dsh-claude-design) | The agent writes editable design canvases (artboards side by side) as files and opens them in a local canvas editor where you can retype copy, adjust tweaks, and send comments to the agent. | Send to agent |
-| [Claude Design System](dsh-claude-design-system/)<br>`/claude-design-system` | [`dsh-claude-design-system`](https://www.npmjs.com/package/dsh-claude-design-system) | The agent writes design systems (tokens, type, components, assets, a brand book) as files and opens them in a local page where you can browse and edit them, and send comments to the agent. | Send to agent |
-| [Claude Dashboard](dsh-claude-dashboard/)<br>`/claude-dashboard` | [`dsh-claude-dashboard`](https://www.npmjs.com/package/dsh-claude-dashboard) | The agent builds data-backed dashboards (charts, numbers and tables over your data files) and opens them in a local dashboard editor whose Sources panel shows where every number comes from, and where you can send comments to the agent. | Send to agent |
+| [Claude Slides](dsh-claude-slides/)<br>`/claude-slides` | [`dsh-claude-slides`](https://www.npmjs.com/package/dsh-claude-slides) | The agent writes editable slide decks as files and opens them in a local slide editor where you can present, edit, and export PDF, HTML, or PowerPoint. | Send to Agent |
+| [Claude Design](dsh-claude-design/)<br>`/claude-design` | [`dsh-claude-design`](https://www.npmjs.com/package/dsh-claude-design) | The agent writes editable design canvases (artboards side by side) as files and opens them in a local canvas editor where you can retype copy, adjust tweaks, and send comments to the agent. | Send to Agent |
+| [Claude Design System](dsh-claude-design-system/)<br>`/claude-design-system` | [`dsh-claude-design-system`](https://www.npmjs.com/package/dsh-claude-design-system) | The agent writes design systems (tokens, type, components, assets, a brand book) as files and opens them in a local page where you can browse and edit them, and send comments to the agent. | Send to Agent |
+| [Claude Dashboard](dsh-claude-dashboard/)<br>`/claude-dashboard` | [`dsh-claude-dashboard`](https://www.npmjs.com/package/dsh-claude-dashboard) | The agent builds data-backed dashboards (charts, numbers and tables over your data files) and opens them in a local dashboard editor whose Sources panel shows where every number comes from, and where you can send comments to the agent. | Send to Agent |
 
 All you need is the DeepSeek Harness desktop app. The plugins run on the Node.js the app ships with, so there is nothing
 else to install.
@@ -24,7 +24,8 @@ else to install.
    The names are in the table's **npm package** column. The app downloads the plugin from npm, or from the npmmirror
    registry when npm is out of reach.
 3. **Turn it on.** The plugin now shows in the list. If its switch is off, turn it on.
-4. **Quit and reopen the app.** The chat shows comments sent to the agent as cards only after a restart.
+4. **Quit and reopen the app.** The **Artifacts** entry in the left sidebar, and the cards for comments sent to the
+   agent in the chat, show only after a restart.
 
 To install several plugins, repeat steps 1 to 3 for each, then restart once.
 
@@ -70,14 +71,17 @@ it.
 4. **Work in the editor.** The editor saves your changes to the same files, and the agent's changes appear in the page
    as it makes them. To change more, ask in the chat or leave a comment.
 5. **Send comments to the agent** (see the Comments column above):
-   - **Send to agent**: add a comment on the page, tick **Send to agent**, and send it. The agent picks the comment up
+   - **Send to Agent**: add a comment on the page, tick **Send to Agent**, and send it. The agent picks the comment up
      even when the chat is idle, makes the change, and replies in the comment. The comment also shows in the chat as a
      card; **View thread** on the card opens it in the editor. The box only shows while the agent is waiting for
      comments, and it starts waiting each time it gives you a link.
    - **None**: this editor has no comments. Tell the agent in the chat what to change and where.
 
-To come back later, open a session in the same workspace and ask the agent to open the deck, design or dashboard
-again. It starts the editor and gives you a new link.
+To come back later, click **Artifacts** in the left sidebar. It lists every deck, design, design system and dashboard
+the agent has opened with these plugins, most recent first, with a search box and a tab for each type. Click one: the
+app goes back to the conversation that made it and opens the editor in the right sidebar's browser. If that
+conversation was deleted or archived, the editor opens in a new window instead. You can also open a session in the same
+workspace and ask the agent to open it again; it starts the editor and gives you a new link.
 
 ## Update
 
@@ -116,7 +120,10 @@ workspace folders.
   reason shows under the address. The index is on GitHub Pages (`github.io`); if your network can't reach it, add the
   plugins by name instead.
 - **The app says the plugin is already installed.** To install it again, for example to update it, uninstall it first.
-- **The link doesn't load, or Send to agent is missing.** This happens after the app restarts, for example. Ask the
-  agent to open the editor again. That starts the editor and the wait for comments again.
+- **The link doesn't load, or Send to Agent is missing.** This happens after the app restarts, for example. Ask the
+  agent to open the editor again, or click it in **Artifacts**. That starts the editor and the wait for comments again.
+- **Something you made is missing from Artifacts.** The page lists what the agent opened once the plugin (from the
+  version that added Artifacts) was installed, and leaves out folders that were moved or deleted. Ask the agent to open
+  it once and it shows up.
 
 Each plugin's folder has its own README with more on what is inside.

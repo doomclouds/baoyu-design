@@ -35,7 +35,15 @@ No website, no separate subscription, no upload step. The agent already on your 
 
 These four skills write the Artifact type's own file format into a folder and open it in that type's editor page, served from your machine. The agent writes the files and the editor shows each write at once; your edits in the editor are saved back into the same files, so you and the agent can take turns.
 
-In the slides, canvas and design-system editors, choose **Comment** (or press **C**) to comment on an element or area. Comments stay in the project's local `comments.json`; the agent reads and replies through `artifact.mjs`. While it listens with `comments <root> --wait`, the editor offers **Send to agent** to send your comment for it to act on.
+In the slides, canvas and design-system editors and on the dashboard page, choose **Comment** (or press **C**) to comment on an element or area. Comments stay in the project's local `comments.json`; the agent reads and replies through `artifact.mjs`. While it listens with `comments <root> --wait`, the editor offers **Send to Agent** to send your comment for it to act on.
+
+To work together, `share <root>` (or `open <root> --lan`) opens the deck, canvas, design system or dashboard to your local network, the same Wi‑Fi or LAN, and prints a link per role: **editor** edits and comments, **commenter** comments without editing, **viewer** only looks. Whoever opens a link types a name and is in; what they change shows on everyone's page, and their comments land in the same `comments.json`. The person at this computer is the owner: the **Share** button lists who joined and who is online, changes someone's role or removes them, and turns each link off, back on or resets it. Guests get a Share button too, with the links they may pass on: their own role's and those below it. There is no account and nothing leaves your network; it is plain http, so anyone there with a link gets in.
+
+Every change is kept as a version, with who made it: a guest by the name they typed, the owner, or **Agent** for a change made to the files on this computer. The **History** button (the clock beside Share) lists the versions by day; open one to see which slides, artboards or documents it changed, line by line, preview the whole thing as it was, or restore it (or just one part) as a new version, so nothing is lost. When two people save the same slide at once, the later save no longer wipes out the earlier one unnoticed: the version records whose change it replaced, and both people get a notice with **Compare** and **Bring back**, which puts back only what was replaced and leaves the other person's other changes. In the slides, design and design-system editors, someone else's save updates your page in place instead of reloading it, and if they saved the slide, artboard or file you have unsaved edits on, a bar asks whether to use theirs, keep yours, or keep both (yours becomes a new slide after it, an artboard beside it, or a copy of the file). The two are first merged: on a canvas element by element, in slides and design-system files line by line (a token file token by token). When you changed different elements or lines, both changes stay and nothing asks; the bar comes up only when the merge cannot sort it out, such as both changing the same line. The history lives in the project's `history/` folder.
+
+While others have the page open, their avatars sit beside History. In the slides and canvas editors each one's card says which slide or artboard they are on and whether they are editing, and their cursors and selections show where they work; when someone starts editing what you are looking at, you get a short note, and nothing is ever locked. While Claude changes the files, it shows up there too.
+
+To back a project up, move it to another computer or hand it to someone, the owner's **Whole folder (.zip)** item, last in the Share panel's Export tab (the owner's: guests can pass a link on but not export), downloads the whole folder as one zip, its history and comments included; `artifact.mjs archive <root>` does the same from the command line. Unzip it anywhere and `open` it with the same skill to carry on. This computer's server state and the share links are left out, so a copy you send is not shared until its new owner shares it.
 
 ### `claude-slides`: slide decks
 
@@ -70,6 +78,7 @@ node skills/claude-slides/scripts/artifact.mjs open designs/q3-review           
 node skills/claude-slides/scripts/artifact.mjs check designs/q3-review            # validate the files
 node skills/claude-slides/scripts/artifact.mjs upload designs/q3-review hero.jpg  # store an image, print its /_blob/ URL
 node skills/claude-slides/scripts/artifact.mjs list                                 # find design systems on disk
+node skills/claude-slides/scripts/artifact.mjs share designs/q3-review           # open it to the local network, print a link per role
 ```
 
 A dashboard is written through the same script (`write-db`, `read-db`, `upload`, `check`, `open`) into its own store under `<root>/db/`. Each skill runs its own local server, and everything in `scripts/` ships prebuilt: plain JavaScript that runs on Node alone, with nothing to install or build.
@@ -104,7 +113,9 @@ The four editor skills also come as [DeepSeek Harness](https://github.com/deepse
 | [`dsh-claude-design-system`](https://www.npmjs.com/package/dsh-claude-design-system) | `/claude-design-system`: design systems | [![npm](https://img.shields.io/npm/v/dsh-claude-design-system)](https://www.npmjs.com/package/dsh-claude-design-system) |
 | [`dsh-claude-dashboard`](https://www.npmjs.com/package/dsh-claude-dashboard) | `/claude-dashboard`: data‑backed dashboards | [![npm](https://img.shields.io/npm/v/dsh-claude-dashboard)](https://www.npmjs.com/package/dsh-claude-dashboard) |
 
-In the slides, canvas and design-system editors, a comment goes straight to the agent: whenever the agent opens an editor, the plugin waits for comments. Mark up the page, tick **Send to agent**, and the agent wakes up, reads your comment, makes the change and replies in the comment thread. The comment also shows in the chat as a card.
+In the slides, canvas and design-system editors and on the dashboard page, a comment goes straight to the agent: whenever the agent opens an editor, the plugin waits for comments. Mark up the page, tick **Send to Agent**, and the agent wakes up, reads your comment, makes the change and replies in the comment thread. The comment also shows in the chat as a card.
+
+The plugins also add **Artifacts** to the app's left sidebar: every deck, canvas, design system and dashboard the agent has opened, most recent first, with search and a tab for each type. Click one and the app goes back to the conversation that made it and opens the editor in the right sidebar.
 
 ### Install from npm
 
@@ -137,6 +148,7 @@ A workspace that has its own copy of a skill (in `.agents/skills/` or `.dsh/skil
 - **Free yourself from the website.** You get the vast majority of `claude.ai/design`'s capabilities without ever leaving your editor — same methodology, same craft standards, same output format.
 - **Best with Opus 5.5.** The skill is a long, demanding design brief; the stronger the model, the better the result. Pair it with **Claude Opus 5.5** for the best output, and it still works well on other capable models.
 - **Edit side by side with the agent.** Each editor runs on `localhost`; your edits save back into the same files the agent writes, so you can take turns.
+- **Work together, no cloud.** Share an editor on your local network with a link per role; others edit, comment or watch, and you decide who stays in. Version history shows who changed what and brings any version back.
 - **Everything is yours.** Output lands in `designs/<slug>/` as plain files you can version, fork, export, or ship.
 
 ---
