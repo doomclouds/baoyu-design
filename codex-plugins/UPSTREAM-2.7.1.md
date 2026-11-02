@@ -15,6 +15,9 @@ acceptance results.
 
 ## Useful changes
 
+The actionable scope, dependencies and acceptance criteria are in the
+[development checklist](UPSTREAM-DEVELOPMENT-PLAN.md).
+
 | Priority | Upstream change | Incremental value for Codex Design |
 | --- | --- | --- |
 | First | Save-base validation, concurrent creation fixes and explicit Dashboard overwrite choice | Avoid unintended overwrite and improve recovery when an editor and AI both write. Preserve our native flush/CAS and per-request user-revision checks. The Dashboard choice fix depends on the new merge/history baseline; it is not an isolated drop-in cherry-pick. |
