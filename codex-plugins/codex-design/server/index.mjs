@@ -73,18 +73,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker8 = markers[0];
+  const marker9 = markers[0];
   let owner;
-  if (marker8) {
+  if (marker9) {
     try {
-      owner = readJson(path.join(directory, marker8));
+      owner = readJson(path.join(directory, marker9));
     } catch (error113) {
       if (error113.code !== "INVALID_BRIDGE_STATE") throw error113;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker8) fs.rmSync(path.join(directory, marker8), { force: true });
+  if (marker9) fs.rmSync(path.join(directory, marker9), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error113) {
@@ -93,12 +93,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker8 = `owner-${token}.json`;
+  const marker9 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker8), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker9), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -109,7 +109,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error113;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker8), { force: true });
+      fs.rmSync(path.join(directory, marker9), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error113) {
@@ -118,7 +118,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker8), { force: true });
+      fs.rmSync(path.join(staging, marker9), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error113) {
@@ -459,11 +459,11 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker8 = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker8, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker8, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker9 = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker9, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker9, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker8, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker9, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
@@ -690,9 +690,9 @@ var init_library = __esm({
           const needed = /* @__PURE__ */ new Set([INDEX_FILES[record3.kind], "project/tokens.json", "db/files/index.html.json"]);
           const files = [];
           for (const file3 of listed) files.push({ ...file3, data: needed.has(file3.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path) ? (await readBytes(root, file3.path, this.limits.maxFileBytes)).toString("base64") : "" });
-          const native7 = validateFiles(record3.kind, files);
+          const native8 = validateFiles(record3.kind, files);
           const changedAt = listed.reduce((latest, file3) => file3.modifiedAt > latest ? file3.modifiedAt : latest, manifest.updatedAt);
-          Object.assign(result, manifest, { title: native7.title, updatedAt: changedAt });
+          Object.assign(result, manifest, { title: native8.title, updatedAt: changedAt });
         } catch (error113) {
           result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error113.code) ? "missing" : "invalid";
           result.contentError = { code: error113.code || "INVALID_CONTENT", message: error113.message };
@@ -800,8 +800,8 @@ var init_library = __esm({
         await this._busy(record3);
         const root = await this._artifactPath(record3);
         const files = await collectContent(root, record3.kind, this.limits);
-        const native7 = validateFiles(record3.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native7.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
+        const native8 = validateFiles(record3.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native8.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -848,8 +848,8 @@ var init_library = __esm({
           if (bytes.toString("base64") !== file3.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
           files.push({ path: relative, encoding: "base64", data: file3.data });
         }
-        const native7 = validateFiles(bundle.kind, files);
-        return { kind: bundle.kind, title: native7.title, files };
+        const native8 = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native8.title, files };
       }
       async _source(sourcePath, kind) {
         if (typeof sourcePath !== "string" || !path5.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
@@ -871,8 +871,8 @@ var init_library = __esm({
         const busy = await this.isBusy({ id: null, kind, path: sourcePath });
         if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
         const files = await collectContent(sourcePath, kind, this.limits);
-        const native7 = validateFiles(kind, files);
-        return { kind, title: native7.title, files };
+        const native8 = validateFiles(kind, files);
+        return { kind, title: native8.title, files };
       }
       async importArtifact({ bundle, sourcePath, kind, title } = {}) {
         await this._checkRoot();
@@ -967,8 +967,8 @@ var init_library = __esm({
       }
       async _purgeNativeIdle(record3, root) {
         const inspected = record3.title ? await this._inspect(record3) : { ...record3, path: root, deleted: true, contentStatus: "missing" };
-        const native7 = await nativeTrashActivity({ ...inspected, path: root });
-        if (native7?.busy) throw new LibraryError("ARTIFACT_BUSY", native7.reason);
+        const native8 = await nativeTrashActivity({ ...inspected, path: root });
+        if (native8?.busy) throw new LibraryError("ARTIFACT_BUSY", native8.reason);
         const external = await this.isBusy(inspected);
         if (external === true || external?.busy) throw new LibraryError("ARTIFACT_BUSY", external?.reason || "An external artwork task still owns this trash item.");
       }
@@ -25839,7 +25839,7 @@ var PROPERTY_KEYS_BY_TYPE = {
   array: shapeKeys([UntitledMultiSelectEnumSchemaSchema, TitledMultiSelectEnumSchemaSchema])
 };
 var SUPPORTED_STRING_FORMATS = new Set(StringSchemaSchema.shape.format.unwrap().options);
-function walkProperty(node2, path12, vendor, unsupported2) {
+function walkProperty(node2, path12, vendor, unsupported3) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -25847,17 +25847,17 @@ function walkProperty(node2, path12, vendor, unsupported2) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported2.push(`${path12}.${key}`);
-  } else unsupported2.push(`${path12}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported3.push(`${path12}.${key}`);
+  } else unsupported3.push(`${path12}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
   const pruned = {};
-  const unsupported2 = [];
-  for (const [key, value] of Object.entries(converted)) if (key === "properties" && isJsonObject(value)) pruned[key] = Object.fromEntries(Object.entries(value).map(([name, node2]) => [name, walkProperty(node2, `properties.${name}`, vendor, unsupported2)]));
+  const unsupported3 = [];
+  for (const [key, value] of Object.entries(converted)) if (key === "properties" && isJsonObject(value)) pruned[key] = Object.fromEntries(Object.entries(value).map(([name, node2]) => [name, walkProperty(node2, `properties.${name}`, vendor, unsupported3)]));
   else if (ROOT_KEYS.has(key)) pruned[key] = value;
-  else if (!isAnnotationOnlyJsonSchemaKeyword(key)) unsupported2.push(key);
-  if (unsupported2.length > 0) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Elicitation requestedSchema contains unsupported JSON Schema constraint(s) after Standard Schema conversion: ${unsupported2.join(", ")}`);
+  else if (!isAnnotationOnlyJsonSchemaKeyword(key)) unsupported3.push(key);
+  if (unsupported3.length > 0) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Elicitation requestedSchema contains unsupported JSON Schema constraint(s) after Standard Schema conversion: ${unsupported3.join(", ")}`);
   return pruned;
 }
 function describeUnsupportedProperties(pruned, fallback) {
@@ -55499,6 +55499,29 @@ ${history}
 `;
 }
 
+// source/scripts/native-editor-language-adapter.mjs
+var native7 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker8 = "/* codex-design:native-conflict-language */";
+var layer = '"data-baoyu-clash-layer"';
+var actions = ['theirs:"Use theirs"', 'mine:"Keep mine"', 'copy:"Keep both"'];
+var escape10 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var unsupported2 = () => Object.assign(new Error("The canonical conflict language selector changed; native adaptation was refused."), { code: "EDITOR_LANGUAGE_ADAPTER_UNSUPPORTED" });
+function adaptNativeEditorLanguage(source) {
+  if (source.includes(marker8)) return source;
+  const layers = source.split(layer).length - 1;
+  if (!layers && !actions.every((action) => source.includes(action))) return source;
+  const selectors = [...source.matchAll(/const ([\w$]+)=\/\^zh\\b\/i\.test\(navigator\.language\);/g)];
+  if (layers !== 1 || selectors.length !== 1) throw unsupported2();
+  const selector = selectors[0];
+  const branch = new RegExp(`\\b([\\w$]+)=${escape10(selector[1])}\\?\\{changed:`, "g");
+  if ([...source.matchAll(branch)].length !== 1) throw unsupported2();
+  const chinese = readCommentComponent(source, branch);
+  const english = chinese && readCommentComponent(source.slice(chinese.end), /^:\{changed:/);
+  if (!english || !actions.every((action) => english.text.includes(action)) || !english.text.includes('sub:e=>"Your edits on it are not saved yet. Pick one:"') || !/^,[\w$]+=`/.test(source.slice(chinese.end + english.end))) throw unsupported2();
+  const replacement = selector[0].replace("=/^zh", `=${native7}?!1:/^zh`);
+  return marker8 + "\n" + source.slice(0, selector.index) + replacement + source.slice(selector.index + selector[0].length);
+}
+
 // source/server/editor-document.mjs
 var error112 = (code, message) => Object.assign(new Error(message), { code });
 var scriptText = (value) => value.replace(/<\/script/gi, "<\\/script");
@@ -55515,6 +55538,7 @@ async function replaceAsync2(source, expression, transform3) {
 }
 function adaptInlineEditorScript(source, scriptUrl) {
   if (new URL(scriptUrl).pathname.endsWith("/__codex/history-ui.js")) return adaptNativeHistoryUi(source);
+  source = adaptNativeEditorLanguage(source);
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
   source = adaptCommentDrafts(source);
@@ -56621,7 +56645,7 @@ async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeout
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.6.4";
+var PLUGIN_UI_VERSION = "0.6.5";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var UI_MIME_TYPE = "text/html;profile=mcp-app";
@@ -57166,14 +57190,14 @@ async function createDesignServer({
     icons,
     _meta: { ...appOnly(FILE_UI_URI), "openai/ui": { entrypoints: [{ type: "file", extensions: [".codexdesign"] }] } }
   }, async ({ file: file3 }) => ({ content: [], structuredContent: { ...await service.initialState(), entrypoint: "file", file: file3 } }));
-  for (const [name, actions, annotations] of [
+  for (const [name, actions2, annotations] of [
     ["design_read", READ_ACTIONS, readonly3],
     ["design_action", ACTIONS, { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false }]
   ]) {
     server.registerTool(name, {
       title: name === "design_read" ? "Read design library" : "Manage design library",
       description: "Operate on the local design library. Chat output is a concise result or resource reference; the full UI stays in the global workspace or file tab. Reference routes are read-only. Native edit-chat sending is not available through this tool.",
-      inputSchema: external_exports.object({ action: external_exports.enum(actions), payload: external_exports.record(external_exports.string(), external_exports.unknown()).default({}) }),
+      inputSchema: external_exports.object({ action: external_exports.enum(actions2), payload: external_exports.record(external_exports.string(), external_exports.unknown()).default({}) }),
       annotations,
       _meta: { ui: { visibility: name === "design_action" ? ["app"] : ["app", "model"] } }
     }, async ({ action, payload }) => {

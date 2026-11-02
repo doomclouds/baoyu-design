@@ -5,6 +5,7 @@ import { adaptCommentDrafts } from '../scripts/comment-draft-adapter.mjs';
 import { adaptCommentViewport } from '../scripts/comment-viewport-adapter.mjs';
 import { adaptAgentDrafts } from '../scripts/agent-draft-adapter.mjs';
 import { adaptNativeHistoryUi } from '../scripts/native-history-adapter.mjs';
+import { adaptNativeEditorLanguage } from '../scripts/native-editor-language-adapter.mjs';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
 const scriptText = value => value.replace(/<\/script/gi, '<\\/script');
@@ -24,6 +25,7 @@ async function replaceAsync(source, expression, transform) {
 /** Adapt only the editor's local-host selection, never authored artwork files. */
 export function adaptInlineEditorScript(source, scriptUrl) {
   if (new URL(scriptUrl).pathname.endsWith('/__codex/history-ui.js')) return adaptNativeHistoryUi(source);
+  source = adaptNativeEditorLanguage(source);
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
   source = adaptCommentDrafts(source);

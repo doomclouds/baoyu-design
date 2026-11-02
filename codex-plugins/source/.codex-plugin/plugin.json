@@ -1,6 +1,6 @@
 {
   "name": "codex-design",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Local editable slides, canvases, design systems, and data dashboards for Codex.",
   "skills": "./skills/",
   "mcpServers": "./mcp.json",

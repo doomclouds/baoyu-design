@@ -32,6 +32,7 @@ test('native document assembly inlines the four actual editors without HTTP scri
     assert.equal(/data:font\/woff2;base64,/.test(result.html), true, kind);
     assert.ok(result.bytes > 1_000_000, kind + ' retains its real editor');
     assert.equal(result.sha256.length, 64);
+    assert.equal(result.html.includes('/* codex-design:native-conflict-language */'), ['slides', 'design'].includes(kind), kind + ' adapts only its separate canonical conflict-language branch');
     if (kind === 'slides') assert.equal(/import\("data:text\/javascript;base64,/.test(result.html), true);
     if (kind !== 'dashboard') {
       assert.equal(/globalThis\.__CODEX_DESIGN_EDITOR_TRANSPORT__\?null:/.test(result.html), true);

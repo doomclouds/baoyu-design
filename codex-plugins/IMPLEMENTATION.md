@@ -1,5 +1,63 @@
 # Codex Design library implementation
 
+## Current release and evidence boundaries
+
+0.6.4 is published on `main` and marketplace branch `codex/plugin` at
+`9ea2ad57b67da7e23c5b7985ccf7adb6d6da3f46`. The release tree, fetched GitHub
+marketplace snapshot and installed cache match all 191 files (190 owned files
+plus manifest). The complete regression passed 665/665; generated consistency
+and generic-node/Unicode-path portable checks passed. A fresh runtime reports
+five skills, six tools and no errors. The current desktop session completed
+a live `view.get`; its running `server/index.mjs` is from installed 0.6.4,
+with parent process 32632. Only the plugin was hot-switched; Codex was not
+restarted. No GitHub workflow was used.
+
+Implementation is distinct from complete native coverage. Installed 0.6.4
+close/reopen, active-editor preservation, an actual same-location write race
+with explicit conflict choice and History restoration of the overwritten
+cover have now passed within the scope below. The four-editor operation,
+comment lifecycle and per-format cancel/overwrite/error matrices are not fully
+collected. The dedicated Bring back notice did not trigger and is not claimed
+passed. See [the tracked implementation and acceptance scope](UPSTREAM-DEVELOPMENT-PLAN.md).
+
+Actual prior installed-host evidence includes linked CJK font embedding and
+PowerPoint rendering, Canvas save/close/reopen, read-only Theme/history preview
+and Back, selected-file restoration with other content preserved, DS README
+download, Dashboard data/Sources/CSV, and Canvas PNG/PDF/HTML output. Single-
+and multi-artboard HTML were saved and statically checked, not opened or
+navigated in a browser because local HTML navigation was denied by policy.
+Multi-artboard PNG ZIP has independent safe-path/CRC/full-decode and image
+inspection evidence (`codex-design-0.6.3-multi-pngzip-result.json`); its reviewer
+did not independently observe Save As. These limits remain explicit.
+
+Historical acceptance reports keep their failed attempts and then-current
+pending gates. Later passes do not erase the 0.6.0 640/642 run, the 0.6.1
+cleanup failure or the 0.6.2 657/659 identity failures; the latter's original
+causes remain unproven. Historical sections below describe their release
+cutoffs, while this section and the current acceptance record describe today.
+
+## 0.6.5 candidate: native conflict-bar language
+
+Actual 0.6.4 conflict testing exposed a separate shadow module selecting
+Chinese directly from the system language, bypassing the English-only i18n
+decision. The candidate adapter fixes only this native Slides/Design branch.
+The canonical conflict marker, language selector/table and labels guard the
+patch; unknown shapes fail closed. Authored content, ordinary standalone
+language selection, dictionaries, navigator/Intl and choice callbacks remain
+unchanged. Design System and Dashboard do not contain this branch.
+
+Focused language/assembled-document checks passed 15/15 with independent
+approval. The first complete candidate run was 669/671: the packaged
+`.codex-plugin` manifest and UI contract had missed the version bump. Those
+failures are preserved; the first portable attempt also failed on resource
+version mismatch. After correcting the metadata, a separate complete second
+run passed 671/671, zero failures/skips/cancellations, concurrency 4,
+73,774.9088 ms. The final build has 191 owned files; consistency and portable
+0.6.5 checks passed using generic node, a Unicode path, no node_modules, six
+tools and two resources. These results do not relabel the first failed run.
+Publication, installation and actual native conflict-bar language verification
+remain pending; installed 0.6.4 is still the published baseline at this cutoff.
+
 ## 0.6.4 repeat native opening
 
 Each explicit OS navigation now carries a fresh request UUID inside the
@@ -9,8 +67,28 @@ an internal Tab was closed, while the existing bridge keeps active editors
 mounted. Delivery and actual-SDK bridge checks passed 30/30 independently;
 the complete frozen-source run passed 665/665. A source opener also reopened
 the closed artwork in the installed 0.6.3 host and preserved its active editor
-loader/visible draft across repeated opens. Final installed-package evidence
-is recorded in [ACCEPTANCE-0.6.4.md](ACCEPTANCE-0.6.4.md).
+loader/visible draft across repeated opens. That source-opener check remains
+separate from the subsequent installed-0.6.4 check: after closing the artwork,
+five Tabs remained; public CLI open restored six Tabs with exactly one of the
+same artwork UUID. Two active opens preserved the visible draft and same
+editor loader (SHA-256 prefix `a84451f`), without a duplicate or reload.
+Package installation and actual native results are tracked in
+[ACCEPTANCE-0.6.4.md](ACCEPTANCE-0.6.4.md).
+
+The first manual/external-write attempt let `local-held` autosave and produced
+no conflict; it is retained as a nonconflict observation. A second immediate
+CUA edit and external file write produced the actual conflict bar. Disk text
+`External raced save` stayed intact until the explicit Keep mine choice, after
+which it became `Local raced save`. This is a deterministic external-writer
+test, not a newly sent model task. It also exposed the language defect above.
+
+In the actual History UI, the cover entry labelled 03:32 was selected via
+Changes and Restore just this to recover `Local concurrent edit`. The 02:05
+baseline then restored `Font QA original`. All 24 final content hashes matched
+the saved baseline; the other 23 files stayed unchanged throughout. This proves
+the checked selected-file recovery path. The dedicated notice's Bring back
+was not triggered, and arbitrary manually selected hunk restoration is not
+implemented or claimed.
 
 ## 0.6.3 native HTML integrity follow-up
 
@@ -19,8 +97,13 @@ standalone HTML export's bundled React SRI checks. SHA-256 content identity,
 strict algorithm/base64/32 MiB checks and the read-only History broker remain
 intact. Actual generated vendor bytes and their original SRI constants are
 covered by the new integration test; the complete regression passed 662/662.
-Native HTML Save As remains a separate installed-host gate in
-[ACCEPTANCE-0.6.3.md](ACCEPTANCE-0.6.3.md).
+Installed 0.6.3 completed native HTML Save As: the single-artboard file is
+119,326 bytes and the multi-artboard file is 235,037 bytes. Static checks cover
+loader/JSON/resources/templates plus two ordered pages, their dimensions and
+bidirectional relative-link mappings. They do not prove browser rendering,
+clicks or Back. The old Exporting hang and incomplete first inspector remain
+preserved; the exact cause of that earlier native hang was not isolated.
+See [ACCEPTANCE-0.6.3.md](ACCEPTANCE-0.6.3.md).
 
 ## 0.6.2 Dashboard and floating-surface follow-up
 
@@ -29,8 +112,13 @@ through the native virtual base. Floating menus/dialogs composite host alpha
 colors over an opaque theme base, and editor startup failures retain bounded,
 escaped diagnostics in collapsed Error details. The final complete regression
 passed 659/659 with concurrency 4; the earlier two identity-verification
-failures remain in the record with their cause unconfirmed. The configured
-GitHub package and actual-host gates are tracked in
+failures remain in the record with their cause unconfirmed. The installed
+Dashboard then rendered its three-row data and Sources; CSV Save As and
+overwrite cancellation preserved the existing file's hash/mtime. Menus and
+dialogs were visually opaque. Actual History diff and selected-file restore
+changed only the cover among 24 content files and created a recovery point.
+The checked Canvas PDF rendered as one 600 × 450 point page. These results and
+format-specific limits are tracked in
 [ACCEPTANCE-0.6.2.md](ACCEPTANCE-0.6.2.md).
 
 ## 0.6.1 native acceptance follow-up
@@ -40,8 +128,11 @@ verified against the generated package (191 identical files). Real native
 comment dispatch, registered-child reuse and a separate guarded 0.5.3 data
 service upgrade passed. Host testing then found historical-loader closure,
 History opacity, WOFF2 module-import and Canvas live-session flush issues.
-0.6.1 repairs those paths; its consuming-host checks remain in progress.
-See [ACCEPTANCE-0.6.1.md](ACCEPTANCE-0.6.1.md) for the current evidence and limits.
+Installed 0.6.1 repaired those checked paths: historical preview and Back,
+opaque History surface, CJK embedded-font PPTX in PowerPoint, active Canvas
+save/close/reopen, copied read-only Theme and DS README Save As passed. Its
+new Dashboard boot failure was preserved and subsequently fixed in 0.6.2.
+See [ACCEPTANCE-0.6.1.md](ACCEPTANCE-0.6.1.md) for exact evidence and limits.
 
 ## 0.6.0 upstream migration
 
@@ -65,8 +156,8 @@ focused evidence, retained failures and the exact native gates.
 
 `main` includes upstream 2.7.1, and the configured marketplace still uses
 `codex/plugin`. The initial synchronization required an adapter migration
-before rebuilding; 0.6.0 contains that work and 0.6.1 addresses subsequent
-native acceptance findings. See
+before rebuilding; 0.6.0 contains that work, and 0.6.1 through 0.6.4 address
+subsequent native acceptance findings. See
 [the synchronization and value assessment](UPSTREAM-2.7.1.md) for the original
 baseline and failed compatibility check.
 
@@ -288,6 +379,9 @@ the approved icon, and the four existing editors and comment workflows.
 
 ## 0.3 release scope
 
+This is the historical 0.3 scope. Its bilingual UI decision was later cancelled;
+the current plugin interface is English-only, as stated in the preserved rules.
+
 - A local artwork library with four kinds: slides, design, design-system, and
   dashboard. Dataviz remains a skill rather than a fifth editor/document kind.
 - A global Codex Design entrypoint, category navigation, a permanent library
@@ -351,7 +445,10 @@ annotation adapters, and bundles the MCP server, library UI, and editor
 localization. The generated directory is committed for direct GitHub
 installation. Build and test locally; do not add or invoke GitHub workflows.
 
-## Verified evidence and remaining acceptance
+## Historical 0.3 discovery evidence and then-pending acceptance
+
+This subsection preserves the early probe/candidate evidence. It is not the
+current installed-version status; final release and host evidence are above.
 
 A metadata-only client using the installed Codex Desktop runtime
 `0.166.0-alpha.5.1` verified the installed AGP probe `0.0.5`: its stdio server
@@ -363,8 +460,8 @@ adding its required schema closed that failure. See
 
 This is catalog/startup evidence, not a claim that the currently running
 Desktop window has refreshed or rendered the production 0.3 global entrypoint.
-The release still needs its final generated-package check, complete local
-tests, installation check, and consuming-app verification. Existing test
+At that historical cutoff, the release still needed its final generated-package
+check, complete local tests, installation check and consuming-app verification. Existing test
 suites cover the library, MCP protocol and resources, editor localization,
 and the prior native comment runtime; do not report unexecuted or failed
 checks as passed.
@@ -378,6 +475,13 @@ native tool approval. Any future agent-mediated route needs separate real
 host verification and a product decision about its visible authorization flow.
 
 ## Preserved product rules
+
+The current follow-up scope is the remaining native acceptance matrix and
+defects it reveals. Multiuser/LAN collaboration and cross-window single-editor
+ownership require separate product decisions. Host-wide sidebar/toolbar
+replacement, per-artifact native chat binding, bilingual UI, automatic source
+design-system propagation and arbitrary manual hunk restoration are not added
+to this migration's completion criteria.
 
 - Global Codex Design sidebar entry, secondary category navigation, and a
   permanent library tab followed by unique artifact tabs. The approved visual
