@@ -1,5 +1,12 @@
 # Codex Design library implementation
 
+## Upstream source synchronization
+
+`main` now includes upstream 2.7.1. The published Codex Design package remains
+the verified 0.5.3 on `codex/plugin`; new upstream editors need adapter migration
+before rebuilding. See [the synchronization and value assessment](UPSTREAM-2.7.1.md)
+for the exact baseline, failed compatibility check and proposed priorities.
+
 ## 0.5.3 released repairs
 
 This revision addresses two failures observed after installing 0.5.2:
