@@ -3,6 +3,7 @@ export default {
   createContent: 'Create new content', collapseSidebar: 'Collapse navigation', expandSidebar: 'Expand navigation', actions: 'Actions',
   editorStartTimeout: 'The editor did not finish opening. Try opening this artwork again.',
   editorRuntimeFailed: 'The editor encountered an error. Try opening this artwork again.',
+  editorErrorDetails: 'Error details',
   savingChanges: 'Saving changes…', changesSaved: 'Changes saved',
   kindColumn: 'Type',
   invalidTitle: 'Enter a name between 1 and 200 characters.', artifactBusy: 'This artwork has an active editing task. Try again after it finishes.', libraryBusy: 'The library is busy. Try again in a moment.', artifactNotFound: 'This artwork is no longer available. Refresh the library to continue.', fileAccessFailed: 'The artwork files could not be accessed. Check their permissions and try again.', limitExceeded: 'This artwork exceeds the limits for this operation.', editorTooLarge: 'This artwork is too large to open in the current editor.', editorSaveFailed: 'The editor could not confirm that your changes were saved. This tab will remain open.', beforeAiSnapshot: 'Before AI edit', beforeResumedAiSnapshot: 'Before resumed AI edit',

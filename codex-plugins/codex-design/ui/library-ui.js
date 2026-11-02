@@ -170,7 +170,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       EDITOR_FLUSH_FAILED: 'editorSaveFailed', EDITOR_FLUSH_TIMEOUT: 'editorSaveFailed', EDITOR_UNSAVED_CHANGES: 'editorSaveFailed',
       TRANSFER_TOO_LARGE: 'transferTooLarge', INVALID_BUNDLE: 'invalidBundle', FILE_READ_FAILED: 'fileReadFailed', DOWNLOAD_UNAVAILABLE: 'downloadUnavailable',
     }[error?.code];
-    // Keep implementation diagnostics in the console, outside localized product copy.
+    // Keep the primary product copy short; startup failures may expose their
+    // bounded code/message separately in the collapsed error details.
     if (error?.message) console.warn('[Codex Design] ' + (error.code || 'UI_ERROR') + ': ' + String(error.message).slice(0, 2000));
     if (key) return t(key);
     return String(error?.code || '').startsWith('EDITOR_') ? t('editorUnavailable') : t('actionFailed');
@@ -391,7 +392,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
         let resolved;
         try { resolved = await recordLoads.get(id); }
         catch (error) {
-          if (current()) renderEditorFailure(error?.code === 'NOT_FOUND' ? t('restoredTabMissing') : errorMessage(error), id);
+          if (current()) renderEditorFailure(error?.code === 'NOT_FOUND' ? t('restoredTabMissing') : errorMessage(error), id, error);
           return;
         }
         if (!current()) return;
@@ -437,8 +438,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
           onReady: () => { editorReady = true; host.querySelector('.editor-boot-overlay')?.remove(); },
           onError: error => {
             if (state.view.activeTabId !== id || sequence !== editorSequence) return;
-            const message = typeof error === 'string' ? error : errorMessage(error);
-            if (!editorReady) renderEditorFailure(message || t('editorUnavailable'), id);
+            const message = typeof error === 'string' ? t('editorRuntimeFailed') : errorMessage(error);
+            if (!editorReady) renderEditorFailure(message || t('editorUnavailable'), id, error);
             else toast(message || t('editorUnavailable'), true);
           } });
         currentEditorUrl = currentNativeEditor.url;
@@ -461,18 +462,23 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       const external = elements.panel.querySelector('.editor-external');
       if (external) { external.hidden = native; if (url) external.href = url.href; }
     } catch (error) {
-      if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error), id);
+      if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error), id, error);
     } finally {
       finishLoading();
       if (currentEditorLoad === loading) currentEditorLoad = null;
     }
   }
-  function renderEditorFailure(message, id) {
+  function renderEditorFailure(message, id, diagnostic) {
     currentNativeEditor?.dispose();
     currentNativeEditor = null;
     const host = elements.panel.querySelector('.editor-frame-host');
     if (!host) return;
-    host.innerHTML = '<div class="editor-loading"><div class="empty-symbol">' + icon('warning') + '</div><h2>' + escape(t('editorUnavailable')) + '</h2><p>' + escape(message) + '</p><button type="button" class="button secondary" data-action="retry-editor" data-id="' + escape(id) + '"' + disabled(bridge.supportsInlineEditor === true ? 'editor.document' : 'editor.open') + '>' + escape(t('openEditorAgain')) + '</button></div>';
+    const code = typeof diagnostic?.code === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$/.test(diagnostic.code) ? diagnostic.code : '';
+    const raw = typeof diagnostic === 'string' ? diagnostic : typeof diagnostic?.message === 'string' ? diagnostic.message : '';
+    const detail = raw.slice(0, 4000).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim() + (raw.length > 4000 ? '…' : '');
+    const text = [code, detail].filter(Boolean).join('\n');
+    const details = text ? '<details class="editor-error-details"><summary>' + escape(t('editorErrorDetails')) + '</summary><pre>' + escape(text) + '</pre></details>' : '';
+    host.innerHTML = '<div class="editor-loading"><div class="empty-symbol">' + icon('warning') + '</div><h2>' + escape(t('editorUnavailable')) + '</h2><p>' + escape(message) + '</p>' + details + '<button type="button" class="button secondary" data-action="retry-editor" data-id="' + escape(id) + '"' + disabled(bridge.supportsInlineEditor === true ? 'editor.document' : 'editor.open') + '>' + escape(t('openEditorAgain')) + '</button></div>';
   }
   function postEditorLanguage() {
     const frame = elements.panel.querySelector('.design-editor-frame');

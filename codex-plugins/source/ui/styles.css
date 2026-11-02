@@ -605,3 +605,18 @@ a { color: inherit; }
   .export-directory-toolbar { flex-wrap: wrap; }
   .export-breadcrumbs { flex-basis: 100%; }
 }
+
+/* Host surface colors may contain alpha. Floating chrome needs its own opaque
+   backing so artwork and text beneath it cannot show through the panel. Keep
+   the host layers intact and composite them over the active theme's base. */
+.menu-panel, .design-dialog, .toast {
+  --overlay-background: var(--surface);
+  background-color: var(--fallback-background);
+  background-image: linear-gradient(var(--overlay-background), var(--overlay-background)), linear-gradient(var(--background), var(--background));
+}
+.toast.is-error { --overlay-background: var(--color-background-danger, var(--surface)); }
+.codex-export-dialog { background-image: linear-gradient(var(--background), var(--background)); }
+
+.editor-error-details { width: min(560px, 100%); min-width: 0; text-align: left; }
+.editor-error-details > summary { color: var(--muted); cursor: pointer; }
+.editor-error-details > pre { max-height: 180px; overflow: auto; margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: .8571rem; line-height: 1.5; }

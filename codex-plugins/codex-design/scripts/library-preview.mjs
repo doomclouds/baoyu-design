@@ -4138,11 +4138,11 @@ function adaptInlineEditorScript(source, scriptUrl) {
   });
   source = source.replace(/\bimport\.meta\.url\b/g, JSON.stringify(scriptUrl));
   source = source.replace(
-    /new URL\((["'])\.\/\1,([\w$]+)\.location\.href\)\.href/g,
+    /\bnew\s+URL\s*\(\s*(["'])\.\/\1\s*,\s*([\w$]+)\s*\.\s*location\s*\.\s*href\s*\)\s*\.\s*href\b/g,
     (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`
   );
   source = source.replace(
-    /new URL\((["'])\.\/\1,location\.href\)\.href/g,
+    /\bnew\s+URL\s*\(\s*(["'])\.\/\1\s*,\s*location\s*\.\s*href\s*\)\s*\.\s*href\b/g,
     (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`
   );
   source = source.replace(
@@ -4171,7 +4171,7 @@ function adaptInlineEditorScript(source, scriptUrl) {
   );
   if (flushCaptures > 1 || /type:["']editor:flushed["']/.test(source) && flushCaptures !== 1) throw error("EDITOR_FLUSH_ADAPTER_UNSUPPORTED", "The editor save barrier changed; review its native adapter before loading it.");
   source = source.replace(
-    /new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,
+    /\bnew\s+URL\s*\(\s*target\s*\.\s*location\s*\.\s*href\s*\)\s*\.\s*searchParams\s*\.\s*get\s*\(\s*(["'])codexDesignLanguage\1\s*\)/g,
     (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.language??${match})`
   );
   return source;
@@ -5227,7 +5227,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.6.1";
+var PLUGIN_UI_VERSION = "0.6.2";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);

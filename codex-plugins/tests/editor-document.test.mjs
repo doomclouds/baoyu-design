@@ -54,6 +54,52 @@ test('native local-host patch preserves the ordinary fallback and does not rewri
   assert.ok(adapted.includes('const copy="Hello";'));
 });
 
+test('the actual Dashboard presence initializer uses the native base on opaque documents and retains ordinary HTTP behavior', async () => {
+  const raw = await fs.readFile(path.join(plugin, 'skills/codex-dashboard/scripts/editor/local-host.js'), 'utf8');
+  const initializer = source => {
+    const lines = source.match(/^\s*var presence = AT === null \? pageRoom\([^\r\n]+ : null;$/gm) || [];
+    assert.equal(lines.length, 1, 'Exercise the genuine Dashboard initializer, not a rewritten sample.');
+    return lines[0] + '\npresence;';
+  };
+  const original = initializer(raw);
+  const adapted = initializer(adaptInlineEditorScript(raw, virtualBase + 'local-host.js'));
+  const context = (href, native) => ({ URL, AT: null, PEER: 'presence-test-peer', location: { href },
+    pageRoom: (base, peer) => ({ base, peer }),
+    ...(native ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: { baseUrl: virtualBase } } : {}) });
+  for (const opaque of ['about:srcdoc', 'data:text/html;base64,PGh0bWw+']) {
+    assert.throws(() => vm.runInNewContext(original, context(opaque, true)), { name: 'TypeError', code: 'ERR_INVALID_URL' }, 'The unadapted upstream line reproduces the native boot failure.');
+    const native = vm.runInNewContext(adapted, context(opaque, true));
+    assert.equal(native.base, virtualBase);
+    assert.equal(native.peer, 'presence-test-peer');
+  }
+  const ordinaryUrl = 'http://127.0.0.1:12345/dashboard/grant/index.html?at=2';
+  for (const source of [original, adapted]) {
+    const ordinary = vm.runInNewContext(source, context(ordinaryUrl, false));
+    assert.equal(ordinary.base, 'http://127.0.0.1:12345/dashboard/grant/');
+    assert.equal(ordinary.peer, 'presence-test-peer');
+  }
+  assert.equal(vm.runInNewContext(adapted, { ...context('about:srcdoc', true), AT: '2' }), null, 'Historical views still skip presence.');
+});
+
+test('native URL selectors tolerate formatting while preserving unsupported forms and ordinary fallbacks', () => {
+  const nativeContext = { URL, target: { location: { href: 'about:srcdoc' } }, location: { href: 'about:srcdoc' },
+    __CODEX_DESIGN_EDITOR_TRANSPORT__: { baseUrl: virtualBase, language: 'en' } };
+  for (const source of ['new URL("./",target.location.href).href', 'new URL ( "./" , target . location . href ) . href',
+    "new URL( './',\n location.href\n).href", 'new URL ( "./" , location . href ) . href']) {
+    const adapted = adaptInlineEditorScript(source, virtualBase + 'local-host.js');
+    assert.equal(vm.runInNewContext(adapted, nativeContext), virtualBase, source);
+    const href = 'http://localhost:4000/editor/file.html';
+    assert.equal(vm.runInNewContext(adapted, { URL, target: { location: { href } }, location: { href } }), 'http://localhost:4000/editor/', 'Ordinary execution still resolves its own URL.');
+  }
+  const language = 'new URL ( target . location . href ) . searchParams . get ( "codexDesignLanguage" )';
+  const adaptedLanguage = adaptInlineEditorScript(language, virtualBase + 'local-host.js');
+  assert.equal(vm.runInNewContext(adaptedLanguage, nativeContext), 'en');
+  assert.equal(vm.runInNewContext(adaptedLanguage, { URL, target: { location: { href: 'http://localhost:4000/?codexDesignLanguage=fr' } } }), 'fr');
+  for (const source of ['new URL("../",location.href).href', 'new URL("./",other.href).href', 'new URL(target.location.href).searchParams.get("unrelated")']) {
+    assert.equal(adaptInlineEditorScript(source, virtualBase + 'local-host.js'), source, 'Only the existing local-host and language selectors are adapted.');
+  }
+});
+
 test('opaque-origin UUID fallback uses WebCrypto and remains valid inside serialized nested runtime code', () => {
   const source = 'const nested="crypto.randomUUID()";const direct=crypto.randomUUID();({nested,direct});';
   const adapted = adaptInlineEditorScript(source, virtualBase + 'assets/main.js');

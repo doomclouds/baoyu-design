@@ -614,6 +614,21 @@ a { color: inherit; }
   .export-breadcrumbs { flex-basis: 100%; }
 }
 
+/* Host surface colors may contain alpha. Floating chrome needs its own opaque
+   backing so artwork and text beneath it cannot show through the panel. Keep
+   the host layers intact and composite them over the active theme's base. */
+.menu-panel, .design-dialog, .toast {
+  --overlay-background: var(--surface);
+  background-color: var(--fallback-background);
+  background-image: linear-gradient(var(--overlay-background), var(--overlay-background)), linear-gradient(var(--background), var(--background));
+}
+.toast.is-error { --overlay-background: var(--color-background-danger, var(--surface)); }
+.codex-export-dialog { background-image: linear-gradient(var(--background), var(--background)); }
+
+.editor-error-details { width: min(560px, 100%); min-width: 0; text-align: left; }
+.editor-error-details > summary { color: var(--muted); cursor: pointer; }
+.editor-error-details > pre { max-height: 180px; overflow: auto; margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: .8571rem; line-height: 1.5; }
+
 </style>
 </head>
 <body>
@@ -23647,6 +23662,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     actions: "Actions",
     editorStartTimeout: "The editor did not finish opening. Try opening this artwork again.",
     editorRuntimeFailed: "The editor encountered an error. Try opening this artwork again.",
+    editorErrorDetails: "Error details",
     savingChanges: "Saving changes…",
     changesSaved: "Changes saved",
     kindColumn: "Type",
@@ -24972,7 +24988,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           try {
             resolved = await recordLoads.get(id);
           } catch (error112) {
-            if (current()) renderEditorFailure(error112?.code === "NOT_FOUND" ? t2("restoredTabMissing") : errorMessage(error112), id);
+            if (current()) renderEditorFailure(error112?.code === "NOT_FOUND" ? t2("restoredTabMissing") : errorMessage(error112), id, error112);
             return;
           }
           if (!current()) return;
@@ -25041,8 +25057,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
             },
             onError: (error112) => {
               if (state.view.activeTabId !== id || sequence !== editorSequence) return;
-              const message = typeof error112 === "string" ? error112 : errorMessage(error112);
-              if (!editorReady) renderEditorFailure(message || t2("editorUnavailable"), id);
+              const message = typeof error112 === "string" ? t2("editorRuntimeFailed") : errorMessage(error112);
+              if (!editorReady) renderEditorFailure(message || t2("editorUnavailable"), id, error112);
               else toast(message || t2("editorUnavailable"), true);
             }
           });
@@ -25069,18 +25085,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           if (url3) external.href = url3.href;
         }
       } catch (error112) {
-        if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error112), id);
+        if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error112), id, error112);
       } finally {
         finishLoading();
         if (currentEditorLoad === loading) currentEditorLoad = null;
       }
     }
-    function renderEditorFailure(message, id) {
+    function renderEditorFailure(message, id, diagnostic) {
       currentNativeEditor?.dispose();
       currentNativeEditor = null;
       const host = elements.panel.querySelector(".editor-frame-host");
       if (!host) return;
-      host.innerHTML = '<div class="editor-loading"><div class="empty-symbol">' + icon("warning") + "</div><h2>" + escape2(t2("editorUnavailable")) + "</h2><p>" + escape2(message) + '</p><button type="button" class="button secondary" data-action="retry-editor" data-id="' + escape2(id) + '"' + disabled(bridge.supportsInlineEditor === true ? "editor.document" : "editor.open") + ">" + escape2(t2("openEditorAgain")) + "</button></div>";
+      const code = typeof diagnostic?.code === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$/.test(diagnostic.code) ? diagnostic.code : "";
+      const raw = typeof diagnostic === "string" ? diagnostic : typeof diagnostic?.message === "string" ? diagnostic.message : "";
+      const detail = raw.slice(0, 4e3).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim() + (raw.length > 4e3 ? "…" : "");
+      const text = [code, detail].filter(Boolean).join("\n");
+      const details = text ? '<details class="editor-error-details"><summary>' + escape2(t2("editorErrorDetails")) + "</summary><pre>" + escape2(text) + "</pre></details>" : "";
+      host.innerHTML = '<div class="editor-loading"><div class="empty-symbol">' + icon("warning") + "</div><h2>" + escape2(t2("editorUnavailable")) + "</h2><p>" + escape2(message) + "</p>" + details + '<button type="button" class="button secondary" data-action="retry-editor" data-id="' + escape2(id) + '"' + disabled(bridge.supportsInlineEditor === true ? "editor.document" : "editor.open") + ">" + escape2(t2("openEditorAgain")) + "</button></div>";
     }
     function postEditorLanguage() {
       const frame = elements.panel.querySelector(".design-editor-frame");
@@ -43716,7 +43737,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.6.1";
+  var PLUGIN_UI_VERSION = "0.6.2";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);

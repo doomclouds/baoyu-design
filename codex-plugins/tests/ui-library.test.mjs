@@ -122,9 +122,9 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
       async listSnapshots() { return []; },
       async restoreSnapshot() { timeline.push('transfer.restore'); },
     }),
-    mountNativeEditor: ({ iframe, artifactId, document: editorDocument }) => {
+    mountNativeEditor: ({ iframe, artifactId, document: editorDocument, onError, onReady }) => {
       editorCalls.push('mount'); timeline.push('mount');
-      const instance = { iframe, artifactId, document: editorDocument, disposed: false, url: 'data:editor', post: message => posted.push(message),
+      const instance = { iframe, artifactId, document: editorDocument, onError, onReady, disposed: false, url: 'data:editor', post: message => posted.push(message),
         flush: async () => { editorCalls.push('flush'); timeline.push('flush'); if (onFlush) await onFlush(instance); if (failSave) throw Object.assign(new Error('Unsaved'), { code: 'EDITOR_UNSAVED_CHANGES' }); editorCalls.push('saved'); timeline.push('saved'); },
         async openHistory({ signal } = {}) {
           await instance.flush();
@@ -153,6 +153,56 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     frame: () => root.querySelector('iframe'),
   };
 }
+
+test('editor startup errors retain escaped collapsed details and a working retry without serializing error objects', async t => {
+  const f = await start(t, { active: true });
+  const editor = f.editorInstances[0];
+  editor.onError({ code: 'EDITOR_RUNTIME_ERROR', message: '<img src="x" onerror="run()"> & <a href="https://invalid.example">details</a>', stack: 'PRIVATE_STACK', payload: { token: 'PRIVATE_PAYLOAD' } });
+  const html = f.node('.workspace-panel').querySelector('.editor-frame-host').innerHTML;
+  assert.match(html, /The editor encountered an error/);
+  assert.match(html, /<details class="editor-error-details"><summary>Error details<\/summary><pre>EDITOR_RUNTIME_ERROR\n/);
+  assert.match(html, /&lt;img src=&quot;x&quot; onerror=&quot;run\(\)&quot;&gt; &amp; &lt;a href=/);
+  assert.doesNotMatch(html, /<details[^>]*\bopen\b|<img|<a\s|<script|PRIVATE_STACK|PRIVATE_PAYLOAD/);
+  assert.equal(editor.disposed, true);
+  f.click('retry-editor', { id }); await setImmediate();
+  assert.equal(f.editorInstances.length, 2);
+  assert.equal(f.frame(), f.editorInstances[1].iframe);
+});
+
+test('editor document failures bound raw text and reject nontext or malformed diagnostic fields', async t => {
+  const raw = '\u0000\u0080\u0085\u009f\u061c\u200e\u200f\u202eStart <failure>\n' + 'x'.repeat(4500) + 'PRIVATE_TAIL';
+  const f = await start(t, { active: true, onDocument: () => { throw { code: 'BAD CODE <script>', message: raw, stack: 'PRIVATE_STACK', cause: 'PRIVATE_CAUSE' }; } });
+  const html = f.node('.workspace-panel').querySelector('.editor-frame-host').innerHTML;
+  const detail = /<pre>([\s\S]*?)<\/pre>/.exec(html)?.[1];
+  assert.ok(detail); assert.ok(detail.length < 4100);
+  assert.match(detail, /^Start &lt;failure&gt;\n/); assert.match(detail, /…$/);
+  assert.doesNotMatch(html, /BAD CODE|[\u0000\u0080-\u009f\u061c\u200e\u200f\u202e]|PRIVATE_TAIL|PRIVATE_STACK|PRIVATE_CAUSE/);
+  for (const value of [null, {}, { message: { token: 'PRIVATE_TOKEN' }, code: 123 }, { message: ' \n\u0000', code: [] }]) {
+    const f = await start(t, { active: true, onDocument: () => { throw value; } });
+    const html = f.node('.workspace-panel').querySelector('.editor-frame-host').innerHTML;
+    assert.doesNotMatch(html, /editor-error-details|PRIVATE_TOKEN/);
+    assert.match(html, /data-action="retry-editor"/);
+  }
+});
+
+test('raw string startup diagnostics stay collapsed and ready or stale callbacks do not replace an editor', async t => {
+  const f = await start(t, { active: true });
+  const editor = f.editorInstances[0];
+  editor.onError('<b>Startup failed</b>');
+  const host = f.node('.workspace-panel').querySelector('.editor-frame-host');
+  assert.match(host.innerHTML, /The editor encountered an error/);
+  assert.match(host.innerHTML, /<pre>&lt;b&gt;Startup failed&lt;\/b&gt;<\/pre>/);
+  f.click('retry-editor', { id }); await setImmediate();
+  const next = f.editorInstances[1];
+  editor.onError({ code: 'EDITOR_RUNTIME_ERROR', message: 'STALE_DIAGNOSTIC' });
+  assert.equal(f.frame(), next.iframe); assert.equal(next.disposed, false);
+  next.onReady();
+  next.onError({ code: 'EDITOR_RUNTIME_ERROR', message: 'READY_DIAGNOSTIC' });
+  assert.equal(f.frame(), next.iframe); assert.equal(next.disposed, false);
+  assert.doesNotMatch(host.innerHTML, /STALE_DIAGNOSTIC|READY_DIAGNOSTIC|editor-error-details/);
+  assert.match(f.node('.toast-layer').innerHTML, /The editor encountered an error/);
+  assert.doesNotMatch(f.node('.toast-layer').innerHTML, /READY_DIAGNOSTIC/);
+});
 
 test('Version history reuses its recovery-point dialog and opens detailed history in the same artwork after save', async t => {
   const f = await start(t);

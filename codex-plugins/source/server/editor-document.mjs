@@ -40,9 +40,11 @@ export function adaptInlineEditorScript(source, scriptUrl) {
     return `((c)=>{if(c.randomUUID)return c.randomUUID();let b=new Uint8Array(16);c.getRandomValues(b);b[6]=b[6]&15|64;b[8]=b[8]&63|128;return Array.from(b,(v,i)=>([4,6,8,10].includes(i)?String.fromCharCode(45):String())+(v+256).toString(16).slice(1)).join(String())})(${crypto})`;
   });
   source = source.replace(/\bimport\.meta\.url\b/g, JSON.stringify(scriptUrl));
-  source = source.replace(/new URL\((["'])\.\/\1,([\w$]+)\.location\.href\)\.href/g,
+  // local-host.js is shipped unminified too: formatting must not leave its
+  // relative-base lookup running against the native editor's opaque URL.
+  source = source.replace(/\bnew\s+URL\s*\(\s*(["'])\.\/\1\s*,\s*([\w$]+)\s*\.\s*location\s*\.\s*href\s*\)\s*\.\s*href\b/g,
     match => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`);
-  source = source.replace(/new URL\((["'])\.\/\1,location\.href\)\.href/g,
+  source = source.replace(/\bnew\s+URL\s*\(\s*(["'])\.\/\1\s*,\s*location\s*\.\s*href\s*\)\s*\.\s*href\b/g,
     match => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`);
   source = source.replace(/([\w$]+)=([\w$]+)\(([\w$]+)\),([\w$]+)=\1\?null:([\w$]+)\.localComments\?\.\(([\w$]+)\)/g,
     (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`);
@@ -70,7 +72,7 @@ export function adaptInlineEditorScript(source, scriptUrl) {
       return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=async()=>{await globalThis.__CODEX_DESIGN_EDITOR_SETTLE__?.();return ${flush}(${win},${client})}),${match}`;
     });
   if (flushCaptures > 1 || /type:["']editor:flushed["']/.test(source) && flushCaptures !== 1) throw error('EDITOR_FLUSH_ADAPTER_UNSUPPORTED', 'The editor save barrier changed; review its native adapter before loading it.');
-  source = source.replace(/new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,
+  source = source.replace(/\bnew\s+URL\s*\(\s*target\s*\.\s*location\s*\.\s*href\s*\)\s*\.\s*searchParams\s*\.\s*get\s*\(\s*(["'])codexDesignLanguage\1\s*\)/g,
     match => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.language??${match})`);
   return source;
 }

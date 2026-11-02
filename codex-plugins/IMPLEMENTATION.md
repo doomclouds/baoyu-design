@@ -1,5 +1,16 @@
 # Codex Design library implementation
 
+## 0.6.2 Dashboard and floating-surface follow-up
+
+The Dashboard bootstrap now resolves its whitespace-formatted local base URL
+through the native virtual base. Floating menus/dialogs composite host alpha
+colors over an opaque theme base, and editor startup failures retain bounded,
+escaped diagnostics in collapsed Error details. The final complete regression
+passed 659/659 with concurrency 4; the earlier two identity-verification
+failures remain in the record with their cause unconfirmed. The configured
+GitHub package and actual-host gates are tracked in
+[ACCEPTANCE-0.6.2.md](ACCEPTANCE-0.6.2.md).
+
 ## 0.6.1 native acceptance follow-up
 
 0.6.0 was published at `b5cb0a9`, installed through the GitHub marketplace and
