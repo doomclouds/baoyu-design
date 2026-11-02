@@ -1,8 +1,10 @@
-# Codex Design 0.5.3 candidate — acceptance draft
+# Codex Design 0.5.3 — release acceptance
 
-Status recorded on **2026-11-02**. This is a candidate record, not a published or
-installed-host acceptance claim. The root task will append subsequent complete
-test and native operator results. Earlier failures remain evidence.
+Status recorded on **2026-11-02**. The scoped revision is published on
+`codex/plugin` at `d1f8ba98f83378f75d4ebdb0e626d9a7b075f0f4` and installed/enabled
+from the configured GitHub marketplace. The checks and native results below
+close its two repair gates. Earlier failures remain evidence; this is not a
+claim that every editor action or export format was exercised natively.
 
 ## Revision scope
 
@@ -118,7 +120,7 @@ The `.json` files contain command, exit-code, elapsed-time and raw-log metadata.
 The documentation task read these existing records; it did not rerun tests to
 create new evidence.
 
-## Pending consuming-host gates
+## Complete-suite decision
 
 ### Final complete test decision, 2026-11-02
 
@@ -137,19 +139,92 @@ The earlier **513/514** log remains unchanged. The generated package still has
 verification used generic `node`, Unicode/space paths, no node_modules, six tools
 and two resources including `ui://codex-design/0.5.3/library`.
 
-The root accepted these checks for publishing the two scoped fixes. Native
-installation and the consuming-host scenarios below remain separate gates.
+The root accepted these checks for publishing the two scoped fixes. The
+consuming-host results are recorded separately below.
 
-- Install the exact final 0.5.3 candidate from the intended GitHub marketplace
-  ref and confirm the consuming runtime/package identity after any required
-  normal reconnect/restart. This draft author performed no installation.
-- Exercise an actually sent native request across a validated zero-file old
-  cache directory without manual restoration; verify its own receipt,
-  dispatch and canonical completion.
-- In a self-created 0.5.3 native Canvas, create and edit an owned blank board,
-  resize it through real Properties, save/reopen, and compare index dimensions
-  with component preview metadata using the unchanged checker.
+## GitHub installation and live host
 
-All of these final 0.5.3 consuming-host decisions remain **pending** in this
-draft. The record covers the two revision fixes and their stated evidence
-scopes.
+The actual Desktop CLI refreshed the existing Git marketplace without a GitHub
+workflow or a second temporary marketplace. The release tree, Git snapshot and
+installed `0.5.3` cache matched all **185 files**, including the 184 owned files
+and generated manifest, with no missing, extra, different or linked entries.
+The actual Desktop verifier discovered five enabled skills, six MCP tools,
+the global entrypoint and `ui://codex-design/0.5.3/library`, with no diagnostics.
+
+The long-lived window initially retained old 0.5.2 MCP connections. The root
+used the host's normal plugin enable switch to turn only Codex Design off and
+back on. New MCP processes used the installed 0.5.3 entrypoint under the same
+Desktop app-server PID. The current chat then called `design_read(view.get)`
+successfully. **Codex was not restarted.** A redundant reinstall was not used.
+
+Evidence: `codex-design-0.5.3-installed-hashes.json`,
+`codex-design-0.5.3-installed-runtime.txt`,
+`codex-design-0.5.3-live-install.json` and
+`codex-design-0.5.3-marketplace-upgrade-no-proxy.txt` in the local archive.
+
+## Actual Canvas Resize and reopen
+
+The self-created QA artwork retained its original UUID and generated component.
+In installed 0.5.3, the root changed Width and Height through real Properties
+from `800 × 600` to `900 × 620`. Disk `boards` and that component's owned
+`$preview` both became `900 × 620`; the unchanged checker returned **0 problems**.
+The root closed its artwork Tab, then reopened it from Recent. The resized
+board and prior text were visible in the new Tab. This used normal UI saving;
+no project HTML, index or runtime-control file was hand-repaired.
+
+Evidence: `codex-design-0.5.3-native-resize.png` and
+`codex-design-0.5.3-native-resize-check.json`. The second request's independent
+before-edit snapshot also retained these matching dimensions.
+
+## Actual empty-cache migration and child reuse
+
+The updater naturally left the old 0.5.2 cache as a canonical ordinary empty
+directory. Before the second request, independent inspection recorded zero
+entries, the directory identity, the old skill binding, a paused idle worker
+and its real native child. No cache was deleted or restored for this test.
+
+Using the original comment's Reply and Add to chat, the root prepared request
+`ca0160ab-5993-41cc-b352-1f18f13021b2` and clicked the actual native Send button.
+The real parent read and accepted that exact request and ran its own 0.5.3
+dispatch command. Migration succeeded automatically with
+`previousBytesVerified:false`, the same binding-token digest and the same
+child `01a19b11-98ca-7dd3-a953-164b2b21effa` and registration ID.
+
+The child changed only `Native upgrade verified` to `Native upgrade final`,
+retained the `900 × 620` dimensions/layout, ran the original check with exit 0
+and zero problems, and completed its separate job and restore point. The
+canonical original comment received **`Upgrade QA second passed.` exactly
+once**, alongside the single first reply. The old cache remained the same empty
+directory; no manual restoration or model process replaced this lifecycle.
+
+After zero active/pending jobs were confirmed, public idle-only cleanup paused
+the QA listener without changing the canvas, component or comments. Independent
+first-party inspection then confirmed the listener returned
+`closed:true / listener-paused-or-replaced`, its turn completed normally, and
+the real child was idle. No native interruption was used.
+
+Evidence: `codex-design-0.5.3-upgrade-qa-before-second-request.json`,
+`codex-design-0.5.3-upgrade-qa-second-native-result.json`,
+`codex-design-0.5.3-upgrade-qa-idle-cleanup.json`,
+`codex-design-0.5.3-native-second-result.png` and
+`codex-design-0.5.3-native-second-comment.png`.
+
+## Coverage limits and accepted follow-ups
+
+These checks close the two revision repairs and installation gates. They do
+not turn the old Design System's ordinary dead-PID startup into a strict-refused
+recovery pass. The earlier request and export reports remain scoped evidence:
+Slides PDF/PNG and both observed PPTX variants, content-package import/export,
+and the additional actual Canvas PNG Save As/decode/visual check passed.
+HTML export has static validation only because browser policy refused local
+file navigation. Individual Design System file exports, data-backed Dashboard
+CSV, every non-comment AI entry and custom-font embedding were not all exercised
+natively in this revision.
+
+The public host API still does not provide a shared middle-sidebar slot or an
+expanded floating composer's exact rectangle. The compact native comment safe
+area therefore does not guarantee avoidance of every expanded composer; the
+operator temporarily narrowed and then restored the native chat width during
+this long reply test. The accepted host top-bar behavior and deferred
+cross-window exclusive editor ownership remain unchanged. No independent window,
+host patch, private IPC or artificial browser Tab was introduced.

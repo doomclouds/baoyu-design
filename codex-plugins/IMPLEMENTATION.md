@@ -1,8 +1,8 @@
 # Codex Design library implementation
 
-## 0.5.3 candidate follow-ups
+## 0.5.3 released repairs
 
-This candidate addresses two failures observed after installing 0.5.2:
+This revision addresses two failures observed after installing 0.5.2:
 
 - A verified older version directory in the same managed plugin-cache family
   can contain no files while its empty directory tree remains. Native request
@@ -22,11 +22,19 @@ remain failures. An actual 0.5.2 Resize also left the generated preview at the
 old dimensions and failed the checker. These are the baseline defects, not
 successful acceptance of the 0.5.3 fixes.
 
-Targeted author/reviewer results are recorded in
-[ACCEPTANCE-0.5.3.md](ACCEPTANCE-0.5.3.md). The first complete candidate run is
-**513/514**, with an unresolved temporary-editor `EBUSY` cleanup failure;
-complete-suite acceptance and installed 0.5.3 native verification remain
-pending.
+The GitHub marketplace revision is published, installed and enabled. All 185
+package files match the release and market snapshot. Native plugin off/on
+refreshed the current window's MCP connection without restarting Codex. The
+subsequent full suite passed **514/514**; its earlier **513/514** temporary-editor
+`EBUSY` failure is preserved and its cause remains unestablished.
+
+Actual 0.5.3 Properties Resize/save/Recent reopen now keeps the owned preview and
+index at `900 × 620`, with checker 0. A second actual native Send automatically
+migrated the naturally empty old 0.5.2 cache binding and reused the same real
+child, completed its own receipt/job/check, and replied exactly once. Idle-only
+QA cleanup retained all three content/comment hashes. Detailed scope and the
+remaining native coverage limits are in
+[ACCEPTANCE-0.5.3.md](ACCEPTANCE-0.5.3.md).
 
 ## 0.5.2 candidate follow-ups (historical)
 
@@ -51,7 +59,8 @@ temporary HTTP-preview identity failure. The later isolated 6/6 and complete
 505/505 results do not erase it; its original cause was not established. The
 fixture now preserves named-stage diagnostics and failed-cleanup state. Package
 consistency and portable relocation passed for 184 owned files. The generated
-package has not yet been installed.
+package was subsequently installed; see the dated correction and 0.5.3 results
+instead of treating this earlier candidate section as current status.
 
 ## 0.5.1 request and category corrections
 

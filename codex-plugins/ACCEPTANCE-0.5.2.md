@@ -33,10 +33,12 @@ connection-refused recovery branch. Its evidence is
 `codex-design-0.5.2-old-ds-reopen.json` and
 `codex-design-0.5.2-old-ds-native.png` in the acceptance archive.
 
-These two operational gaps motivate the
-[0.5.3 candidate and its pending acceptance](ACCEPTANCE-0.5.3.md). Its first
-complete run is currently **513/514**, with an `EBUSY` temporary-editor cleanup
-failure whose cause is not established. It is not a green release gate.
+These two operational gaps motivated
+[0.5.3 and its release acceptance](ACCEPTANCE-0.5.3.md). Its first complete run
+was **513/514**, with an `EBUSY` temporary-editor cleanup failure whose cause is
+not established. The later full **514/514** run, GitHub installation, live
+Properties Resize/reopen and automatic empty-cache migration/child reuse are
+recorded separately there; the first failure is not erased.
 
 All earlier failures and evidence scopes below are preserved.
 
