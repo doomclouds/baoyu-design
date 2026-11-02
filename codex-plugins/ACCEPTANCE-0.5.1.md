@@ -438,8 +438,32 @@ Evidence: `codex-design-0.5.1-native-pptx-basic-powerpoint.png`,
 `codex-design-0.5.1-native-pptx-basic-structure.json` and
 `codex-design-0.5.1-native-pptx-current-structure.json`.
 
-HTML/PNG exports, the Canvas export variants, individual Design System file
-exports and data-backed Dashboard CSV export remain unverified here. These
+At that point HTML/PNG exports, the Canvas export variants, individual Design
+System file exports and data-backed Dashboard CSV export remained unverified. These
 targeted successes do not close all formats, all UI, or the separate 0.5.2
 repair acceptance. The second native request is still only drafted, pending
 human Send; it is not counted as a completed receipt or worker-reuse case.
+
+### Additional PNG and HTML checks
+
+The same installed Slides editor exported its current page through Save As as
+`Native slides QA.png`: **179,746 bytes**, 3840 by 2160 RGBA. Pillow fully verified
+and decoded the PNG, and direct image inspection showed the QA text intact.
+Its SHA-256 is
+`A4752C9EC47D2F8CE783B3C877E366A30079B8A88D7FC33B661DB61D1ABE35AE`.
+
+Web page export saved `Native slides QA.html`: **440,864 bytes**, SHA-256
+`6C6B8E203432BE8A7CF63495EFD48ABFAE73503EBC966274992487EC57F0DA06`.
+Independent static parsing found the doctype, title and QA text, no actual
+external resource or CSS URL references, valid embedded JSON, and one inline
+JavaScript program that compiled without execution. This is static evidence.
+The browser tool explicitly denied local file-protocol navigation; no alternate
+navigation was attempted. HTML visual/interaction acceptance remains pending.
+The static report is `codex-design-0.5.1-native-html-static.json` in the archive.
+
+The idle native QA listener was subsequently retired with the installed public
+`stopWorker(..., {onlyWhenIdle:true})` after confirming zero active/pending jobs.
+Its actual native turn completed normally. Artwork and comments were unchanged;
+the second draft remained unsent and was not accepted or dispatched. The receipt
+is `codex-design-0.5.1-idle-qa-cleanup.json`. This cleanup is independent of the
+draft's instructions and does not establish a second-request reuse pass.

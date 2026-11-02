@@ -1724,6 +1724,8 @@ var init_edit_requests = __esm({
 });
 
 // source/scripts/edit-request-dispatch.mjs
+import { fileURLToPath } from "node:url";
+var executingModule;
 var init_edit_request_dispatch = __esm({
   "source/scripts/edit-request-dispatch.mjs"() {
     init_library();
@@ -1732,17 +1734,29 @@ var init_edit_request_dispatch = __esm({
     init_artifact_delivery();
     init_bridge_core();
     init_worker_core();
+    executingModule = fileURLToPath(import.meta.url);
   }
 });
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail4 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  const fail4 = (reason) => Object.assign(new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually."), reason ? { reason } : {});
   if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail4();
+  let url3;
   try {
-    const url3 = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url3.protocol) || url3.username || url3.password) throw fail4();
-    const response = await fetch(url3, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
+    const base = new URL(state.url);
+    if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith("/")) throw fail4();
+    url3 = new URL("__codex/editor-session", base);
+  } catch {
+    throw fail4();
+  }
+  let response;
+  try {
+    response = await fetch(url3, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
+  } catch (error113) {
+    throw fail4(refusedConnection(error113) ? "SESSION_CONNECTION_REFUSED" : void 0);
+  }
+  try {
     if (!response.ok) throw fail4();
     const session = await response.json();
     if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail4();
@@ -1750,6 +1764,13 @@ async function verifyEditorInstance(state, root, kind) {
   } catch {
     throw fail4();
   }
+}
+function refusedConnection(error113, seen = /* @__PURE__ */ new Set()) {
+  if (!error113 || typeof error113 !== "object" || seen.has(error113)) return false;
+  const next = new Set(seen).add(error113);
+  if (Array.isArray(error113.errors)) return error113.errors.length > 0 && error113.errors.every((item) => refusedConnection(item, next)) && (error113.cause === void 0 || refusedConnection(error113.cause, next));
+  if (error113.code === "ECONNREFUSED") return error113.cause === void 0 || refusedConnection(error113.cause, next);
+  return refusedConnection(error113.cause, next);
 }
 var init_artifact_command = __esm({
   "source/scripts/artifact-command.mjs"() {
@@ -53177,7 +53198,7 @@ import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash9 } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path11 from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // source/library/thumbnail.mjs
 init_safety();
@@ -55882,16 +55903,20 @@ var capabilityState = () => ({
 async function openLocalEditor(record3, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
   const current = readJson(path11.join(record3.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
-    await verifyEditorInstance(current, record3.path, record3.kind);
-    const binding = readJson(path11.join(record3.path, ".codex-design-bridge.json"));
-    return {
-      url: current.url,
-      artifactId: record3.id,
-      kind: record3.kind,
-      reused: true,
-      delivery: binding?.deliveryMode || "manual",
-      nativeConversationBound: false
-    };
+    try {
+      await verifyEditorInstance(current, record3.path, record3.kind);
+      const binding = readJson(path11.join(record3.path, ".codex-design-bridge.json"));
+      return {
+        url: current.url,
+        artifactId: record3.id,
+        kind: record3.kind,
+        reused: true,
+        delivery: binding?.deliveryMode || "manual",
+        nativeConversationBound: false
+      };
+    } catch (error113) {
+      if (error113.code !== "EDITOR_IDENTITY_UNVERIFIED" || error113.reason !== "SESSION_CONNECTION_REFUSED") throw error113;
+    }
   }
   const skill = `codex-${record3.kind}`;
   const cli = path11.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
@@ -55933,7 +55958,15 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
     child.once("error", (error113) => finish(failure3("EDITOR_START_FAILED", error113.message)));
     child.once("close", (code) => {
       if (timedOut) return finish(failure3("EDITOR_TIMEOUT", "The local editor did not finish starting."));
-      if (code !== 0) return finish(failure3("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
+      if (code !== 0) {
+        let detail;
+        try {
+          detail = JSON.parse(stderr.trim().split(/\r?\n/).at(-1));
+        } catch {
+        }
+        if (detail?.error === "EDITOR_IDENTITY_UNVERIFIED") return finish(failure3(detail.error, "The existing editor identity could not be safely recovered. Its records were preserved."));
+        return finish(failure3("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
+      }
       let result;
       try {
         result = JSON.parse(stdout.trim());
@@ -55953,7 +55986,7 @@ async function openLocalEditor(record3, { pluginRoot, env = process.env, timeout
     });
   });
 }
-function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
+function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../", import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
   if (!store) throw new TypeError("A LibraryStore is required.");
   const opening = /* @__PURE__ */ new Map();
   const trashing = /* @__PURE__ */ new Set();

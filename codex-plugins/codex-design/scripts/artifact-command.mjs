@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ import { getWorkerStatus, retryWorkerJob, stopWorker, registerNativeWorker, next
 import { designSystemSearchEnvironment } from './design-system-search.mjs';
 import { createLibraryStore } from '../library/index.mjs';
 import { UUID } from '../library/safety.mjs';
-import { WORKER_LOCK_FILE } from './worker-core.mjs';
+import { WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOCK_FILE, NATIVE_BINDING_FILE, loadJobs } from './worker-core.mjs';
 import { artworkAppUrl, openArtworkInApp, checkedArtworkDelivery, normalizeControlHints } from './artifact-delivery.mjs';
 import { dispatchEditRequest } from './edit-request-dispatch.mjs';
 
@@ -101,17 +101,161 @@ export async function checkpointArtworkForSkill(skillDir, givenRoot) {
 }
 
 export async function verifyEditorInstance(state, root, kind) {
-  const fail = () => new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.');
+  const fail = reason => Object.assign(new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.'), reason ? { reason } : {});
   if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail();
+  let url;
   try {
-    const url = new URL('__codex/editor-session', state.url);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw fail();
-    const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(2000), headers: { Accept: 'application/json' } });
+    const base = new URL(state.url);
+    if (base.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith('/')) throw fail();
+    url = new URL('__codex/editor-session', base);
+  } catch { throw fail(); }
+  let response;
+  try {
+    response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(2000), headers: { Accept: 'application/json' } });
+  } catch (error) {
+    throw fail(refusedConnection(error) ? 'SESSION_CONNECTION_REFUSED' : undefined);
+  }
+  try {
     if (!response.ok) throw fail();
     const session = await response.json();
     if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail();
     return session;
   } catch { throw fail(); }
+}
+
+// A response, timeout, DNS/reset error or mixed address failure is not proof
+// that the recorded service has disappeared. Only exact refused leaves count.
+function refusedConnection(error, seen = new Set()) {
+  if (!error || typeof error !== 'object' || seen.has(error)) return false;
+  const next = new Set(seen).add(error);
+  if (Array.isArray(error.errors)) return error.errors.length > 0 && error.errors.every(item => refusedConnection(item, next))
+    && (error.cause === undefined || refusedConnection(error.cause, next));
+  if (error.code === 'ECONNREFUSED') return error.cause === undefined || refusedConnection(error.cause, next);
+  return refusedConnection(error.cause, next);
+}
+
+function fileSnapshot(file) {
+  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) return null;
+  const bytes = fs.readFileSync(file);
+  return { stat, bytes, hash: createHash('sha256').update(bytes).digest('hex') };
+}
+
+function sameSnapshot(current, captured, { renamed = false } = {}) {
+  return current && captured && current.stat.isFile() && !current.stat.isSymbolicLink() && current.stat.nlink === 1
+    && current.stat.dev === captured.stat.dev && current.stat.ino === captured.stat.ino
+    && (renamed || current.stat.mtimeMs === captured.stat.mtimeMs && current.stat.ctimeMs === captured.stat.ctimeMs)
+    && current.hash === captured.hash && current.bytes.equals(captured.bytes);
+}
+
+function recoveryPaths(root, { files = true } = {}) {
+  const absolute = path.resolve(root), parts = absolute.slice(path.parse(absolute).root.length).split(path.sep).filter(Boolean);
+  let directory = path.parse(absolute).root;
+  for (const part of parts) {
+    directory = path.join(directory, part);
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('An artwork directory is aliased.');
+  }
+  for (const name of files ? ['.artifact-server.json', BINDING_FILE, NATIVE_BINDING_FILE, WORKER_FILE, WORKER_JOBS_FILE] : []) {
+    const stat = fs.lstatSync(path.join(root, name), { throwIfNoEntry: false });
+    if (stat && (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) throw new Error('An artwork control file is aliased.');
+  }
+  for (const name of [`${BINDING_FILE}.lock`, WORKER_LOCK_FILE]) {
+    for (const lock of [path.join(root, name), path.join(root, name + '.reaper')]) {
+      const stat = fs.lstatSync(lock, { throwIfNoEntry: false });
+      if (!stat) continue;
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('An artwork lock directory is aliased.');
+      for (const entry of fs.readdirSync(lock)) {
+        const control = fs.lstatSync(path.join(lock, entry));
+        if (!control.isFile() || control.isSymbolicLink() || control.nlink !== 1) throw new Error('An artwork lock owner is aliased.');
+      }
+    }
+  }
+}
+
+function nativeRecoveryBinding(binding, state, root, kind) {
+  return binding?.version === 1 && binding.deliveryMode === 'native' && binding.serverPid === state.pid
+    && samePath(binding.root, root) && path.basename(binding.skillDir || '').replace(/^claude-/, 'codex-') === `codex-${kind}`
+    && UUID.test(binding.token || '')
+    && !['remote', 'remoteAuthTokenEnv', 'workerModel', 'agentHook', 'customHook'].some(key => binding[key] !== undefined);
+}
+
+function refuseIncompleteRecovery(root, kind) {
+  const binding = readJson(path.join(root, BINDING_FILE));
+  if (binding?.deliveryMode !== 'native') return;
+  for (const name of fs.readdirSync(root)) {
+    if (!/^\.artifact-server\.refused-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i.test(name)) continue;
+    let snapshot, state;
+    try {
+      snapshot = fileSnapshot(path.join(root, name));
+      if (!snapshot?.stat.isFile() || snapshot.stat.isSymbolicLink() || snapshot.stat.nlink !== 1) throw new Error('Aliased recovery evidence.');
+      state = JSON.parse(snapshot.bytes);
+    } catch { throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'Archived editor recovery evidence could not be verified. Its records and binding were preserved.'); }
+    if (nativeRecoveryBinding(binding, state, root, kind) && state.kind === kind && samePath(state.root, root)) {
+      // An archive is denial evidence, never authority to replay a recovery.
+      // A failed raw startup must not become a fresh token/parent on Retry.
+      throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The previous data-service recovery did not finish starting. Its archived record and original native binding were preserved; inspect the original startup error before retrying.');
+    }
+  }
+}
+
+// Called only by the existing CLI binding-lock owner. The worker lock protects
+// the empty-queue decision and rename, not the subsequent service startup.
+async function recoverRefusedEditor(script, forwarded, env, skillDir, root, kind, captured, originalError) {
+  if (originalError?.code !== 'EDITOR_IDENTITY_UNVERIFIED' || originalError.reason !== 'SESSION_CONNECTION_REFUSED') throw originalError;
+  const serverFile = path.join(root, '.artifact-server.json'), bindingFile = path.join(root, BINDING_FILE);
+  let bindingSnapshot, binding;
+  try {
+    recoveryPaths(root);
+    const state = JSON.parse(captured.bytes);
+    recoveryPaths(state.root);
+    bindingSnapshot = fileSnapshot(bindingFile);
+    binding = bindingSnapshot && JSON.parse(bindingSnapshot.bytes);
+    if (!nativeRecoveryBinding(binding, state, root, kind) || !sameSnapshot(fileSnapshot(serverFile), captured)) throw originalError;
+    recoveryPaths(binding.root);
+    await withLock(path.join(root, WORKER_LOCK_FILE), async () => {
+      recoveryPaths(root);
+      if (!sameSnapshot(fileSnapshot(serverFile), captured) || !sameSnapshot(fileSnapshot(bindingFile), bindingSnapshot)) throw originalError;
+      // Recheck the endpoint while both ownership fences are held. Merely
+      // replaying a caller's earlier refused error cannot authorize a rename.
+      let stillRefused = false;
+      try { await verifyEditorInstance(state, root, kind); }
+      catch (error) { if (error.reason !== 'SESSION_CONNECTION_REFUSED') throw originalError; stillRefused = true; }
+      if (!stillRefused) throw originalError;
+      const status = await getWorkerStatus(root), jobs = loadJobs(root);
+      const registry = readJson(path.join(root, WORKER_FILE));
+      const nativeBinding = readJson(path.join(root, NATIVE_BINDING_FILE));
+      if (status.counts.active || status.counts.pending || Object.values(jobs.jobs).some(job => ['active', 'pending'].includes(job?.status))
+        || registry && (registry.activeJobId || !['waiting', 'paused'].includes(registry.status)
+          || ['pid', 'url', 'token', 'command'].some(key => Object.hasOwn(registry, key)))
+        || nativeBinding && !samePath(nativeBinding.root, root)) throw originalError;
+      if (nativeBinding) recoveryPaths(nativeBinding.root);
+      recoveryPaths(root);
+      if (!sameSnapshot(fileSnapshot(serverFile), captured) || !sameSnapshot(fileSnapshot(bindingFile), bindingSnapshot)) throw originalError;
+      const backup = path.join(root, `.artifact-server.refused-${Date.now()}-${randomUUID()}.json`);
+      // Cooperative CLI writers hold the binding lock. Recheck the archived
+      // object too: never start or restore over an unexpected external writer.
+      fs.renameSync(serverFile, backup);
+      if (!sameSnapshot(fileSnapshot(backup), captured, { renamed: true })) throw originalError;
+    }, { timeoutMs: 10_000, staleMs: 0 });
+  } catch { throw originalError; }
+
+  // The binding startup lock remains held. Invoke the original short-lived
+  // open command, not this wrapper (which would recursively acquire the lock).
+  // Native Add to chat intercepts comment delivery before the legacy hook.
+  const started = await originalJsonCommand(script, forwarded, env);
+  if (started.code !== 0) return started.code;
+  try {
+    recoveryPaths(root);
+    const fresh = readJson(serverFile);
+    await verifyEditorInstance(fresh, root, kind);
+    if (fresh.pid === JSON.parse(captured.bytes).pid || started.result?.pid !== fresh.pid || !sameSnapshot(fileSnapshot(bindingFile), bindingSnapshot)) throw originalError;
+    // Change only data-runtime coordinates. Token, parent and native binding
+    // remain owned by their existing controller and are never rebound here.
+    atomicJson(bindingFile, { ...binding, serverPid: fresh.pid, skillDir });
+  } catch { throw originalError; }
+  process.stdout.write(`${JSON.stringify({ ...started.result, recovered: true }, null, 2)}\n`);
+  return 0;
 }
 
 async function stopVerified(script, root, kind, state, env, argv = ['stop', root]) {
@@ -215,6 +359,7 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
     const script = path.join(skillDir, 'scripts', 'artifact.mjs');
     const { forwarded, options } = parseBridgeArguments(argv);
     let command = forwarded[0];
+    const internalOpen = command === 'open-service';
     if (!command || ['--help', '-h', 'help'].includes(command)) {
       process.stdout.write(publicHelp(skillDir)); process.exitCode = 0; return 0;
     }
@@ -300,6 +445,29 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       return code;
     }
     if (!['open', 'serve'].includes(command) || options.noAgent || customHook) {
+      if (command === 'open') {
+        const { root, rootIndex } = artifactRoot(skillDir, forwarded);
+        forwarded[rootIndex] = root;
+        try { recoveryPaths(root, { files: false }); }
+        catch { throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The artwork startup lock directories are aliased; their records were preserved.'); }
+        return await withLock(path.join(root, `${BINDING_FILE}.lock`), async () => {
+          const captured = fileSnapshot(path.join(root, '.artifact-server.json'));
+          const state = captured && readJson(path.join(root, '.artifact-server.json'));
+          if (state && alive(state.pid)) {
+            try { await verifyEditorInstance(state, root, kindForSkill(skillDir)); }
+            catch (error) {
+              if (internalOpen && !customHook && captured && options.noAgent) {
+                const code = await recoverRefusedEditor(script, forwarded, env, skillDir, root, kindForSkill(skillDir), captured, error);
+                process.exitCode = code; return code;
+              }
+              throw error;
+            }
+          }
+          if (!state || !alive(state.pid)) refuseIncompleteRecovery(root, kindForSkill(skillDir));
+          const code = await originalCommand(script, forwarded, env);
+          process.exitCode = code; return code;
+        });
+      }
       if (['open', 'serve'].includes(command)) {
         const { root } = artifactRoot(skillDir, forwarded);
         const state = readJson(path.join(root, '.artifact-server.json'));
@@ -324,14 +492,24 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
     const bindingFile = path.join(root, BINDING_FILE);
     const serverFile = path.join(root, '.artifact-server.json');
     let runningPromise;
+    try { recoveryPaths(root, { files: false }); }
+    catch { throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The artwork startup lock directories are aliased; their records were preserved.'); }
     const code = await withLock(`${bindingFile}.lock`, async () => {
       const previous = readJson(bindingFile);
+      const captured = fileSnapshot(serverFile);
       let state = readJson(serverFile);
       const running = state && alive(state.pid);
+      if (!running) refuseIncompleteRecovery(root, kindForSkill(skillDir));
       if (!running) state = null;
       const expectedKind = kindForSkill(skillDir);
       if (running && (state.kind !== expectedKind || !samePath(state.root, root))) throw new BridgeError('EDITOR_CONFLICT', 'A different editor is recorded for this folder; stop it explicitly before opening.');
-      if (running) await verifyEditorInstance(state, root, expectedKind);
+      if (running) {
+        try { await verifyEditorInstance(state, root, expectedKind); }
+        catch (error) {
+          if (!internalOpen || command !== 'open' || !captured) throw error;
+          return await recoverRefusedEditor(script, forwarded, env, skillDir, root, expectedKind, captured, error);
+        }
+      }
       const owned = running && previous && previous.serverPid === state.pid && sameTarget(previous, target);
       if (running && !owned) {
         if (!options.rebind) throw new BridgeError('EDITOR_ALREADY_BOUND', 'This running editor is not bound to this Codex chat. Stop it first, or pass --rebind to restart this editor and bind it here.');

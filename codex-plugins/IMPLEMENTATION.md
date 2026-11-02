@@ -1,5 +1,30 @@
 # Codex Design library implementation
 
+## 0.5.2 candidate follow-ups
+
+The candidate keeps the global workspace and host-selected/default local
+environment. It repairs active Rename save bases, uncached externally created
+artwork metadata, generated blank-artboard contracts, and native comment safe
+areas. Further installed-0.5.1 investigation found two upgrade/reopen cases:
+versioned skill paths need verified migration, and a refused old service record
+must not mistake an unrelated reused PID for this artwork's live editor.
+
+Skill migration preserves the existing native-parent and idle-handoff rules;
+every new request still needs its own actual user Send, receipt and dispatch.
+Refused-service recovery is limited to the internal native open-service route,
+with original-state checks and startup locking. It archives the stale record
+without stopping its recorded PID. A genuinely failed subsequent startup keeps
+its error and identity; it is not silently retried as a new binding.
+
+See [ACCEPTANCE-0.5.2.md](ACCEPTANCE-0.5.2.md) for candidate checks and the
+remaining consuming-host gates. Earlier 435- and 464-test results are historical
+candidate baselines. The first combined 505-test run was 504/505, with an explicit
+temporary HTTP-preview identity failure. The later isolated 6/6 and complete
+505/505 results do not erase it; its original cause was not established. The
+fixture now preserves named-stage diagnostics and failed-cleanup state. Package
+consistency and portable relocation passed for 184 owned files. The generated
+package has not yet been installed.
+
 ## 0.5.1 request and category corrections
 
 Native draft text includes the exact immutable request URI before the bounded
@@ -40,8 +65,12 @@ the generation manifest matched the release and downloaded snapshot. Actual
 native Dashboard creation, Sources, menu dismissal and Save As passed their
 recorded cases. Native Canvas Properties opened, but Rename followed by adding
 an artboard exposed a save conflict that did not recover on a normal retry.
-That issue is tracked in a separate unpublished repair branch. Current-chat
-MCP reconnection and remaining native operator cases are still pending; see
+That issue is tracked in a separate unpublished repair branch. After the user's
+restart, current-chat MCP reads and the first actual native edit/reply passed.
+Slides and Design System controls, content save/reopen, QA Trash/Restore,
+native content-package import, and actual PDF/PPTX exports were also checked.
+The second native request remains an unsent draft. The idle QA listener was
+retired without editing content, and its actual native turn ended normally; see
 [ACCEPTANCE-0.5.1.md](ACCEPTANCE-0.5.1.md) for the exact evidence boundaries.
 The future header
 target is a named, nonclosable native home tab visible from first open, with a
@@ -247,10 +276,10 @@ host verification and a product decision about its visible authorization flow.
   permanent library tab followed by unique artifact tabs. The approved visual
   references are `library-slides-v1.png` and `workspace-tabs-v2.png` in the user's
   `~/.codex/CodexDesignLibrary/designs/codex-design-library-prototype/` folder.
-- One artifact has one tab. Other conversations may reference an artifact
-  read-only; source editing returns to the artwork tab or its explicit local
-  directory. One independently bound editing conversation per artifact remains
-  a future target, not a released 0.3 capability.
+- One artifact has one tab in the workspace. Other conversations may reference
+  an artifact read-only; source editing returns to the artwork tab or its
+  explicit local directory. The earlier per-artifact bound-conversation target
+  was superseded by the global workspace and native draft workflow.
 - Empty creation persists content before opening an editor. Browsing, manually
   editing, and opening tabs do not start model turns.
 - Keep existing comments, object anchors, replies, resolve/reopen, and explicit
@@ -275,10 +304,9 @@ host verification and a product decision about its visible authorization flow.
 - Design systems are reference material read and followed by AI. Changing
   a source system never automatically changes other artifacts. Do not add an
   application/dependency-upgrade workflow.
-- Bilingual support is UI ONLY, using i18next resources and system-language
-  detection (Chinese for zh, English fallback). Library/editor controls,
-  menus, dialogs, status, and errors are in scope. Artifact content, skill
-  prompts, CLI/JSON contracts, comments, and conversations are not translated.
+- Plugin controls, menus, dialogs, status and errors stay English. The user
+  cancelled the earlier bilingual UI request. Artwork content, user titles,
+  comments and conversations retain their authored language.
 
 ## Boundaries and ownership
 
@@ -311,5 +339,7 @@ The public MCP Extensions global/thread/file entrypoints and composer mentions
 are documented. However, the Space Slides composer/project picker and
 artifact-session binding are first-party implementation details. Third-party
 access must be verified in the current host before claiming the same behavior.
-Do not silently replace per-artifact native conversations with one shared
-global conversation or an unrelated background model daemon.
+The approved global workspace uses the host's native composer and selected or
+default local environment. It does not create per-artifact bound conversations
+or an unrelated background model daemon. Native job ownership records do not
+turn an artwork into a permanently bound user conversation.

@@ -1719,6 +1719,8 @@ var init_edit_requests = __esm({
 });
 
 // source/scripts/edit-request-dispatch.mjs
+import { fileURLToPath } from "node:url";
+var executingModule;
 var init_edit_request_dispatch = __esm({
   "source/scripts/edit-request-dispatch.mjs"() {
     init_library();
@@ -1727,17 +1729,29 @@ var init_edit_request_dispatch = __esm({
     init_artifact_delivery();
     init_bridge_core();
     init_worker_core();
+    executingModule = fileURLToPath(import.meta.url);
   }
 });
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail4 = () => new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually.");
+  const fail4 = (reason) => Object.assign(new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually."), reason ? { reason } : {});
   if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail4();
+  let url;
   try {
-    const url = new URL("__codex/editor-session", state.url);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw fail4();
-    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
+    const base = new URL(state.url);
+    if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith("/")) throw fail4();
+    url = new URL("__codex/editor-session", base);
+  } catch {
+    throw fail4();
+  }
+  let response;
+  try {
+    response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
+  } catch (error3) {
+    throw fail4(refusedConnection(error3) ? "SESSION_CONNECTION_REFUSED" : void 0);
+  }
+  try {
     if (!response.ok) throw fail4();
     const session = await response.json();
     if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail4();
@@ -1745,6 +1759,13 @@ async function verifyEditorInstance(state, root, kind) {
   } catch {
     throw fail4();
   }
+}
+function refusedConnection(error3, seen = /* @__PURE__ */ new Set()) {
+  if (!error3 || typeof error3 !== "object" || seen.has(error3)) return false;
+  const next = new Set(seen).add(error3);
+  if (Array.isArray(error3.errors)) return error3.errors.length > 0 && error3.errors.every((item) => refusedConnection(item, next)) && (error3.cause === void 0 || refusedConnection(error3.cause, next));
+  if (error3.code === "ECONNREFUSED") return error3.cause === void 0 || refusedConnection(error3.cause, next);
+  return refusedConnection(error3.cause, next);
 }
 var init_artifact_command = __esm({
   "source/scripts/artifact-command.mjs"() {
@@ -1765,7 +1786,7 @@ init_safety();
 import fs9 from "node:fs";
 import path13 from "node:path";
 import { spawn as spawn3 } from "node:child_process";
-import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
+import { fileURLToPath as fileURLToPath4, pathToFileURL } from "node:url";
 
 // source/server/http-preview.mjs
 init_library();
@@ -1775,7 +1796,7 @@ import http from "node:http";
 import fs8 from "node:fs/promises";
 import path12 from "node:path";
 import { randomBytes, randomUUID as randomUUID8 } from "node:crypto";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // source/server/service.mjs
 init_bridge_core();
@@ -1784,7 +1805,7 @@ import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash9 } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path11 from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // source/library/thumbnail.mjs
 init_safety();
@@ -4488,16 +4509,20 @@ var capabilityState = () => ({
 async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
   const current = readJson(path11.join(record.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
-    await verifyEditorInstance(current, record.path, record.kind);
-    const binding = readJson(path11.join(record.path, ".codex-design-bridge.json"));
-    return {
-      url: current.url,
-      artifactId: record.id,
-      kind: record.kind,
-      reused: true,
-      delivery: binding?.deliveryMode || "manual",
-      nativeConversationBound: false
-    };
+    try {
+      await verifyEditorInstance(current, record.path, record.kind);
+      const binding = readJson(path11.join(record.path, ".codex-design-bridge.json"));
+      return {
+        url: current.url,
+        artifactId: record.id,
+        kind: record.kind,
+        reused: true,
+        delivery: binding?.deliveryMode || "manual",
+        nativeConversationBound: false
+      };
+    } catch (error3) {
+      if (error3.code !== "EDITOR_IDENTITY_UNVERIFIED" || error3.reason !== "SESSION_CONNECTION_REFUSED") throw error3;
+    }
   }
   const skill = `codex-${record.kind}`;
   const cli = path11.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
@@ -4539,7 +4564,15 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     child.once("error", (error3) => finish(failure2("EDITOR_START_FAILED", error3.message)));
     child.once("close", (code) => {
       if (timedOut) return finish(failure2("EDITOR_TIMEOUT", "The local editor did not finish starting."));
-      if (code !== 0) return finish(failure2("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
+      if (code !== 0) {
+        let detail2;
+        try {
+          detail2 = JSON.parse(stderr.trim().split(/\r?\n/).at(-1));
+        } catch {
+        }
+        if (detail2?.error === "EDITOR_IDENTITY_UNVERIFIED") return finish(failure2(detail2.error, "The existing editor identity could not be safely recovered. Its records were preserved."));
+        return finish(failure2("EDITOR_START_FAILED", stderr.trim().slice(-2e3) || `Editor command exited ${code}.`));
+      }
       let result;
       try {
         result = JSON.parse(stdout.trim());
@@ -4559,7 +4592,7 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     });
   });
 }
-function createDesignService({ store, pluginRoot = fileURLToPath(new URL("../", import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
+function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../", import.meta.url)), editorOpen = openLocalEditor, editorStop = stopLocalEditor } = {}) {
   if (!store) throw new TypeError("A LibraryStore is required.");
   const opening = /* @__PURE__ */ new Map();
   const trashing = /* @__PURE__ */ new Set();
@@ -4905,7 +4938,7 @@ async function requestJson(request, maximum) {
     throw error2("INVALID_JSON", "Expected one JSON object.");
   }
 }
-async function startLibraryPreview({ root, pluginRoot = fileURLToPath2(new URL("../", import.meta.url)), store, service, html, port = 0, maxRequestBytes = 17 * 1024 * 1024 } = {}) {
+async function startLibraryPreview({ root, pluginRoot = fileURLToPath3(new URL("../", import.meta.url)), store, service, html, port = 0, maxRequestBytes = 17 * 1024 * 1024 } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535 || !Number.isSafeInteger(maxRequestBytes) || maxRequestBytes < 1) throw error2("INVALID_PREVIEW_OPTION", "Invalid preview port or request limit.");
   store ||= createLibraryStore({ ...root === void 0 ? {} : { root }, isBusy: previewNativeActivity });
   await store.initialize();
@@ -5087,7 +5120,7 @@ async function main(argv = process.argv.slice(2)) {
     await store.initialize();
     const log = await safePath(root, "_state/library-preview.log", { mustExist: false });
     const fd = fs9.openSync(log, "a");
-    const entrypoint = fileURLToPath3(import.meta.url), childArgs = [entrypoint, "serve", "--root", root, "--plugin-root", options.pluginRoot || fileURLToPath3(new URL("../", import.meta.url)), ...options.port === void 0 ? [] : ["--port", String(options.port)]];
+    const entrypoint = fileURLToPath4(import.meta.url), childArgs = [entrypoint, "serve", "--root", root, "--plugin-root", options.pluginRoot || fileURLToPath4(new URL("../", import.meta.url)), ...options.port === void 0 ? [] : ["--port", String(options.port)]];
     const child = spawn3(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
     child.unref();
     fs9.closeSync(fd);

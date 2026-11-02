@@ -91,13 +91,78 @@ test('unbuilt UI with external assets is refused instead of silently rendering a
 test('CLI detached open, status and authenticated stop operate on only the explicitly selected temporary library', { timeout: 30_000 }, async t => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-design-http-cli-'));
   const root = path.join(temporary, 'Library'), pluginRoot = path.join(temporary, 'BuiltPlugin');
-  await fs.mkdir(path.join(pluginRoot, 'ui'), { recursive: true }); await fs.writeFile(path.join(pluginRoot, 'ui/index.html'), html);
   const cli = fileURLToPath(new URL('../source/scripts/library-preview.mjs', import.meta.url));
-  const run = async command => JSON.parse((await execFileAsync(process.execPath, [cli, command, '--root', root, '--plugin-root', pluginRoot], { timeout: 20_000, windowsHide: true })).stdout);
-  t.after(async () => { await run('stop').catch(() => {}); const relative = path.relative(os.tmpdir(), temporary); assert.ok(relative && !relative.startsWith('..')); await fs.rm(temporary, { recursive: true, force: true }); });
-  const opened = await run('open'); assert.equal(opened.nativeIntegrationVerified, false); assert.equal(opened.mode, 'local-http-preview');
-  const status = await run('status'); assert.equal(status.running, true); assert.equal(status.pid, opened.pid);
-  const reused = await run('open'); assert.equal(reused.reused, true); assert.equal(reused.pid, opened.pid);
-  assert.equal((await fetch(opened.url)).status, 200);
-  assert.equal((await run('stop')).stopped, true); assert.equal((await run('status')).running, false);
+  const diagnosticsFile = path.join(temporary, 'cli-diagnostics.json');
+  const diagnostics = { version: 1, temporary, root, pluginRoot, executable: process.execPath, cli, stages: [] };
+  let bodyCompleted = false;
+  const errorDetails = cause => ({ name: cause.name, code: cause.code, message: cause.message,
+    stdout: typeof cause.stdout === 'string' ? cause.stdout.slice(-65_536) : undefined,
+    stderr: typeof cause.stderr === 'string' ? cause.stderr.slice(-65_536) : undefined,
+    signal: cause.signal, killed: cause.killed });
+  const readEvidence = async relative => {
+    const file = path.join(root, ...relative.split('/'));
+    try {
+      const info = await fs.lstat(file);
+      if (!info.isFile() || info.isSymbolicLink()) return { file, refused: 'not a regular unaliased file' };
+      const handle = await fs.open(file, 'r');
+      try {
+        const length = Math.min(info.size, 65_536), bytes = Buffer.alloc(length);
+        await handle.read(bytes, 0, length, Math.max(0, info.size - length));
+        return { file, bytes: info.size, modifiedAt: info.mtime.toISOString(), truncated: length < info.size, text: bytes.toString('utf8') };
+      } finally { await handle.close(); }
+    } catch (cause) { return { file, missing: cause.code === 'ENOENT', error: cause.code === 'ENOENT' ? undefined : errorDetails(cause) }; }
+  };
+  const snapshot = async () => ({ state: await readEvidence(PREVIEW_STATE), log: await readEvidence('_state/library-preview.log') });
+  const saveDiagnostics = () => fs.writeFile(diagnosticsFile, JSON.stringify(diagnostics, null, 2) + '\n');
+  const stage = async (name, operation) => {
+    const entry = { stage: name, startedAt: new Date().toISOString(), before: await snapshot() };
+    diagnostics.stages.push(entry);
+    try {
+      const result = await operation(entry);
+      entry.result = result; entry.passed = true;
+      return result;
+    } catch (cause) {
+      entry.passed = false; entry.error = errorDetails(cause);
+      throw new Error(`[${name}] ${cause.message}; temporary evidence: ${diagnosticsFile}`, { cause });
+    } finally {
+      entry.finishedAt = new Date().toISOString(); entry.after = await snapshot();
+      await saveDiagnostics();
+    }
+  };
+  const run = (name, command, check) => stage(name, async entry => {
+    entry.argv = [cli, command, '--root', root, '--plugin-root', pluginRoot];
+    const output = await execFileAsync(process.execPath, entry.argv, { timeout: 20_000, windowsHide: true });
+    entry.stdout = output.stdout; entry.stderr = output.stderr;
+    const result = JSON.parse(output.stdout); check?.(result); return result;
+  });
+  t.after(async () => {
+    diagnostics.beforeCleanup = await snapshot();
+    try {
+      await run('cleanup-stop', 'stop', result => assert.ok(result.stopped === true || result.running === false,
+        'authenticated cleanup must confirm stopped or already not running'));
+    } catch (cause) {
+      diagnostics.retained = true; diagnostics.cleanupError = errorDetails(cause);
+      await saveDiagnostics();
+      t.diagnostic(`Cleanup could not confirm graceful shutdown. Preserved ${temporary}; inspect ${diagnosticsFile} and the original preview state/log. No PID was signalled by the fixture.`);
+      throw cause;
+    }
+    if (!bodyCompleted) {
+      diagnostics.retained = true; await saveDiagnostics();
+      t.diagnostic(`Failed CLI stage evidence retained at ${diagnosticsFile}; authenticated cleanup completed.`);
+      return;
+    }
+    const relative = path.relative(os.tmpdir(), temporary);
+    assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+    await fs.rm(temporary, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(pluginRoot, 'ui'), { recursive: true }); await fs.writeFile(path.join(pluginRoot, 'ui/index.html'), html);
+  const opened = await run('initial-open', 'open', result => {
+    assert.equal(result.nativeIntegrationVerified, false); assert.equal(result.mode, 'local-http-preview');
+  });
+  await run('initial-status', 'status', result => { assert.equal(result.running, true); assert.equal(result.pid, opened.pid); });
+  await run('reuse-open', 'open', result => { assert.equal(result.reused, true); assert.equal(result.pid, opened.pid); });
+  await stage('page-fetch', async () => { const response = await fetch(opened.url); assert.equal(response.status, 200); return { status: response.status }; });
+  await run('explicit-stop', 'stop', result => assert.equal(result.stopped, true));
+  await run('stopped-status', 'status', result => assert.equal(result.running, false));
+  bodyCompleted = true;
 });

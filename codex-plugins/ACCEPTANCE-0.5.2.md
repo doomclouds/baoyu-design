@@ -31,11 +31,32 @@ acceptance. It does not overwrite or hot-edit the published 0.5.1 cache.
 - Native comment cards and All comments lists respect the reserved bottom
   composer area. The existing anchors, toolbar seats and author avatars remain;
   oversized cards/lists scroll within their available area. Geometry hints and
-  observers are cleaned up on disposal. Standalone comment layout is unchanged.
+  observers are cleaned up on disposal. The compact 72-pixel reserve and public
+  safe-area hints do not measure an expanded desktop composer. Standalone
+  comment layout is unchanged.
+- Native request dispatch can migrate an idle artwork's skill binding to a
+  newer verified executing package. It verifies the exact skill kind and
+  manifest-owned package files. A removed old cache is supported only within
+  the current package's canonical `CODEX_HOME/plugins/cache/<marketplace>/codex-design/`
+  family, with no fixed marketplace name or user-directory path. Same-parent
+  upgrades retain their token; the existing fully idle parent-handoff contract
+  generates a new token and requires explicit child registration. Active
+  writers, live listeners, inconsistent ownership and unrelated packages remain
+  refused. A prepared request is never accepted or queued by upgrading.
+- An internal native editor open can recover a conclusively connection-refused
+  data service. Its startup-lock owner rechecks the local endpoint, original
+  state bytes and worker ownership, archives the exact stale record, and starts
+  one newly verified service. It does not kill the recorded live PID, replace
+  an active/pending job, or rebind a native parent/child. Timeouts, responding
+  endpoints, custom hooks, legacy process ownership and unsafe paths remain
+  refused. A failed recovery retains its evidence and cannot become an
+  automatic fresh binding on Retry.
 
-The repair changes the shared controller for all four native artwork types.
-It does not create chats, queue workers, restart an artwork data service or
-claim a native fixed-home header API. The previously accepted top-bar limit,
+The shared controller repairs apply to all four native artwork types. Rename
+and metadata hydration reuse the existing data service; only the guarded
+connection-refused recovery can replace its unavailable runtime. The candidate
+does not automatically create chats, accept drafts, dispatch unsent requests,
+or claim a native fixed-home header API. The previously accepted top-bar limit,
 English plugin UI and original author-avatar comment pins remain unchanged.
 
 ## Evidence before packaging
@@ -62,7 +83,7 @@ There was no failed whole-suite run before that 435-test result; the
 earlier focused Rename fixture failures remain documented separately.
 
 After the blank-artboard contract, index-change performance guard and native
-comment viewport additions, the latest rebuilt candidate passed **464/464
+comment viewport additions, an intermediate rebuilt candidate passed **464/464
 tests**, zero failed, cancelled or skipped tests, in **35,475.99 ms**. Generated
 consistency passed for **184 owned files**. Portable relocation again passed
 with generic `node`, Unicode/space paths, no node_modules, six tools and two
@@ -70,6 +91,8 @@ resources, including `ui://codex-design/0.5.2/library`. The final logs are
 `codex-design-0.5.2-final-tests.txt` and
 `codex-design-0.5.2-final-portable.txt`. The 435/435 and 182-file evidence above
 is retained as the earlier candidate, not relabeled as this later package.
+These 464-test/184-file results also precede the skill-binding migration and
+connection-refused recovery additions below.
 
 The blank-artboard suite executes the real compiled creation/content-update
 owners, checks default, portrait and custom dimensions with the original raw
@@ -80,11 +103,58 @@ comment geometry tests exercise the real canonical components across all four
 editors plus transport/observer lifecycle; they are not an installed 0.5.2
 visual acceptance result.
 
+The migration author passed **29/29 focused tests**: sixteen existing dispatch
+cases plus thirteen new upgrade cases. The independent reviewer ran only those
+**13/13 upgrade cases**. The refused-service recovery author passed **59/59
+targeted related tests**, including **28 new recovery cases**; its independent
+reviewer ran **28/28 recovery cases**. These are separate targeted scopes,
+not an aggregate whole-package count or installed-host acceptance. The exact
+recorded history and its logging limits are in
+[native-skill-upgrade-052.md](research/native-skill-upgrade-052.md).
+
+The combined upgrade/recovery package was rebuilt with **184 owned files**.
+Generated consistency and portable relocation passed: generic `node`, Unicode
+and space paths, no node_modules, six tools, two resources and the 0.5.2 UI URI.
+The final complete run passed **505/505 tests**, zero failed, skipped or
+cancelled tests, in **51,775.71 ms**. Logs are
+`codex-design-0.5.2-upgrade-recovery-build.txt`,
+`codex-design-0.5.2-upgrade-recovery-tests-attempt2.txt` and
+`codex-design-0.5.2-upgrade-recovery-portable.txt` in the local archive.
+
+The first complete run was **504/505**, not green. A temporary detached-library
+preview CLI open returned `PREVIEW_IDENTITY_UNVERIFIED`; the old fixture did not
+identify whether this was initial open or reuse, then removed its state despite
+failed graceful cleanup. The raw failure remains in
+`codex-design-0.5.2-upgrade-recovery-tests-attempt1.txt`. Its exact orphaned test
+process was revalidated by executable, full temporary-root arguments and
+creation time before cleanup; no artwork or unrelated process was stopped.
+The unchanged isolated HTTP suite passed **6/6**, separately recorded in
+`codex-design-0.5.2-preview-failure-isolated.txt`.
+
+The fixture now records named CLI stages and preserves state/log diagnostics
+when a stage or authenticated cleanup fails. No product identity check was
+weakened, no retry or test skip was added, and test concurrency was unchanged.
+The first run overlapped the independent consistency and portable checks; the
+second ran after those checks finished. The second complete run passed as
+recorded above. The original intermittent
+failure did not recur; its cause is **not established**, and no source fix for
+that preview failure is claimed. Earlier 435/182 and 464/184 results remain
+historical candidate evidence.
+
 This package has not been promoted to the configured GitHub marketplace ref or
-installed in Codex. Do not promote controller/protocol evidence to a real-host
-repair save/reopen pass. The installed version remains 0.5.1 while the native
-second reuse request waits for the operator's Send; it must not be accepted or
-processed from its unsent draft to complete this candidate's checks.
+installed in Codex. The installed version remains 0.5.1. Do not promote
+controller/protocol evidence to a real-host repair save/reopen pass. The second
+reuse request remains an unsent native draft; it must not be accepted or
+processed merely to complete candidate checks. Waiting for its Send is not an
+installation approval prerequisite: the idle QA listener has been safely
+retired independently, as recorded below.
+
+After an authorized GitHub-marketplace upgrade and normal reconnection/restart,
+real-host acceptance must still verify draft text/attachment retention, live
+0.5.2 MCP reads, active Rename followed by edit/save/reopen, new blank-board
+contract after text and size edits, recovery of the old refused Design System
+service, and current-package dispatch paths. Native child reuse requires its
+own actually sent request and receipt; the existing draft is not that evidence.
 
 ## Post-restart native 0.5.1 control evidence
 
@@ -118,3 +188,21 @@ installed-host pass for the new candidate's blank-template fix.
 A second request intended to exercise reuse of that child is prepared only in
 the native draft. It remains pending human Send and is not counted as received,
 dispatched, completed or reuse-verified.
+
+The root operator subsequently checked that the QA journal had zero pending
+and zero active jobs, then called the installed `stopWorker` with
+`onlyWhenIdle:true`. The local listener returned
+`listener-paused-or-replaced`; the actual child
+`01a199c8-d2c6-7dc3-986c-16e080e86dd8` ended its turn and was verified idle.
+Its single completed job remained completed. Artwork and `comments.json` hashes
+were unchanged, and cleanup did not send the draft or invoke its request
+read/accept/dispatch flow. This is idle QA cleanup, not a second-request reuse
+test or an interruption of content editing. The local evidence is
+`codex-design-0.5.1-idle-qa-cleanup.json` in the acceptance archive.
+
+The installed 0.5.1 native export checks remain separate from this candidate.
+The PNG was decoded and visually inspected; HTML was parsed and its inline
+JavaScript compiled without execution. Browser policy explicitly denied
+`file://` navigation, so no alternate navigation was used and HTML visual
+acceptance remains pending. See the 0.5.1 local export reports; these checks do
+not establish an installed 0.5.2 UI pass.

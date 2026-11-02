@@ -37,10 +37,16 @@ export const capabilityState = () => ({
 export async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 30_000, spawnProcess = spawn } = {}) {
   const current = readJson(path.join(record.path, '.artifact-server.json'));
   if (current && alive(current.pid)) {
-    await verifyEditorInstance(current, record.path, record.kind);
-    const binding = readJson(path.join(record.path, '.codex-design-bridge.json'));
-    return { url: current.url, artifactId: record.id, kind: record.kind, reused: true,
-      delivery: binding?.deliveryMode || 'manual', nativeConversationBound: false };
+    try {
+      await verifyEditorInstance(current, record.path, record.kind);
+      const binding = readJson(path.join(record.path, '.codex-design-bridge.json'));
+      return { url: current.url, artifactId: record.id, kind: record.kind, reused: true,
+        delivery: binding?.deliveryMode || 'manual', nativeConversationBound: false };
+    } catch (error) {
+      // Only the CLI startup-lock owner may archive a conclusively refused
+      // record. It rechecks identity, bytes and worker ownership before doing so.
+      if (error.code !== 'EDITOR_IDENTITY_UNVERIFIED' || error.reason !== 'SESSION_CONNECTION_REFUSED') throw error;
+    }
   }
   const skill = `codex-${record.kind}`;
   const cli = path.join(pluginRoot, 'skills', skill, 'scripts', 'codex-artifact.mjs');
@@ -62,7 +68,12 @@ export async function openLocalEditor(record, { pluginRoot, env = process.env, t
     child.once('error', error => finish(failure('EDITOR_START_FAILED', error.message)));
     child.once('close', code => {
       if (timedOut) return finish(failure('EDITOR_TIMEOUT', 'The local editor did not finish starting.'));
-      if (code !== 0) return finish(failure('EDITOR_START_FAILED', stderr.trim().slice(-2_000) || `Editor command exited ${code}.`));
+      if (code !== 0) {
+        let detail;
+        try { detail = JSON.parse(stderr.trim().split(/\r?\n/).at(-1)); } catch { /* Preserve the bounded startup error below. */ }
+        if (detail?.error === 'EDITOR_IDENTITY_UNVERIFIED') return finish(failure(detail.error, 'The existing editor identity could not be safely recovered. Its records were preserved.'));
+        return finish(failure('EDITOR_START_FAILED', stderr.trim().slice(-2_000) || `Editor command exited ${code}.`));
+      }
       let result;
       try { result = JSON.parse(stdout.trim()); } catch { return finish(failure('EDITOR_INVALID_RESPONSE', 'The local editor returned invalid startup data.')); }
       let url;
