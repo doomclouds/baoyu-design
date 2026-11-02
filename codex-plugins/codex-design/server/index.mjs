@@ -73,18 +73,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker5 = markers[0];
+  const marker7 = markers[0];
   let owner;
-  if (marker5) {
+  if (marker7) {
     try {
-      owner = readJson(path.join(directory, marker5));
+      owner = readJson(path.join(directory, marker7));
     } catch (error113) {
       if (error113.code !== "INVALID_BRIDGE_STATE") throw error113;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker5) fs.rmSync(path.join(directory, marker5), { force: true });
+  if (marker7) fs.rmSync(path.join(directory, marker7), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error113) {
@@ -93,12 +93,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker5 = `owner-${token}.json`;
+  const marker7 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker5), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker7), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -109,7 +109,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error113;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker5), { force: true });
+      fs.rmSync(path.join(directory, marker7), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error113) {
@@ -118,7 +118,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker5), { force: true });
+      fs.rmSync(path.join(staging, marker7), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error113) {
@@ -459,11 +459,11 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker5 = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker5, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker5, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker7 = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker7, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker7, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker5, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker7, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
@@ -690,9 +690,9 @@ var init_library = __esm({
           const needed = /* @__PURE__ */ new Set([INDEX_FILES[record3.kind], "project/tokens.json", "db/files/index.html.json"]);
           const files = [];
           for (const file3 of listed) files.push({ ...file3, data: needed.has(file3.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file3.path) ? (await readBytes(root, file3.path, this.limits.maxFileBytes)).toString("base64") : "" });
-          const native5 = validateFiles(record3.kind, files);
+          const native7 = validateFiles(record3.kind, files);
           const changedAt = listed.reduce((latest, file3) => file3.modifiedAt > latest ? file3.modifiedAt : latest, manifest.updatedAt);
-          Object.assign(result, manifest, { title: native5.title, updatedAt: changedAt });
+          Object.assign(result, manifest, { title: native7.title, updatedAt: changedAt });
         } catch (error113) {
           result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error113.code) ? "missing" : "invalid";
           result.contentError = { code: error113.code || "INVALID_CONTENT", message: error113.message };
@@ -800,8 +800,8 @@ var init_library = __esm({
         await this._busy(record3);
         const root = await this._artifactPath(record3);
         const files = await collectContent(root, record3.kind, this.limits);
-        const native5 = validateFiles(record3.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native5.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
+        const native7 = validateFiles(record3.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record3.kind, title: native7.title, files: files.map(({ path: path12, encoding, data }) => ({ path: path12, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -848,8 +848,8 @@ var init_library = __esm({
           if (bytes.toString("base64") !== file3.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
           files.push({ path: relative, encoding: "base64", data: file3.data });
         }
-        const native5 = validateFiles(bundle.kind, files);
-        return { kind: bundle.kind, title: native5.title, files };
+        const native7 = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native7.title, files };
       }
       async _source(sourcePath, kind) {
         if (typeof sourcePath !== "string" || !path5.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
@@ -871,8 +871,8 @@ var init_library = __esm({
         const busy = await this.isBusy({ id: null, kind, path: sourcePath });
         if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
         const files = await collectContent(sourcePath, kind, this.limits);
-        const native5 = validateFiles(kind, files);
-        return { kind, title: native5.title, files };
+        const native7 = validateFiles(kind, files);
+        return { kind, title: native7.title, files };
       }
       async importArtifact({ bundle, sourcePath, kind, title } = {}) {
         await this._checkRoot();
@@ -967,8 +967,8 @@ var init_library = __esm({
       }
       async _purgeNativeIdle(record3, root) {
         const inspected = record3.title ? await this._inspect(record3) : { ...record3, path: root, deleted: true, contentStatus: "missing" };
-        const native5 = await nativeTrashActivity({ ...inspected, path: root });
-        if (native5?.busy) throw new LibraryError("ARTIFACT_BUSY", native5.reason);
+        const native7 = await nativeTrashActivity({ ...inspected, path: root });
+        if (native7?.busy) throw new LibraryError("ARTIFACT_BUSY", native7.reason);
         const external = await this.isBusy(inspected);
         if (external === true || external?.busy) throw new LibraryError("ARTIFACT_BUSY", external?.reason || "An external artwork task still owns this trash item.");
       }
@@ -54355,9 +54355,114 @@ function adaptEditorExportFallbacks(source) {
   return marker2 + "\nconst __codexThrowNativeExportFailure=" + throwNativeEditorExportFailure.toString() + ";\n" + source;
 }
 
+// source/scripts/blank-artboard-adapter.mjs
+var marker3 = "/* codex-design:native-blank-artboard-contract */";
+var native3 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var escape6 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var __codexBlankScriptBody = "class Component extends DCLogic {\n  renderVals() { return {}; }\n}";
+var __codexBlankPreviewOwners = /* @__PURE__ */ new WeakMap();
+function completeNativeBlankArtboard(html, size) {
+  if (typeof html !== "string" || /\bdata-dc-script\b/.test(html)) return html;
+  if (typeof size?.file !== "string" || !size.file.endsWith(".dc.html") || ![size.w, size.h].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)) {
+    throw new Error("The new artboard needs a finite positive width and height.");
+  }
+  const end = html.lastIndexOf("</body>");
+  const close = html.lastIndexOf("</x-dc>");
+  if (end < 0 || close < 0 || close >= end) throw new Error("The new blank artboard template changed.");
+  const props = JSON.stringify({ $preview: { width: size.w, height: size.h } });
+  const script = `<script type="text/x-dc" data-dc-script data-codex-design-blank="${encodeURIComponent(size.file)}" data-props='${props}'>
+${__codexBlankScriptBody}
+</script>
+`;
+  return html.slice(0, end) + script + html.slice(end);
+}
+function syncNativeBlankArtboardPreviews(state, indexFile, owner) {
+  const files = state?.content?.files;
+  const indexText = files?.[indexFile];
+  if (typeof indexText !== "string") return state;
+  const tracked = typeof owner === "function" || owner !== null && typeof owner === "object";
+  const previous = tracked ? __codexBlankPreviewOwners.get(owner) : void 0;
+  if (previous?.indexFile === indexFile && previous.indexText === indexText) return state;
+  let index;
+  try {
+    index = JSON.parse(indexText);
+  } catch {
+    return state;
+  }
+  if (!index?.boards || typeof index.boards !== "object" || Array.isArray(index.boards)) return state;
+  let next;
+  for (const [file3, size] of Object.entries(index.boards)) {
+    const html = files[file3];
+    if (typeof html !== "string" || ![size?.w, size?.h].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)) continue;
+    const scripts = [...html.matchAll(/<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script\s*>/gi)].filter((match) => /\bdata-dc-script\b/i.test(match[1]));
+    if (scripts.length !== 1) continue;
+    const script = scripts[0], attrs = script[1];
+    if (!/\btype="text\/x-dc"/.test(attrs) || !attrs.includes(`data-codex-design-blank="${encodeURIComponent(file3)}"`) || script[2].replace(/\r\n/g, "\n").trim() !== __codexBlankScriptBody) continue;
+    const attribute2 = /\sdata-props=(['"])([\s\S]*?)\1/.exec(attrs);
+    if (!attribute2) continue;
+    let props;
+    try {
+      const decoded = attribute2[2].replace(/&(quot|apos|amp|lt|gt|#\d+|#x[\da-f]+);/gi, (match, name) => {
+        if (name[0] === "#") return String.fromCodePoint(parseInt(name.slice(name[1].toLowerCase() === "x" ? 2 : 1), name[1].toLowerCase() === "x" ? 16 : 10));
+        return { quot: '"', apos: "'", amp: "&", lt: "<", gt: ">" }[name.toLowerCase()];
+      });
+      props = JSON.parse(decoded);
+    } catch {
+      continue;
+    }
+    if (!props || typeof props !== "object" || Array.isArray(props) || !props.$preview || typeof props.$preview !== "object" || Array.isArray(props.$preview)) continue;
+    if (![props.$preview.width, props.$preview.height].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)) continue;
+    if (props.$preview.width === size.w && props.$preview.height === size.h && attribute2[1] === "'") continue;
+    const json3 = JSON.stringify({ ...props, $preview: { ...props.$preview, width: size.w, height: size.h } }).replaceAll("&", "&amp;").replaceAll("'", "&#39;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    const changedAttrs = attrs.slice(0, attribute2.index) + ` data-props='${json3}'` + attrs.slice(attribute2.index + attribute2[0].length);
+    next ??= { ...files };
+    next[file3] = html.slice(0, script.index) + script[0].replace(attrs, changedAttrs) + html.slice(script.index + script[0].length);
+  }
+  const result = next ? { ...state, content: { ...state.content, files: next } } : state;
+  if (tracked) __codexBlankPreviewOwners.set(owner, { indexFile, indexText });
+  return result;
+}
+function adaptBlankArtboardCreation(source) {
+  if (source.includes(marker3) || !source.includes('"blankDcDocument"')) return source;
+  const once = (expression, replacement, label) => {
+    let count = 0;
+    source = source.replace(expression, (...values) => {
+      count++;
+      return replacement(...values);
+    });
+    if (count !== 1) throw new Error(`The canonical ${label} changed; blank artboard adaptation was refused.`);
+  };
+  const ui = /let ([\w$]+)=([\w$]+)\?\(0,e\.insertBlankArtboardMarkup\)\(\(0,e\.blankDcDocument\)\(\),\2\):\(0,e\.blankDcDocument\)\(\);(await\(0,e\.getKvClient\)\(\)\.set\(\(0,e\.PlatformFileContentHandler_4\)\(([\w$]+)\),\1\));/g;
+  let text, body, save, file3;
+  once(ui, (match, html, markup, write, name) => {
+    [text, body, save, file3] = [html, markup, write, name];
+    return match.replace(write + ";", `if(!${native3}||${body})${write};`);
+  }, "new empty artboard save");
+  const uiCommit = new RegExp(`;([\\w$]+)\\.current\\(\\{kind:"add",entries:\\[\\{file:${escape6(file3)},src:${escape6(text)},spec:([\\w$]+)\\}\\]\\}`, "g");
+  once(uiCommit, (match, history, spec) => `;if(${native3}&&!${body}){${text}=__codexCompleteBlankArtboard(${text},${spec});${save};}${match.slice(1)}`, "new empty artboard metadata");
+  const batch = /([\w$]+)\[([\w$]+)\]=([\w$]+);let [\s\S]{0,1700}?([\w$]+)\.push\(([\w$]+)\),([\w$]+)\.push\(\{file:\2,src:\3,spec:\5\}\)/g;
+  once(batch, (match, files, name, html, boards, spec, entries, offset) => {
+    const bodyInput = /typeof ([\w$]+)\.x==/.exec(match)?.[1];
+    const selection = source.slice(Math.max(0, offset - 900), offset);
+    if (!bodyInput || !selection.includes(`${bodyInput}.body.trim()===""`) || !selection.includes(`${bodyInput}.from!==void 0?`)) {
+      throw new Error("The canonical blank batch input changed; adaptation was refused.");
+    }
+    const guard = `${native3}&&${bodyInput}.from===void 0&&${bodyInput}.body.trim()===""&&(${bodyInput}.pageRule===void 0||${bodyInput}.pageRule==="")`;
+    const before = `if(${guard}){${html}=__codexCompleteBlankArtboard(${html},${spec});${files}[${name}]=${html};}`;
+    return match.replace(`${boards}.push(${spec}),${entries}.push`, before + `${boards}.push(${spec}),${entries}.push`);
+  }, "blank batch artboard metadata");
+  once(
+    /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2,([\w$]+)\(\2\.content\.files\),([\w$]+)\(!1\),([\w$]+)\(\)\}/g,
+    (match, name, value, state) => match.replace(`{${state}=`, `{if(${native3})${value}=__codexSyncBlankPreviews(${value},e.canvasMetadataFile,${name});${state}=`),
+    "local canvas content update"
+  );
+  return marker3 + "\nconst __codexBlankScriptBody=" + JSON.stringify(__codexBlankScriptBody) + ";\nconst __codexBlankPreviewOwners=new WeakMap();\nconst __codexCompleteBlankArtboard=" + completeNativeBlankArtboard.toString() + ";\nconst __codexSyncBlankPreviews=" + syncNativeBlankArtboardPreviews.toString() + ";\n" + source;
+}
+
 // source/scripts/editor-runtime-adapter.mjs
 function repairEditorRuntime(source) {
   source = adaptEditorExportFallbacks(source);
+  source = adaptBlankArtboardCreation(source);
   const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
   const initialize = /\([\w$]+,"initializeSheetMeasurement",\(\)=>([\w$]+)/.exec(source)?.[1];
   if (hookName && initialize) {
@@ -54372,12 +54477,12 @@ function repairEditorRuntime(source) {
 }
 
 // source/scripts/comment-draft-adapter.mjs
-var native3 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
-var marker3 = "/* codex-design:native-comment-drafts */";
+var native4 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker4 = "/* codex-design:native-comment-drafts */";
 var rowPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+),current:[\w$]+\}\)\{/;
 var threadPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+)\}\)\{/;
 var composerPattern = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,win:[\w$]+,pinSide:[\w$]+\}\)\{/;
-var escape6 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var escape7 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function nativeCommentPresentation(thread) {
   const request = thread?.agent?.nativeRequest;
   const replied = thread?.messages?.at(-1)?.author?.kind === "agent";
@@ -54468,16 +54573,16 @@ function addActions(text, component) {
   return replaceRequired(
     text,
     /items:([\w$]+)(?=\})/g,
-    (_, items) => `items:${native3}?[...${items},...__codexNativeCommentActions(${controller},${thread},${state})]:${items}`,
+    (_, items) => `items:${native4}?[...${items},...__codexNativeCommentActions(${controller},${thread},${state})]:${items}`,
     1,
     "comment action menu"
   );
 }
 function addPresentation(text, component) {
-  return text.replace(component.match[0], component.match[0] + `const __codexComment=${native3}?__codexNativeCommentPresentation(${component.match[4]}):null;`);
+  return text.replace(component.match[0], component.match[0] + `const __codexComment=${native4}?__codexNativeCommentPresentation(${component.match[4]}):null;`);
 }
 function adaptCommentDrafts(source) {
-  if (source.includes(marker3)) return source;
+  if (source.includes(marker4)) return source;
   const row = readCommentComponent(source, rowPattern);
   const thread = readCommentComponent(source, threadPattern);
   const composer = readCommentComponent(source, composerPattern);
@@ -54489,15 +54594,15 @@ function adaptCommentDrafts(source) {
   }
   if (!row || !thread || !composer) throw new Error("The canonical comment components are incomplete; native comment adaptation was refused.");
   const label = /label:([\w$]+),checked:/.exec(thread.text)?.[1];
-  if (!label || !new RegExp(`\\b${escape6(label)}="Send to agent"`).test(source)) {
+  if (!label || !new RegExp(`\\b${escape7(label)}="Send to agent"`).test(source)) {
     throw new Error("The canonical send-to-agent label changed; native comment adaptation was refused.");
   }
   let rowText = addActions(addPresentation(row.text, row), row);
-  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native3}?"Add to chat":"Send to agent"`, 1, "comment edit label");
+  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native4}?"Add to chat":"Send to agent"`, 1, "comment edit label");
   rowText = replaceRequired(
     rowText,
     /"aria-label":"Sent to agent"/g,
-    `"aria-label":${native3}?(__codexComment?.label??"Added to chat"):"Sent to agent"`,
+    `"aria-label":${native4}?(__codexComment?.label??"Added to chat"):"Sent to agent"`,
     1,
     "comment sent indicator"
   );
@@ -54506,43 +54611,109 @@ function adaptCommentDrafts(source) {
   rowText = replaceRequired(
     rowText,
     /,([\w$]+)>0&&!([\w$]+)&&!([\w$]+)&&/g,
-    (_, replies, editing, deleting) => `,${native3}&&__codexComment&&${jsx}("span",{role:"status","data-codex-comment-status":__codexComment.status,className:"text-caption text-muted",children:__codexComment.label+(__codexComment.message?": "+__codexComment.message:"")}),${replies}>0&&!${editing}&&!${deleting}&&`,
+    (_, replies, editing, deleting) => `,${native4}&&__codexComment&&${jsx}("span",{role:"status","data-codex-comment-status":__codexComment.status,className:"text-caption text-muted",children:__codexComment.label+(__codexComment.message?": "+__codexComment.message:"")}),${replies}>0&&!${editing}&&!${deleting}&&`,
     1,
     "comment list status"
   );
   let threadText = addActions(addPresentation(thread.text, thread), thread);
-  const labels = new RegExp(`label:${escape6(label)},checked:`, "g");
-  threadText = replaceRequired(threadText, labels, `label:${native3}?"Add to chat":${label},checked:`, 2, "comment reply/edit labels");
+  const labels = new RegExp(`label:${escape7(label)},checked:`, "g");
+  threadText = replaceRequired(threadText, labels, `label:${native4}?"Add to chat":${label},checked:`, 2, "comment reply/edit labels");
   const pending = /([\w$]+)=([\w$]+)==="pending"\?"queued":\2==="delivered"\?"working":void 0/.exec(threadText);
   if (!pending) throw new Error("The canonical comment delivery state changed; native comment adaptation was refused.");
   const activity = pending[1];
-  threadText = threadText.replace(pending[0], `${activity}=${native3}?(__codexComment?.activity?__codexComment:void 0):(${pending[0].slice(activity.length + 1)})`);
+  threadText = threadText.replace(pending[0], `${activity}=${native4}?(__codexComment?.activity?__codexComment:void 0):(${pending[0].slice(activity.length + 1)})`);
   threadText = replaceRequired(
     threadText,
-    new RegExp(`working:${escape6(activity)},footnote:(${escape6(activity)}==="queued"\\?"Waiting for the agent":"Working(?:…|\\\\u2026)")`, "g"),
-    (_, footnote) => `working:${native3}?__codexComment.working:${activity},footnote:${native3}?__codexComment.label+(__codexComment.message?": "+__codexComment.message:""):${footnote}`,
+    new RegExp(`working:${escape7(activity)},footnote:(${escape7(activity)}==="queued"\\?"Waiting for the agent":"Working(?:…|\\\\u2026)")`, "g"),
+    (_, footnote) => `working:${native4}?__codexComment.working:${activity},footnote:${native4}?__codexComment.label+(__codexComment.message?": "+__codexComment.message:""):${footnote}`,
     1,
     "comment activity label"
   );
-  const composerText = replaceRequired(composer.text, labels, `label:${native3}?"Add to chat":${label},checked:`, 1, "new comment label");
+  const composerText = replaceRequired(composer.text, labels, `label:${native4}?"Add to chat":${label},checked:`, 1, "new comment label");
   for (const part of [{ ...row, replacement: rowText }, { ...thread, replacement: threadText }, { ...composer, replacement: composerText }].sort((a, b) => b.start - a.start)) {
     source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
   }
   source = replaceRequired(
     source,
     /agentAvailable\(\)\{return /g,
-    `agentAvailable(){if(${native3}?.canDraftComments===false)return false;return `,
+    `agentAvailable(){if(${native4}?.canDraftComments===false)return false;return `,
     1,
     "native draft capability"
   );
   const helpers = [nativeCommentPresentation, nativeCommentCanAdd, nativeCommentActions].map((fn) => fn.toString().replace(/\bnativeCommentPresentation\b/g, "__codexNativeCommentPresentation").replace(/\bnativeCommentCanAdd\b/g, "__codexNativeCommentCanAdd").replace(/\bnativeCommentActions\b/g, "__codexNativeCommentActions")).join("\n");
-  return marker3 + "\n" + helpers + "\n" + source;
+  return marker4 + "\n" + helpers + "\n" + source;
+}
+
+// source/scripts/comment-viewport-adapter.mjs
+var native5 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker5 = "/* codex-design:native-comment-viewport */";
+var viewportEvent = "codex-design:comment-viewport-changed";
+var escape8 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var popoverPattern = /function ([\w$]+)\(\{pin:[\w$]+,win:([\w$]+),onEscape:[\w$]+,children:[\w$]+\}\)\{/;
+var listPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:[\w$]+,dark:[\w$]+,top:([\w$]+),onClose:[\w$]+\}\)\{/;
+function nativeCommentBottom(win) {
+  const bottom = win.__CODEX_DESIGN_EDITOR_TRANSPORT__?.commentViewport?.bottom;
+  return typeof bottom === "number" && Number.isFinite(bottom) && bottom >= 0 ? bottom : 72;
+}
+function nativeCommentPopoverStyle(win, top, margin, height) {
+  const available = Math.max(0, win.innerHeight - nativeCommentBottom(win) - margin * 2);
+  const visibleHeight = Math.min(height, available);
+  return {
+    top: Math.max(win.scrollY + margin, Math.min(top, win.scrollY + win.innerHeight - nativeCommentBottom(win) - margin - visibleHeight)),
+    maxHeight: available,
+    overflowY: "auto",
+    overscrollBehavior: "contain"
+  };
+}
+function nativeCommentListStyle(win, top, margin) {
+  return { maxHeight: Math.max(0, win.innerHeight - nativeCommentBottom(win) - top - margin) };
+}
+function adaptCommentViewport(source) {
+  if (source.includes(marker5)) return source;
+  const popover = readCommentComponent(source, popoverPattern);
+  const list = readCommentComponent(source, listPattern);
+  if (!popover && !list) return source;
+  if (!popover || !list) throw new Error("The canonical comment viewport components are incomplete; adaptation was refused.");
+  const win = popover.match[2];
+  const clamp = new RegExp(`([\\w$]+)=Math\\.max\\(([\\w$]+)\\+([\\w$]+),Math\\.min\\(\\1,\\2\\+${escape8(win)}\\.innerHeight-\\3-([\\w$]+)\\)\\)`);
+  const bounds = clamp.exec(popover.text);
+  if (!bounds) throw new Error("The canonical comment card clamp changed; adaptation was refused.");
+  const [_, top, scrollY, margin, height] = bounds;
+  const style = new RegExp(`top:${escape8(top)},width:([\\w$]+),`);
+  let changed = 0;
+  const popoverText = popover.text.replace(style, (match) => {
+    changed++;
+    return `${match}...${native5}?__codexCommentPopoverStyle(${win},${top},${margin},${height}):{},`;
+  }).replace(/ref:([\w$]+),style:/, `"data-codex-comment-popover":${native5}?"":void 0,ref:$1,style:`);
+  if (changed !== 1 || !popoverText.includes('"data-codex-comment-popover"')) throw new Error("The canonical comment card style changed; adaptation was refused.");
+  const listHeight = /maxHeight:`calc\(100dvh - \$\{([\w$]+)\+([\w$]+)\}px\)`/;
+  const listBounds = listHeight.exec(list.text);
+  if (!listBounds || listBounds[1] !== list.match[3]) throw new Error("The canonical comment list height changed; adaptation was refused.");
+  const listText = list.text.replace(listHeight, (match) => `${match},...${native5}?__codexCommentListStyle(${list.match[2]}.win,${listBounds[1]},${listBounds[2]}):{}`).replace('"data-baoyu-comments-panel":""', `"data-baoyu-comments-panel":"","data-codex-comment-list-viewport":${native5}?"":void 0`);
+  const candidates = [...source.matchAll(/function ([\w$]+)\(([\w$]+)\)\{(?:const|let)\[,[\w$]+\]=(?:(?:[\w$]+\.useState)|(?:\(0,[\w$]+\.useState\)))\(0\);/g)];
+  const listeners = candidates.map((match) => readCommentComponent(source, new RegExp(`function (${escape8(match[1])})\\([\\w$]+\\)\\{`))).filter((part) => part.text.includes('addEventListener("scroll"') && part.text.includes('addEventListener("resize"'));
+  if (listeners.length !== 1) throw new Error("The canonical comment viewport subscription changed; adaptation was refused.");
+  const listener = listeners[0];
+  let added = 0, removed = 0;
+  const listenerText = listener.text.replace(/([\w$]+)\.addEventListener\("resize",([\w$]+)\)/g, (match, target, callback) => {
+    added++;
+    return `${match},${native5}&&${target}.addEventListener("${viewportEvent}",${callback})`;
+  }).replace(/([\w$]+)\.removeEventListener\("resize",([\w$]+)\)/g, (match, target, callback) => {
+    removed++;
+    return `${match},${native5}&&${target}.removeEventListener("${viewportEvent}",${callback})`;
+  });
+  if (added !== 1 || removed !== 1) throw new Error("The canonical comment viewport lifecycle changed; adaptation was refused.");
+  for (const part of [{ ...popover, replacement: popoverText }, { ...list, replacement: listText }, { ...listener, replacement: listenerText }].sort((a, b) => b.start - a.start)) {
+    source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
+  }
+  const helpers = [nativeCommentBottom, nativeCommentPopoverStyle, nativeCommentListStyle].map((fn) => fn.toString().replace(/\bnativeCommentBottom\b/g, "__codexCommentBottom").replace(/\bnativeCommentPopoverStyle\b/g, "__codexCommentPopoverStyle").replace(/\bnativeCommentListStyle\b/g, "__codexCommentListStyle")).join("\n");
+  return marker5 + "\n" + helpers + "\n" + source;
 }
 
 // source/scripts/agent-draft-adapter.mjs
-var native4 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
-var marker4 = "/* codex-design:native-agent-drafts */";
-var escape7 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var native6 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker6 = "/* codex-design:native-agent-drafts */";
+var escape9 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function createNativeAgentDraft() {
   const attempts = /* @__PURE__ */ new Map();
   const send = async (input2, target = globalThis) => {
@@ -54617,20 +54788,20 @@ function nativeAgentDraftMessage(status, suffix = "", detail = "") {
   return null;
 }
 function definitionFor2(source, property) {
-  const matches = [...source.matchAll(new RegExp(`\\b[at]\\(e,"${escape7(property)}",\\(\\)=>(${String.raw`[\w$]+`})\\)`, "g"))];
+  const matches = [...source.matchAll(new RegExp(`\\b[at]\\(e,"${escape9(property)}",\\(\\)=>(${String.raw`[\w$]+`})\\)`, "g"))];
   if (!matches.length) return null;
   if (matches.length !== 1) throw new Error(`The canonical ${property} export changed; native artwork drafting was refused.`);
   const exported = matches[0];
   const start = source.lastIndexOf("function " + exported[1] + "(", exported.index);
   if (start < 0) throw new Error(`The canonical ${property} declaration changed; native artwork drafting was refused.`);
-  const part = readCommentComponent(source.slice(start), new RegExp(`^function ${escape7(exported[1])}\\(([^)]*)\\)\\{`));
+  const part = readCommentComponent(source.slice(start), new RegExp(`^function ${escape9(exported[1])}\\(([^)]*)\\)\\{`));
   if (!part) throw new Error(`The canonical ${property} signature changed; native artwork drafting was refused.`);
   const parameters = part.match[1] ? part.match[1].split(",").map((value) => value.split("=")[0]) : [];
   if (parameters.some((value) => !/^[\w$]+$/.test(value))) throw new Error(`The canonical ${property} parameters changed; native artwork drafting was refused.`);
   return { ...part, start, end: start + part.end, parameters, async: source.slice(start - 6, start) === "async " };
 }
 function adaptAgentDrafts(source) {
-  if (source.includes(marker4)) return source;
+  if (source.includes(marker6)) return source;
   const updates = [];
   const insert = (property, make, expected) => {
     const part = definitionFor2(source, property);
@@ -54639,7 +54810,7 @@ function adaptAgentDrafts(source) {
       return false;
     }
     const prefix = make(part.parameters, part);
-    updates.push({ ...part, replacement: part.text.replace(part.match[0], part.match[0] + `if(${native4}){${prefix}}`) });
+    updates.push({ ...part, replacement: part.text.replace(part.match[0], part.match[0] + `if(${native6}){${prefix}}`) });
     return true;
   };
   const stringResult = ([input2]) => `return __codexNativeAgentDraft(${input2});`;
@@ -54669,7 +54840,7 @@ function adaptAgentDrafts(source) {
     insert("sendSelectionToClaude", stringResult, true);
     insert("suggestOrCopyPrompt", stringResult, true);
     insert("describePromptSendOutcome", message, true);
-    for (const property of ["useCanAskClaude", "useHasSessionPane"]) insert(property, () => `return ${native4}.canDraftComments===true;`, true);
+    for (const property of ["useCanAskClaude", "useHasSessionPane"]) insert(property, () => `return ${native6}.canDraftComments===true;`, true);
     insert("handOffSelectionToSession", ([selection, request, , callback]) => `void __codexNativeAgentDraft({selection:${selection},request:${request}}).then(status=>{const message=__codexNativeAgentMessage(status,"",__codexNativeAgentDraft.lastError);if(status==="staged")(0,e.announceLiveMessage)(message);else(0,e.showToastMessage)(message);${callback}?.(status==="staged")});return true;`, true);
   }
   if (!updates.length) {
@@ -54685,18 +54856,18 @@ function adaptAgentDrafts(source) {
     });
     if (count !== expected) throw new Error("The canonical artwork request label changed; native artwork drafting was refused.");
   };
-  if (kind === "slides") label(/children:"Ask the agent to fix"/g, () => `children:${native4}?"Add fix to chat":"Ask the agent to fix"`, 1);
-  if (kind === "design") label(/children:([\w$]+)\.ask(?=[,}])/g, (_, value) => `children:${native4}?"Add fix to chat":${value}.ask`, 2);
+  if (kind === "slides") label(/children:"Ask the agent to fix"/g, () => `children:${native6}?"Add fix to chat":"Ask the agent to fix"`, 1);
+  if (kind === "design") label(/children:([\w$]+)\.ask(?=[,}])/g, (_, value) => `children:${native6}?"Add fix to chat":${value}.ask`, 2);
   if (kind === "dashboard") {
-    label(/([\w$]+)="Ask the agent to fix"/g, (_, value) => `${value}=${native4}?"Add fix to chat":"Ask the agent to fix"`, 1);
-    label(/([\w$]+)="Ask the agent to limit"/g, (_, value) => `${value}=${native4}?"Add limit request to chat":"Ask the agent to limit"`, 1);
+    label(/([\w$]+)="Ask the agent to fix"/g, (_, value) => `${value}=${native6}?"Add fix to chat":"Ask the agent to fix"`, 1);
+    label(/([\w$]+)="Ask the agent to limit"/g, (_, value) => `${value}=${native6}?"Add limit request to chat":"Ask the agent to limit"`, 1);
   }
   if (kind === "design-system") {
     const instruction = "Read the claude-design-system skill’s SKILL.md, artifact-type/reference/format.md and craft.md beside it";
     const prefix = "`\nAgent: put it in the Design System format, in this same directory, editing its files in the working directory. ";
-    label(new RegExp(escape7(prefix + instruction), "g"), () => prefix + "${" + native4 + "?" + JSON.stringify(instruction.replace("claude-design-system", "codex-design-system")) + ":" + JSON.stringify(instruction) + "}", 1);
+    label(new RegExp(escape9(prefix + instruction), "g"), () => prefix + "${" + native6 + "?" + JSON.stringify(instruction.replace("claude-design-system", "codex-design-system")) + ":" + JSON.stringify(instruction) + "}", 1);
   }
-  return marker4 + "\nconst __codexNativeAgentDraft=(" + createNativeAgentDraft.toString() + ")();\n" + nativeAgentDraftMessage.toString().replace("nativeAgentDraftMessage", "__codexNativeAgentMessage") + "\n" + source;
+  return marker6 + "\nconst __codexNativeAgentDraft=(" + createNativeAgentDraft.toString() + ")();\n" + nativeAgentDraftMessage.toString().replace("nativeAgentDraftMessage", "__codexNativeAgentMessage") + "\n" + source;
 }
 
 // source/server/editor-document.mjs
@@ -54717,6 +54888,7 @@ function adaptInlineEditorScript(source, scriptUrl) {
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
   source = adaptCommentDrafts(source);
+  source = adaptCommentViewport(source);
   source = adaptAgentDrafts(source);
   source = source.replace(/\bwindow\.parent===window\b/g, "(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)");
   source = source.replace(
@@ -54934,7 +55106,15 @@ function installNativeEditorTransport(configuration, target) {
   target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = {
     baseUrl: base.href,
     artifactId: configuration.artifactId,
-    canDraftComments: configuration.canDraftComments !== false
+    canDraftComments: configuration.canDraftComments !== false,
+    commentViewport: { bottom: 72 }
+  };
+  const updateCommentViewport = (hint) => {
+    const supplied = hint?.bottom;
+    const bottom = typeof supplied === "number" && Number.isFinite(supplied) && supplied >= 0 ? supplied : 72;
+    if (target.__CODEX_DESIGN_EDITOR_TRANSPORT__.commentViewport.bottom === bottom) return;
+    target.__CODEX_DESIGN_EDITOR_TRANSPORT__.commentViewport = { bottom };
+    if (typeof target.dispatchEvent === "function") target.dispatchEvent(new (target.Event || Event)("codex-design:comment-viewport-changed"));
   };
   target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || "system", systemLocale: configuration.locale };
   const bytesToBase64 = (bytes) => {
@@ -55225,7 +55405,11 @@ function installNativeEditorTransport(configuration, target) {
   })();
   target.addEventListener("message", (event) => {
     const message = event.data;
-    if (event.source !== target.parent || message?.channel !== channel) return;
+    if (disposed || event.source !== target.parent || message?.channel !== channel) return;
+    if (message.type === "codex-design:comment-viewport-changed") {
+      updateCommentViewport(message.commentViewport);
+      return;
+    }
     if (message.type === "codex-design:editor-flush") {
       void (async () => {
         try {
@@ -55257,6 +55441,7 @@ function installNativeEditorTransport(configuration, target) {
     }
     if (message.type === "codex-design:host-context-changed") {
       hostTheme.update(message.context, message.hostContextIsSnapshot === true);
+      if (message.hostContextIsSnapshot === true || Object.hasOwn(message, "commentViewport")) updateCommentViewport(message.commentViewport);
       return;
     }
     if (message.type !== "codex-design:editor-response") return;

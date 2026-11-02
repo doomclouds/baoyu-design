@@ -3,6 +3,23 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REQUEST_LIMIT = 128;
 const errorDetail = error => ({ code: error?.code || 'EDITOR_REQUEST_FAILED', message: String(error?.message || error).slice(0, 2000) });
 
+// The host exposes safe insets, not the floating composer's current rectangle.
+// Reserve its observed compact footprint, then translate only the overlap with
+// this editor iframe. A frame already above the reserve legitimately returns 0.
+export function nativeCommentViewportHint(iframe, context, ownerWindow) {
+  const rect = iframe.getBoundingClientRect?.();
+  const height = ownerWindow.innerHeight;
+  if (!rect || !Number.isFinite(rect.bottom) || !Number.isFinite(rect.height) || rect.height <= 0 || !Number.isFinite(height) || height <= 0) return;
+  const visible = ownerWindow.visualViewport;
+  const visibleBottom = visible && Number.isFinite(visible.offsetTop) && Number.isFinite(visible.height) && visible.height > 0
+    ? Math.min(height, visible.offsetTop + visible.height) : height;
+  const supplied = context?.safeAreaInsets?.bottom;
+  const reserve = Math.max(72, typeof supplied === 'number' && Number.isFinite(supplied) && supplied >= 0 ? supplied : 0);
+  const overlap = Math.max(0, Math.min(rect.height, rect.bottom - (visibleBottom - reserve)));
+  const innerHeight = Number.isFinite(iframe.clientHeight) && iframe.clientHeight > 0 ? iframe.clientHeight : rect.height;
+  return { bottom: overlap * innerHeight / rect.height };
+}
+
 // A failed draft append must not make the composer repeat a successful comment
 // mutation. Keep its saved identity and let the existing thread retry only Send.
 function savedCommentFailure(result, request, error) {
@@ -45,7 +62,7 @@ function loadEditorDocument(channel) {
   let accepted = false;
   let editor;
   const outgoing = new Set(['codex-design:editor-request', 'codex-design:editor-transport-ready', 'codex-design:editor-app-ready', 'codex-design:editor-diagnostic', 'codex-design:editor-flushed']);
-  const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:editor-flush', 'codex-design:ui-language-changed']);
+  const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:comment-viewport-changed', 'codex-design:editor-flush', 'codex-design:ui-language-changed']);
   const receive = event => {
     const message = event.data;
     if (message?.channel !== channel) return;
@@ -77,12 +94,31 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
   let disposed = false;
   let appReady = false;
   let flush;
+  let viewportObserver, lastViewportBottom;
   const startup = setTimeout(() => {
     if (!disposed) onError?.({ code: 'EDITOR_START_TIMEOUT', message: 'The artwork editor did not finish opening. Retry this artwork tab.' });
   }, startupTimeoutMs);
   startup.unref?.();
   const sendHostContext = () => {
-    if (!disposed && bridge.hostContext) iframe.contentWindow?.postMessage({ type: 'codex-design:host-context-changed', channel, context: bridge.hostContext, hostContextIsSnapshot: true }, '*');
+    if (disposed) return;
+    const commentViewport = nativeCommentViewportHint(iframe, bridge.hostContext, ownerWindow);
+    lastViewportBottom = commentViewport?.bottom;
+    if (bridge.hostContext || commentViewport) iframe.contentWindow?.postMessage({ type: 'codex-design:host-context-changed', channel, context: bridge.hostContext,
+      hostContextIsSnapshot: true, commentViewport }, '*');
+  };
+  const sendCommentViewport = () => {
+    if (disposed) return;
+    const commentViewport = nativeCommentViewportHint(iframe, bridge.hostContext, ownerWindow);
+    if (commentViewport?.bottom === lastViewportBottom) return;
+    lastViewportBottom = commentViewport?.bottom;
+    iframe.contentWindow?.postMessage({ type: 'codex-design:comment-viewport-changed', channel, commentViewport }, '*');
+  };
+  const stopViewport = () => {
+    viewportObserver?.disconnect();
+    ownerWindow.removeEventListener?.('resize', sendCommentViewport);
+    ownerWindow.removeEventListener?.('scroll', sendCommentViewport, { capture: true });
+    ownerWindow.visualViewport?.removeEventListener?.('resize', sendCommentViewport);
+    ownerWindow.visualViewport?.removeEventListener?.('scroll', sendCommentViewport);
   };
   const reply = (requestId, value) => {
     if (!disposed) iframe.contentWindow?.postMessage({ type: 'codex-design:editor-response', channel, requestId, ...value }, '*');
@@ -157,6 +193,10 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     } catch (error) { reply(message.requestId, { error: errorDetail(error) }); }
   };
   let url;
+  ownerWindow.addEventListener?.('resize', sendCommentViewport);
+  ownerWindow.addEventListener?.('scroll', sendCommentViewport, { capture: true, passive: true });
+  ownerWindow.visualViewport?.addEventListener?.('resize', sendCommentViewport);
+  ownerWindow.visualViewport?.addEventListener?.('scroll', sendCommentViewport);
   ownerWindow.addEventListener('message', listener);
   iframe.addEventListener?.('load', sendHostContext);
   const unsubscribe = bridge.subscribe?.(event => { if (event?.type === 'host-context.changed') sendHostContext(); });
@@ -174,8 +214,12 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-modals allow-forms');
     iframe.removeAttribute?.('srcdoc');
     iframe.src = url;
+    if (typeof ownerWindow.ResizeObserver === 'function') {
+      viewportObserver = new ownerWindow.ResizeObserver(sendCommentViewport);
+      viewportObserver.observe(iframe);
+    }
   } catch (error) {
-    disposed = true; clearTimeout(startup); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
+    disposed = true; clearTimeout(startup); stopViewport(); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
     throw error;
   }
   return {
@@ -200,7 +244,7 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     },
     dispose() {
       if (disposed) return;
-      disposed = true; clearTimeout(startup); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
+      disposed = true; clearTimeout(startup); stopViewport(); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
       if (flush) { clearTimeout(flush.timer); flush.reject(Object.assign(new Error('The editor closed before saving was confirmed.'), { code: 'EDITOR_UNSAVED_CHANGES' })); flush = undefined; }
       for (const subscriptionId of subscriptions) void bridge.invoke('editor.events.close', { id: artifactId, subscriptionId }).catch(() => {});
       subscriptions.clear();

@@ -67,7 +67,16 @@ export function installNativeEditorTransport(configuration, target) {
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
   target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId,
-    canDraftComments: configuration.canDraftComments !== false };
+    canDraftComments: configuration.canDraftComments !== false, commentViewport: { bottom: 72 } };
+  const updateCommentViewport = hint => {
+    const supplied = hint?.bottom;
+    const bottom = typeof supplied === 'number' && Number.isFinite(supplied) && supplied >= 0 ? supplied : 72;
+    if (target.__CODEX_DESIGN_EDITOR_TRANSPORT__.commentViewport.bottom === bottom) return;
+    target.__CODEX_DESIGN_EDITOR_TRANSPORT__.commentViewport = { bottom };
+    // Only the canonical comment root listens to this event. Do not resize the
+    // editor/preview viewport or impersonate a browser window resize.
+    if (typeof target.dispatchEvent === 'function') target.dispatchEvent(new (target.Event || Event)('codex-design:comment-viewport-changed'));
+  };
   target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || 'system', systemLocale: configuration.locale };
   const bytesToBase64 = bytes => {
     let value = '';
@@ -332,7 +341,11 @@ export function installNativeEditorTransport(configuration, target) {
   })();
   target.addEventListener('message', event => {
     const message = event.data;
-    if (event.source !== target.parent || message?.channel !== channel) return;
+    if (disposed || event.source !== target.parent || message?.channel !== channel) return;
+    if (message.type === 'codex-design:comment-viewport-changed') {
+      updateCommentViewport(message.commentViewport);
+      return;
+    }
     if (message.type === 'codex-design:editor-flush') {
       void (async () => {
         try {
@@ -361,6 +374,7 @@ export function installNativeEditorTransport(configuration, target) {
     }
     if (message.type === 'codex-design:host-context-changed') {
       hostTheme.update(message.context, message.hostContextIsSnapshot === true);
+      if (message.hostContextIsSnapshot === true || Object.hasOwn(message, 'commentViewport')) updateCommentViewport(message.commentViewport);
       return;
     }
     if (message.type !== 'codex-design:editor-response') return;

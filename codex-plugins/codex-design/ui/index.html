@@ -24181,6 +24181,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var REQUEST_LIMIT = 128;
   var errorDetail = (error112) => ({ code: error112?.code || "EDITOR_REQUEST_FAILED", message: String(error112?.message || error112).slice(0, 2e3) });
+  function nativeCommentViewportHint(iframe, context, ownerWindow) {
+    const rect = iframe.getBoundingClientRect?.();
+    const height = ownerWindow.innerHeight;
+    if (!rect || !Number.isFinite(rect.bottom) || !Number.isFinite(rect.height) || rect.height <= 0 || !Number.isFinite(height) || height <= 0) return;
+    const visible = ownerWindow.visualViewport;
+    const visibleBottom = visible && Number.isFinite(visible.offsetTop) && Number.isFinite(visible.height) && visible.height > 0 ? Math.min(height, visible.offsetTop + visible.height) : height;
+    const supplied = context?.safeAreaInsets?.bottom;
+    const reserve = Math.max(72, typeof supplied === "number" && Number.isFinite(supplied) && supplied >= 0 ? supplied : 0);
+    const overlap = Math.max(0, Math.min(rect.height, rect.bottom - (visibleBottom - reserve)));
+    const innerHeight2 = Number.isFinite(iframe.clientHeight) && iframe.clientHeight > 0 ? iframe.clientHeight : rect.height;
+    return { bottom: overlap * innerHeight2 / rect.height };
+  }
   function savedCommentFailure(result, request, error112) {
     if (!Number.isInteger(result.status) || result.status < 200 || result.status >= 300 || typeof result.body !== "string") return;
     try {
@@ -24225,7 +24237,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let accepted = false;
     let editor;
     const outgoing = /* @__PURE__ */ new Set(["codex-design:editor-request", "codex-design:editor-transport-ready", "codex-design:editor-app-ready", "codex-design:editor-diagnostic", "codex-design:editor-flushed"]);
-    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:editor-flush", "codex-design:ui-language-changed"]);
+    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed", "codex-design:editor-flush", "codex-design:ui-language-changed"]);
     const receive = (event) => {
       const message = event.data;
       if (message?.channel !== channel) return;
@@ -24254,12 +24266,36 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let disposed = false;
     let appReady = false;
     let flush;
+    let viewportObserver, lastViewportBottom;
     const startup = setTimeout(() => {
       if (!disposed) onError?.({ code: "EDITOR_START_TIMEOUT", message: "The artwork editor did not finish opening. Retry this artwork tab." });
     }, startupTimeoutMs);
     startup.unref?.();
     const sendHostContext = () => {
-      if (!disposed && bridge.hostContext) iframe.contentWindow?.postMessage({ type: "codex-design:host-context-changed", channel, context: bridge.hostContext, hostContextIsSnapshot: true }, "*");
+      if (disposed) return;
+      const commentViewport = nativeCommentViewportHint(iframe, bridge.hostContext, ownerWindow);
+      lastViewportBottom = commentViewport?.bottom;
+      if (bridge.hostContext || commentViewport) iframe.contentWindow?.postMessage({
+        type: "codex-design:host-context-changed",
+        channel,
+        context: bridge.hostContext,
+        hostContextIsSnapshot: true,
+        commentViewport
+      }, "*");
+    };
+    const sendCommentViewport = () => {
+      if (disposed) return;
+      const commentViewport = nativeCommentViewportHint(iframe, bridge.hostContext, ownerWindow);
+      if (commentViewport?.bottom === lastViewportBottom) return;
+      lastViewportBottom = commentViewport?.bottom;
+      iframe.contentWindow?.postMessage({ type: "codex-design:comment-viewport-changed", channel, commentViewport }, "*");
+    };
+    const stopViewport = () => {
+      viewportObserver?.disconnect();
+      ownerWindow.removeEventListener?.("resize", sendCommentViewport);
+      ownerWindow.removeEventListener?.("scroll", sendCommentViewport, { capture: true });
+      ownerWindow.visualViewport?.removeEventListener?.("resize", sendCommentViewport);
+      ownerWindow.visualViewport?.removeEventListener?.("scroll", sendCommentViewport);
     };
     const reply = (requestId, value) => {
       if (!disposed) iframe.contentWindow?.postMessage({ type: "codex-design:editor-response", channel, requestId, ...value }, "*");
@@ -24350,6 +24386,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     };
     let url3;
+    ownerWindow.addEventListener?.("resize", sendCommentViewport);
+    ownerWindow.addEventListener?.("scroll", sendCommentViewport, { capture: true, passive: true });
+    ownerWindow.visualViewport?.addEventListener?.("resize", sendCommentViewport);
+    ownerWindow.visualViewport?.addEventListener?.("scroll", sendCommentViewport);
     ownerWindow.addEventListener("message", listener);
     iframe.addEventListener?.("load", sendHostContext);
     const unsubscribe = bridge.subscribe?.((event) => {
@@ -24362,9 +24402,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads allow-modals allow-forms");
       iframe.removeAttribute?.("srcdoc");
       iframe.src = url3;
+      if (typeof ownerWindow.ResizeObserver === "function") {
+        viewportObserver = new ownerWindow.ResizeObserver(sendCommentViewport);
+        viewportObserver.observe(iframe);
+      }
     } catch (error112) {
       disposed = true;
       clearTimeout(startup);
+      stopViewport();
       ownerWindow.removeEventListener("message", listener);
       iframe.removeEventListener?.("load", sendHostContext);
       unsubscribe?.();
@@ -24398,6 +24443,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         if (disposed) return;
         disposed = true;
         clearTimeout(startup);
+        stopViewport();
         ownerWindow.removeEventListener("message", listener);
         iframe.removeEventListener?.("load", sendHostContext);
         unsubscribe?.();

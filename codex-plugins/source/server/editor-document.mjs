@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { repairEditorRuntime } from '../scripts/editor-runtime-adapter.mjs';
 import { adaptCommentToolbar } from '../scripts/comment-toolbar-adapter.mjs';
 import { adaptCommentDrafts } from '../scripts/comment-draft-adapter.mjs';
+import { adaptCommentViewport } from '../scripts/comment-viewport-adapter.mjs';
 import { adaptAgentDrafts } from '../scripts/agent-draft-adapter.mjs';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
@@ -24,6 +25,7 @@ export function adaptInlineEditorScript(source, scriptUrl) {
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
   source = adaptCommentDrafts(source);
+  source = adaptCommentViewport(source);
   source = adaptAgentDrafts(source);
   source = source.replace(/\bwindow\.parent===window\b/g, '(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)');
   source = source.replace(/function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,

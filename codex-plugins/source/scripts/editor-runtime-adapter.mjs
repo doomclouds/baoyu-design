@@ -1,8 +1,10 @@
 import { adaptEditorExportFallbacks } from './editor-export-adapter.mjs';
+import { adaptBlankArtboardCreation } from './blank-artboard-adapter.mjs';
 
 /** Repair a dependency missing from the shipped dialog hook without changing upstream source files. */
 export function repairEditorRuntime(source) {
   source = adaptEditorExportFallbacks(source);
+  source = adaptBlankArtboardCreation(source);
   const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
   const initialize = /\([\w$]+,"initializeSheetMeasurement",\(\)=>([\w$]+)/.exec(source)?.[1];
   if (hookName && initialize) {

@@ -21,8 +21,8 @@ reloads, or that every part of this observed persistent conflict is diagnosed.
 
 ## Separate source repair
 
-Branch `codex/rename-save-recovery` changes only the shared library controller
-and its tests. For native inline editors it:
+The Rename repair in branch `codex/rename-save-recovery` changes the shared
+library controller and its tests. For native inline editors it:
 
 1. Blocks stale/duplicate mounts of the target while Rename is in progress.
 2. Requires the existing saved/flush acknowledgement before disposing its exact
@@ -80,3 +80,37 @@ unknown IDs through a deduplicated, validated `library.get` before mounting.
 Late results cannot replace the current artwork, overwrite a newer record, or
 mount through the Rename/disposal barrier. Actual controller coverage grew to
 50 passing cases; that is still not an installed-host repair verification.
+
+## Blank-template contract and actual native request
+
+The saved no-Rename control component was 468 bytes before the verification
+request and had no `data-dc-script` block. Executing the actual upstream,
+installed 0.5.1 and native-assembled `blankDcDocument` functions produced the
+same 331-byte template after LF normalization, SHA-256
+`61369b582dfdd02d8d60706ec4c87908e2c6c729cf0bb5eda8c451b34459c7a4`.
+None contained the required logic block. The raw parser accepts a missing
+script and the template replacement keeps outside scripts intact, while the
+original authoring checker unconditionally requires a unique `DCLogic` block
+with correctly sized `$preview` metadata. This was an upstream default-template
+and checker contract mismatch, not evidence that native adaptation removed a
+script from the user's saved component.
+
+The next candidate fixes only new native blank creation at its real UI/batch
+owners after final dimensions are known. Its identified generated templates
+also keep preview dimensions synchronized during local content updates. A
+per-store index-string cache avoids scanning all artboard HTML during ordinary
+typing. Copies, unmarked/custom scripts and standalone creation are preserved;
+the checker is not weakened. Real compiled-owner and raw-checker tests passed
+14/14, including the performance boundary. The newer complete package result
+is 464/464 tests and 184 owned files; the earlier 435/435 and 182-file candidate
+remains historical evidence in the acceptance document. Neither result proves
+an installed 0.5.2 repair.
+
+After the operator's first native Send, request `f5b...` completed through the
+actual parent and child `01a199c8-d2c6-7dc3-986c-16e080e86dd8`, with the requested
+text-only change and canonical `Verified in Codex 0.5.1` reply. The original
+check still failed with the one preexisting missing-logic-block issue. A second
+child-reuse request is only drafted and awaits human Send; it has not been
+received, dispatched or accepted as a completed reuse test. The 0.5.2 candidate,
+including the separate native comment viewport safe-area correction, is built
+but not promoted to the marketplace or installed.
