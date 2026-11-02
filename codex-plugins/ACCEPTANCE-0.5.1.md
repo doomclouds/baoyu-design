@@ -252,9 +252,10 @@ an absolute absence of retry. Its exact continuing conflict path is not yet
 fully established. A separate unpublished repair branch is preparing a safe
 editor lifecycle change; it does not alter the already published 0.5.1 bytes.
 
-Native Slides/Design System controls, active-turn steering, worker reuse and
-complete repair save/reopen remain pending. The actual UI actions above must
-not be expanded into an all-features/native-operator pass.
+Targeted native Slides/Design System controls and save/reopen now have the
+additional evidence below. Active-turn steering, worker reuse and complete
+0.5.2 repair save/reopen remain pending. These actual UI actions must not be
+expanded into an all-features/native-operator pass.
 
 Retained evidence includes `codex-design-0.5.1-marketplace-upgrade.txt`,
 `codex-design-0.5.1-install-first-access-denied.txt`,
@@ -314,3 +315,61 @@ Evidence: `codex-design-0.5.1-native-operator-result.json`,
 `codex-design-0.5.1-native-text-properties.png`,
 `codex-design-0.5.1-native-comment-completed.png` and
 `codex-design-0.5.1-native-canonical-reply.png` in the local acceptance archive.
+
+## Additional native Slides, Design System and Trash checks
+
+These checks used the actually installed 0.5.1 in Codex. They did not install
+or validate the separate 0.5.2 candidate.
+
+### Slides Properties, text save and same-artwork reopen
+
+The Slides category's **New slides** action directly created artwork
+`b6df303a-1e17-4e2a-8a49-5398b2e787e8`, without Rename. Its actual Properties
+panel opened. The Text tool accepted `Native slides QA`, and the edit saved to
+`project/slides/cover.html` with SHA-256
+`39A346C72B3B24311520D51F3A6DB069069FB6EDE79ECD38C130FF2D52E1D07A`.
+Closing its artwork Tab removed that Tab. Opening it again from Recent showed
+the same text under the same artwork ID, and the component hash was unchanged.
+
+The original checker returned **problems: 0**, with a default-font warning
+retained. This establishes this structural/save/reopen case; it is not a
+complete visual or typography-quality check.
+
+### Design System token save and reopen
+
+The Design System category's **New design system** action directly created
+artwork `302c2803-cc94-4618-b590-b306a7ddc2c6`. Colors and the Add color dialog
+worked, and the token `qa/qa-gray` with value `#888888` saved. Its color-value
+editing popover opened. The original checker returned **problems: 0**.
+
+A long unsent native draft obscured the dialog's Add button. The first click
+did not save a token and is not counted as a successful Add. Temporarily
+minimizing the native chat exposed the control; a later explicit Add succeeded.
+The native draft was preserved and was not sent.
+
+Closing and reopening this same artwork showed the saved token. The
+`project/tokens.json` SHA-256 was
+`98211697E210D7437D595BE0F16EA69A37AF7B20DC1E3E8789D62D64745D4372`
+before and after reopen.
+
+### QA-only Trash, cancelled permanent deletion and Restore
+
+Only that Design System QA artwork was moved to Trash after confirmation.
+Its active `library.get` returned `NOT_FOUND`, and its artwork Tab disappeared.
+Trash displayed the one QA artwork. Select all selected that one item; Delete
+selected opened the permanent-deletion confirmation. Cancel did not permanently
+delete it. Restore then returned the same UUID to the active library with
+`deleted: false`; the token file retained the SHA-256 recorded above. No
+permanent deletion is claimed as executed by this case.
+
+Screenshots retained in the local acceptance archive:
+`codex-design-0.5.1-native-slides-properties.png`,
+`codex-design-0.5.1-native-slides-edited.png`,
+`codex-design-0.5.1-native-slides-reopened.png`,
+`codex-design-0.5.1-native-ds-token.png`,
+`codex-design-0.5.1-native-ds-reopened.png`, and
+`codex-design-0.5.1-native-trash-confirmation.png`.
+
+These observations do not establish every export format, every editor control,
+or the 0.5.2 repairs as passed. The second native request still awaits the
+user's Send in its draft; it has not been accepted or counted as worker reuse.
