@@ -88,13 +88,14 @@ export function adaptCommentDrafts(source) {
   }
   if (!row || !thread || !composer) throw new Error('The canonical comment components are incomplete; native comment adaptation was refused.');
   const label = /label:([\w$]+),checked:/.exec(thread.text)?.[1];
-  if (!label || !new RegExp(`\\b${escape(label)}="Send to agent"`).test(source)) {
+  if (!label || !new RegExp(`\\b${escape(label)}="Send to [Aa]gent"`).test(source)) {
     throw new Error('The canonical send-to-agent label changed; native comment adaptation was refused.');
   }
   let rowText = addActions(addPresentation(row.text, row), row);
-  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native}?"Add to chat":"Send to agent"`, 1, 'comment edit label');
-  rowText = replaceRequired(rowText, /"aria-label":"Sent to agent"/g,
-    `"aria-label":${native}?(__codexComment?.label??"Added to chat"):"Sent to agent"`, 1, 'comment sent indicator');
+  rowText = replaceRequired(rowText, /label:"(Send to [Aa]gent)"/g,
+    (_, canonical) => `label:${native}?"Add to chat":${JSON.stringify(canonical)}`, 1, 'comment edit label');
+  rowText = replaceRequired(rowText, /"aria-label":"(Sent to [Aa]gent)"/g,
+    (_, canonical) => `"aria-label":${native}?(__codexComment?.label??"Added to chat"):${JSON.stringify(canonical)}`, 1, 'comment sent indicator');
   const jsx = /((?:[\w$]+\.jsx|\(0,[\w$]+\.jsx\)))\(/.exec(row.text)?.[1];
   if (!jsx) throw new Error('The canonical comment JSX runtime changed; native comment adaptation was refused.');
   rowText = replaceRequired(rowText, /,([\w$]+)>0&&!([\w$]+)&&!([\w$]+)&&/g,

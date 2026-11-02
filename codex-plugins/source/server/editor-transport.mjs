@@ -4,19 +4,21 @@ export { isValidBase64 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
-const REQUEST_HEADERS = new Set(['content-type', 'accept', 'if-match', 'if-none-match', 'last-event-id', 'x-filename']);
-const RESPONSE_HEADERS = ['content-type', 'content-disposition', 'etag', 'last-modified', 'cache-control'];
+const REQUEST_HEADERS = new Set(['content-type', 'accept', 'if-match', 'if-none-match', 'last-event-id', 'x-filename', 'x-deck-client']);
+const RESPONSE_HEADERS = ['content-type', 'content-disposition', 'etag', 'last-modified', 'cache-control', 'content-security-policy', 'referrer-policy', 'x-content-type-options'];
 const MAX_BODY = 32 * 1024 * 1024;
 const MAX_RESPONSE = 64 * 1024 * 1024;
 
 /** Validate intercepted requests with exactly the same contract as HTTP forwarding. */
 export function validateEditorRequest(request = {}) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) throw fail('INVALID_EDITOR_REQUEST', 'An editor request object is required.');
   const method = String(request.method || 'GET').toUpperCase();
   if (!METHODS.has(method)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request method.');
   const headers = new Headers();
   if (request.headers && (typeof request.headers !== 'object' || Array.isArray(request.headers))) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request headers.');
   for (const [name, value] of Object.entries(request.headers || {})) {
     if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request header.');
+    if (name.toLowerCase() === 'x-deck-client' && !/^[A-Za-z0-9_-]{8,64}$/.test(value)) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor client identity.');
     headers.set(name, value);
   }
   let body;
@@ -41,6 +43,7 @@ export function editorRequestUrl(base, relative) {
     || /%2f|%5c|%2e/i.test(decoded)) throw fail('INVALID_EDITOR_REQUEST', 'Editor requests cannot escape their artwork session.');
   const target = new URL(relative, root);
   if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail('INVALID_EDITOR_REQUEST', 'Editor requests cannot escape their artwork session.');
+  if (decoded.split('/').filter(Boolean)[0] === '__share') throw fail('EDITOR_NETWORK_SHARING_UNAVAILABLE', 'Network sharing and raw folder archives are not available through this native editor.');
   return target;
 }
 
@@ -54,6 +57,21 @@ async function limitedBody(response, limit) {
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, size);
+}
+
+function previewReadUrl(editor, url, method) {
+  const root = new URL(editor.url);
+  const relative = url.pathname.slice(root.pathname.length);
+  const preview = /^v\/([1-9][0-9]{0,8})\/(.*)$/.exec(relative);
+  if (!preview) return url;
+  if (!['GET', 'HEAD'].includes(method)) throw fail('EDITOR_PREVIEW_READ_ONLY', 'Earlier versions are read-only.');
+  if (editor.kind !== 'dashboard') return url;
+  // Dashboard's history uses ?at=n; other editors expose a v/n/ subtree.
+  // Keep the virtual preview grant identical and translate only at the scoped
+  // local boundary, for both ordinary reads and live-event setup.
+  const translated = editorRequestUrl(root.href, preview[2] + url.search);
+  translated.searchParams.set('at', preview[1]);
+  return translated;
 }
 
 // The native MCP sandbox does not permit local HTTP frames. Only the server
@@ -99,8 +117,9 @@ export function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 120
   };
   return {
     async request(id, request = {}) {
-      const { url } = await get(id, request.path);
+      const { url: granted, editor } = await get(id, request.path);
       const { method, headers, body } = validateEditorRequest(request);
+      const url = previewReadUrl(editor, granted, method);
       headers.set('origin', url.origin);
       const response = await fetcher(url, { method, headers, body, redirect: 'error', signal: AbortSignal.timeout(30_000) });
       if (response.headers.get('content-type')?.includes('text/event-stream')) { await response.body?.cancel(); throw fail('INVALID_EDITOR_REQUEST', 'Use the editor event subscription for a live stream.'); }
@@ -108,7 +127,8 @@ export function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 120
       return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap(name => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString('base64') };
     },
     async openEvents(id, path) {
-      const { url } = await get(id, path);
+      const { url: granted, editor } = await get(id, path);
+      const url = previewReadUrl(editor, granted, 'GET');
       if (!/(?:^|\/)events$/.test(url.pathname)) throw fail('INVALID_EDITOR_REQUEST', 'Only editor event endpoints can be subscribed.');
       const abort = new AbortController();
       let response;

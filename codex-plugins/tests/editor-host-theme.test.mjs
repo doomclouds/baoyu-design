@@ -26,12 +26,12 @@ function themeFixture({ rem = 16, serialized = false } = {}) {
     setAttribute(name, value) { this.attributes.set(name, String(value)); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     removeAttribute(name) { this.attributes.delete(name); }
-    matches(selector) { return selector === '.cds-root' ? this.ui : selector.includes('data-baoyu-comments') && (this.attributes.has('data-baoyu-comments') || this.attributes.has('data-baoyu-comments-seat')); }
+    matches(selector) { return selector === '.cds-root' ? this.ui : selector.includes('data-baoyu-comments') && (this.attributes.has('data-baoyu-comments') || this.attributes.has('data-baoyu-comments-seat')) || selector.includes('data-baoyu-history-layer') && this.attributes.has('data-baoyu-history-layer'); }
     closest() { return this.authored ? this : null; }
     appendChild(child) { this.children.push(child); child.parent = this; return child; }
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); }
     attachShadow(options) {
-      const shadow = { roots: [], hosts: [], querySelectorAll(selector) { return selector === '.cds-root' ? this.roots : this.hosts; } };
+      const shadow = { host: this, roots: [], hosts: [], wraps: [], querySelectorAll(selector) { return selector === '.cds-root' ? this.roots : selector === '.wrap' ? this.wraps : this.hosts; } };
       if (options.mode === 'open') this.shadowRoot = shadow;
       return shadow;
     }
@@ -102,6 +102,12 @@ function themeFixture({ rem = 16, serialized = false } = {}) {
       if (authored) Object.defineProperty(host, 'shadowRoot', { get() { assert.fail('Authored shadow content must remain untouched.'); } });
       return { host, shadow, popup };
     },
+    historyShadow(authored = false) {
+      const host = new Element('div', { authored }); host.setAttribute('data-baoyu-history-layer', ''); commentHosts.push(host);
+      const shadow = host.attachShadow({ mode: 'open' }), popup = new Element('div'); shadow.wraps.push(popup);
+      if (authored) Object.defineProperty(host, 'shadowRoot', { get() { assert.fail('Authored history-like markup must remain untouched.'); } });
+      return { host, shadow, popup };
+    },
     originalAttachShadow,
     mutations(records = [{ type: 'childList', target: body, addedNodes: roots, removedNodes: [] }]) { for (const observer of observers) if (!observer.closed) observer.callback(records); },
     close() { listeners.get('unload')(); },
@@ -119,6 +125,23 @@ const hostVariables = {
   '--border-radius-xs': '3px', '--border-radius-sm': '5px', '--border-radius-md': '7px', '--border-radius-lg': '11px',
   '--shadow-sm': '0 1px 3px #0003', '--shadow-md': '0 4px 12px #0004', '--shadow-lg': '0 8px 24px #0005',
 };
+
+test('the canonical History shadow layer follows host fonts and colors without touching authored lookalikes', () => {
+  const f = themeFixture({ serialized: true });
+  const history = f.historyShadow(), authored = f.historyShadow(true);
+  const original = [...f.authored.style.values];
+  f.update({ theme: 'light', styles: { variables: hostVariables } }, true);
+  assert.equal(history.popup.style.getPropertyValue('font-family'), hostVariables['--font-sans']);
+  assert.equal(history.popup.style.getPropertyValue('font-size'), '14px');
+  assert.equal(history.popup.style.getPropertyValue('--bg'), '#202329');
+  assert.equal(history.popup.style.getPropertyPriority('--bg'), 'important');
+  assert.equal(history.popup.style.getPropertyValue('--fg'), '#f2f4f7');
+  assert.equal(authored.popup.style.writes, 0);
+  assert.deepEqual([...f.authored.style.values], original);
+  f.close();
+  assert.equal(history.popup.style.getPropertyValue('--bg'), '');
+  assert.equal(history.popup.style.getPropertyValue('font-family'), '');
+});
 
 test('host semantic tokens override actual nested CDS declarations while preserving artwork boundaries', async () => {
   const f = themeFixture({ serialized: true });

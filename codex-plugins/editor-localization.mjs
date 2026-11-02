@@ -91,6 +91,27 @@ const CDS_MESSAGES = {
   avatarGroup: '{count} {noun}', overflowCount: 'and {count} more',
 };
 
+// Upstream 2.7.1 includes both old Export and new Share wording under these
+// exact two IDs. Native Codex retains its Export menu; other conflicts must
+// still stop the build instead of choosing an arbitrary translation.
+const REVIEWED_MESSAGE_VARIANTS = {
+  j5PBn2aWFZ: [
+    'No artboard was chosen in time, so the export was cancelled. Open Export to export again.',
+    'No artboard was chosen in time, so the export was cancelled. Open Share to export again.',
+  ],
+  pYPDbUJ2RQ: [
+    'Leaving that view cancelled the export. Open Export to export again.',
+    'Leaving that view cancelled the export. Open Share to export again.',
+  ],
+};
+
+function compatibleMessage(id, previous, message) {
+  if (previous === undefined || previous === message) return message;
+  const reviewed = REVIEWED_MESSAGE_VARIANTS[id];
+  if (!reviewed || !reviewed.includes(previous) || !reviewed.includes(message)) throw new Error('Conflicting native editor message ID: ' + id);
+  return reviewed[0];
+}
+
 export function extractNativeMessages(source) {
   const result = new Map();
   const literal = '"(?:\\\\.|[^"\\\\])*"';
@@ -102,8 +123,7 @@ export function extractNativeMessages(source) {
     for (const match of source.matchAll(pattern)) {
       const message = JSON.parse(match[index === 0 ? 1 : 2]);
       const id = JSON.parse(match[index === 0 ? 2 : 1]);
-      if (result.has(id) && result.get(id) !== message) throw new Error('Conflicting native editor message ID: ' + id);
-      result.set(id, message);
+      result.set(id, compatibleMessage(id, result.get(id), message));
     }
   });
   return result;
@@ -113,8 +133,7 @@ export function extractNativeMessages(source) {
 export function createEditorCatalog(kind, sources) {
   const messages = new Map();
   for (const source of sources) for (const [id, text] of extractNativeMessages(source)) {
-    if (messages.has(id) && messages.get(id) !== text) throw new Error('Conflicting editor message ID: ' + id);
-    messages.set(id, text);
+    messages.set(id, compatibleMessage(id, messages.get(id), text));
   }
   const english = Object.fromEntries(messages);
   for (const [key, text] of Object.entries(CDS_MESSAGES)) english['cds.' + key] = text;

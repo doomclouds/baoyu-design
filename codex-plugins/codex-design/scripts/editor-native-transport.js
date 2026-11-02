@@ -1,10 +1,14 @@
 // This function is serialized into the editor document before its original UI.
 // Its only authority is the artwork-scoped message broker in the parent app.
-export function installNativeEditorTransport(configuration, target) {
+export function installNativeEditorTransport(configuration, target, installPreviews) {
   'use strict';
   target ??= window;
   const base = new URL(configuration.baseUrl);
   const channel = configuration.channel;
+  const readOnly = configuration.readOnly === true;
+  const requestPrefix = configuration.requestPrefix || '';
+  if (requestPrefix && (!readOnly || !/^v\/[1-9][0-9]{0,8}\/$/.test(requestPrefix))) throw new TypeError('Invalid read-only preview scope.');
+  const rootBase = new URL(configuration.rootBaseUrl || base.href);
   if (target.document) {
     const host = configuration.hostDepth === 2 ? target.parent.parent : target.parent;
     let blocked = 0;
@@ -50,6 +54,8 @@ export function installNativeEditorTransport(configuration, target) {
   const pending = new Map();
   let disposed = false;
   const pendingWrites = new Set();
+  let historyOpenId;
+  let previews;
   const sources = new Set();
   const assetCache = new Map();
   const assetAliases = new Map();
@@ -67,7 +73,21 @@ export function installNativeEditorTransport(configuration, target) {
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
   target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = { baseUrl: base.href, artifactId: configuration.artifactId,
-    canDraftComments: configuration.canDraftComments !== false, commentViewport: { bottom: 72 } };
+    canDraftComments: !readOnly && configuration.canDraftComments !== false, readOnly, commentViewport: { bottom: 72 } };
+  if (readOnly) target.__CODEX_DESIGN_PREVIEW_CLOSE__ = () => {
+    if (!disposed) target.parent.postMessage({ type: 'codex-design:preview-close', channel }, '*');
+  };
+  // Boot metadata comes from the verified local service. Only its capabilities
+  // and known route fields are normalized; authored text is never rewritten.
+  let historyMetadata;
+  Object.defineProperty(target, '__baoyuHistory', { configurable: true, enumerable: true,
+    get: () => historyMetadata,
+    set: value => {
+      if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.base !== 'string') throw new TypeError('Invalid artwork History metadata.');
+      historyMetadata = { ...value, base: base.pathname, canRestore: !readOnly && value.canRestore === true,
+        ...(value.preview && typeof value.preview === 'object' ? { preview: { ...value.preview, current_url: rootBase.href } } : {}) };
+    },
+  });
   const updateCommentViewport = hint => {
     const supplied = hint?.bottom;
     const bottom = typeof supplied === 'number' && Number.isFinite(supplied) && supplied >= 0 ? supplied : 72;
@@ -142,7 +162,7 @@ export function installNativeEditorTransport(configuration, target) {
     let tokens = {};
     const owned = new Map();
     const content = '[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]';
-    const commentHosts = '[data-baoyu-comments], [data-baoyu-comments-seat]';
+    const commentHosts = '[data-baoyu-comments], [data-baoyu-comments-seat], [data-baoyu-history-layer]';
     const observed = new WeakSet();
     const observeScope = scope => {
       if (!observer || observed.has(scope)) return;
@@ -171,14 +191,27 @@ export function installNativeEditorTransport(configuration, target) {
     const refresh = () => {
       if (!root || disposed) return;
       const candidates = new Set([root].filter(eligible));
-      for (const scope of scopes()) for (const element of scope.querySelectorAll?.('.cds-root') || []) if (eligible(element)) candidates.add(element);
+      const historyRoots = new Set();
+      for (const scope of scopes()) {
+        for (const element of scope.querySelectorAll?.('.cds-root') || []) if (eligible(element)) candidates.add(element);
+        if (scope.host?.matches?.('[data-baoyu-history-layer]') && !scope.host.closest?.(content)) {
+          for (const element of scope.querySelectorAll?.('.wrap') || []) { candidates.add(element); historyRoots.add(element); }
+        }
+      }
       for (const [element, state] of owned) if (!candidates.has(element)) { restore(element, state); owned.delete(element); }
       for (const element of candidates) {
         if (!element.style) continue;
+        const elementTokens = historyRoots.has(element) ? { ...tokens,
+          'font-family': tokens['--cds-font-sans'], 'font-size': tokens['--cds-font-size-body'], 'line-height': tokens['--cds-leading-body'],
+          '--bg': tokens['--cds-surface-panel'], '--fg': tokens['--cds-text-primary'], '--muted': tokens['--cds-text-secondary'],
+          '--faint': tokens['--cds-text-muted'], '--line': tokens['--cds-border'], '--soft': tokens['--cds-surface-2'],
+          '--hover': tokens['--cds-fill-button-ghost-hover'], '--check': tokens['--cds-fill-accent'], '--danger': tokens['--cds-text-danger'],
+          '--shadow': tokens['--cds-shadow-popover'],
+        } : tokens;
         let state = owned.get(element);
         if (!state) { state = { original: new Map(), applied: new Map() }; owned.set(element, state); }
-        for (const name of new Set([...state.applied.keys(), ...Object.keys(tokens)])) {
-          const value = tokens[name];
+        for (const name of new Set([...state.applied.keys(), ...Object.keys(elementTokens)])) {
+          const value = elementTokens[name];
           const current = element.style.getPropertyValue(name), priority = element.style.getPropertyPriority?.(name) || '';
           if (!state.original.has(name) || state.applied.has(name) && (current !== state.applied.get(name) || priority !== 'important')) {
             state.original.set(name, { value: current, priority });
@@ -339,6 +372,22 @@ export function installNativeEditorTransport(configuration, target) {
       },
     };
   })();
+  const flushEditor = async () => {
+    if (readOnly) return true;
+    target.document?.activeElement?.blur?.();
+    if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === 'function') {
+      if (await target.__CODEX_DESIGN_EDITOR_FLUSH__() !== true) throw new Error('The editor still has unsaved changes.');
+    } else {
+      const deadline = Date.now() + 8_000;
+      while (!target.dispatchEvent(new Event('beforeunload', { cancelable: true }))) {
+        if (Date.now() >= deadline) throw new Error('The editor still has unsaved changes.');
+        if (pendingWrites.size) await Promise.all([...pendingWrites]);
+        else await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+    await Promise.all([...pendingWrites]);
+    return true;
+  };
   target.addEventListener('message', event => {
     const message = event.data;
     if (disposed || event.source !== target.parent || message?.channel !== channel) return;
@@ -349,21 +398,7 @@ export function installNativeEditorTransport(configuration, target) {
     if (message.type === 'codex-design:editor-flush') {
       void (async () => {
         try {
-          target.document?.activeElement?.blur?.();
-          if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === 'function') {
-            const saved = await target.__CODEX_DESIGN_EDITOR_FLUSH__();
-            if (saved !== true) throw new Error('The editor still has unsaved changes.');
-          } else {
-            // Dashboard uses its own beforeunload guard, whose flushNow path
-            // starts pending debounced writes. Query that guard until it clears.
-            const deadline = Date.now() + 8_000;
-            while (!target.dispatchEvent(new Event('beforeunload', { cancelable: true }))) {
-              if (Date.now() >= deadline) throw new Error('The editor still has unsaved changes.');
-              if (pendingWrites.size) await Promise.all([...pendingWrites]);
-              else await new Promise(resolve => setTimeout(resolve, 20));
-            }
-          }
-          await Promise.all([...pendingWrites]);
+          await flushEditor();
           target.parent.postMessage({ type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: true }, '*');
         } catch (error) {
           target.parent.postMessage({ type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: false,
@@ -372,8 +407,37 @@ export function installNativeEditorTransport(configuration, target) {
       })();
       return;
     }
+    if (message.type === 'codex-design:editor-history-open') {
+      if (typeof message.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.requestId)) return;
+      historyOpenId = message.requestId;
+      void (async () => {
+        try {
+          await flushEditor();
+          if (disposed || historyOpenId !== message.requestId) return;
+          const history = target.__CODEX_DESIGN_NATIVE_HISTORY__;
+          if (!history || readOnly) throw new Error('Edit history is not available in this view.');
+          const opened = await history.open();
+          if (disposed || historyOpenId !== message.requestId) return;
+          target.parent.postMessage({ type: 'codex-design:editor-history-opened', channel, requestId: message.requestId, opened: opened === true }, '*');
+        } catch (error) {
+          if (disposed || historyOpenId !== message.requestId) return;
+          target.parent.postMessage({ type: 'codex-design:editor-history-opened', channel, requestId: message.requestId, opened: false,
+            error: { code: error.code || 'EDITOR_HISTORY_UNAVAILABLE', message: String(error.message || error) } }, '*');
+        }
+      })();
+      return;
+    }
+    if (message.type === 'codex-design:editor-history-close') {
+      if (message.requestId !== historyOpenId) return;
+      historyOpenId = undefined;
+      target.__CODEX_DESIGN_NATIVE_HISTORY__?.close?.();
+      return;
+    }
     if (message.type === 'codex-design:host-context-changed') {
       hostTheme.update(message.context, message.hostContextIsSnapshot === true);
+      const styles = { theme: message.context?.theme, styles: message.context?.styles };
+      target.__CODEX_DESIGN_EDITOR_TRANSPORT__.hostContext = styles;
+      previews?.updateHostContext?.(styles);
       if (message.hostContextIsSnapshot === true || Object.hasOwn(message, 'commentViewport')) updateCommentViewport(message.commentViewport);
       return;
     }
@@ -386,10 +450,10 @@ export function installNativeEditorTransport(configuration, target) {
     const url = new URL(value, base);
     if (url.origin !== base.origin) return null;
     if (!url.pathname.startsWith(base.pathname)) {
-      if (!/^\/(?:_api(?:\/|$)|_blob\/|_files\.json$|__comments(?:\/|$)|__deck\/|__design(?:-system)?\/|project\/|db\/)/.test(url.pathname)) return null;
-      return url.pathname.slice(1) + url.search;
+      if (!/^\/(?:_api(?:\/|$)|_blob\/|_files\.json$|__comments(?:\/|$)|__deck\/|__design(?:-system)?\/|__history(?:\/|$)|__ds\/|project\/|db\/)/.test(url.pathname)) return null;
+      return requestPrefix + url.pathname.slice(1) + url.search;
     }
-    return url.pathname.slice(base.pathname.length) + url.search;
+    return requestPrefix + url.pathname.slice(base.pathname.length) + url.search;
   };
   const originalAssets = async text => {
     if (!text.includes('data:')) return text;
@@ -427,11 +491,17 @@ export function installNativeEditorTransport(configuration, target) {
   };
   target.fetch = async (input, init) => {
     const url = typeof input === 'string' || input instanceof URL ? new URL(String(input), base).href : input.url;
+    const requestedMethod = String(init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (readOnly && !['GET', 'HEAD'].includes(requestedMethod)) throw Object.assign(new Error('Earlier versions are read-only.'), { code: 'EDITOR_PREVIEW_READ_ONLY' });
     const path = relative(url);
     if (path === null) return originalFetch(input, init);
     const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
+    if (readOnly && !['GET', 'HEAD'].includes(request.method)) throw Object.assign(new Error('Earlier versions are read-only.'), { code: 'EDITOR_PREVIEW_READ_ONLY' });
+    // History remains open while the user edits. Flush again at the actual
+    // destructive action, before this restore joins the pending-write barrier.
+    if (!['GET', 'HEAD'].includes(request.method) && /^__history\/(?:\d+\/restore|notice\/[^/?]+\/recover)(?:\?|$)/.test(path)) await flushEditor();
     const headers = {};
-    for (const name of ['content-type', 'accept', 'if-match', 'if-none-match', 'last-event-id', 'x-filename']) if (request.headers.has(name)) headers[name] = request.headers.get(name);
+    for (const name of ['content-type', 'accept', 'if-match', 'if-none-match', 'last-event-id', 'x-filename', 'x-deck-client']) if (request.headers.has(name)) headers[name] = request.headers.get(name);
     let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : undefined;
     if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path.split('?')[0]) && request.headers.get('content-type')?.includes('application/json')) requestBytes = await preserveAssetReferences(requestBytes);
     const body = requestBytes ? bytesToBase64(requestBytes) : undefined;
@@ -441,7 +511,21 @@ export function installNativeEditorTransport(configuration, target) {
     let response;
     try { response = await responseTask; }
     finally { if (writing) pendingWrites.delete(responseTask); }
-    const result = new Response([101, 204, 205, 304].includes(response.status) || request.method === 'HEAD' ? null : base64ToBytes(response.body), { status: response.status, statusText: response.statusText, headers: response.headers });
+    let responseBytes = base64ToBytes(response.body);
+    if (!readOnly && /^__history(?:\/|\?|$)/.test(path) && response.headers?.['content-type']?.includes('application/json')) {
+      try {
+        const value = JSON.parse(new TextDecoder().decode(responseBytes));
+        for (const row of Array.isArray(value.rows) ? value.rows : []) {
+          if (typeof row.preview !== 'string') continue;
+          const serverPath = configuration.serverPath;
+          const route = typeof serverPath === 'string' && row.preview.startsWith(serverPath) ? row.preview.slice(serverPath.length) : row.preview;
+          if (/^v\/[1-9][0-9]{0,8}\/$/.test(route)) row.preview = new URL(route, rootBase).href;
+          else if (configuration.kind === 'dashboard' && Number.isSafeInteger(row.n) && row.n >= 1 && row.n <= 999999999 && route === `?at=${row.n}`) row.preview = new URL(`v/${row.n}/`, rootBase).href;
+        }
+        responseBytes = new TextEncoder().encode(JSON.stringify(value));
+      } catch { /* Preserve an invalid response so the canonical History UI reports it. */ }
+    }
+    const result = new Response([101, 204, 205, 304].includes(response.status) || request.method === 'HEAD' ? null : responseBytes, { status: response.status, statusText: response.statusText, headers: response.headers });
     Object.defineProperty(result, 'url', { value: url });
     return result;
   };
@@ -588,6 +672,24 @@ export function installNativeEditorTransport(configuration, target) {
     }
   }
   target.EventSource = EditorEventSource;
+  const startPreviews = () => {
+    if (disposed || readOnly || previews || typeof installPreviews !== 'function' || !target.document?.body) return;
+    previews = installPreviews({ target, baseUrl: rootBase.href, rpc, flush: flushEditor });
+    const context = target.__CODEX_DESIGN_EDITOR_TRANSPORT__.hostContext;
+    if (context) previews?.updateHostContext?.(context);
+  };
+  if (target.document?.body) startPreviews();
+  else target.document?.addEventListener?.('DOMContentLoaded', startPreviews, { once: true });
+  if (readOnly && target.document) {
+    target.document.addEventListener('click', event => {
+      const anchor = event.target?.closest?.('a[href]');
+      if (!anchor) return;
+      let url; try { url = new URL(anchor.getAttribute('href'), base); } catch { return; }
+      if (url.href !== rootBase.href) return;
+      event.preventDefault();
+      target.parent.postMessage({ type: 'codex-design:preview-close', channel }, '*');
+    }, true);
+  }
   const anchorPrototype = target.HTMLAnchorElement?.prototype;
   if (anchorPrototype) {
     const click = anchorPrototype.click;
@@ -604,7 +706,11 @@ export function installNativeEditorTransport(configuration, target) {
   target.addEventListener('unload', () => {
     for (const source of sources) source.close();
     disposed = true;
+    target.document?.removeEventListener?.('DOMContentLoaded', startPreviews);
     hostTheme.dispose();
+    previews?.dispose?.();
+    target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
+    if (readOnly) delete target.__CODEX_DESIGN_PREVIEW_CLOSE__;
     for (const call of [...pending.values()]) call.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
   });
   target.addEventListener('error', event => {

@@ -10,6 +10,15 @@ const skills = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-da
 const serverModule = String.raw`import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+export const nativeSession = () => process.env.CODEX_DESIGN_NATIVE_SESSION === '1';
+export function assertNativeNetwork({host, lan = false}) {
+  if (!nativeSession() || !lan && ['127.0.0.1', 'localhost', '::1'].includes(host)) return;
+  const error = new Error('A native Codex Design data service is local-only; network sharing is not enabled by opening an artwork.');
+  error.code = 'NATIVE_NETWORK_REFUSED';
+  throw error;
+}
 
 export function userRevisionHash(thread) {
   const messages = Array.isArray(thread) ? thread : thread?.messages || [];
@@ -102,13 +111,29 @@ export async function annotationContext(root, skill) {
   return {skill, projectRoot: project, title: typeof index?.title === 'string' ? index.title : path.basename(root), indexFile: 'project/' + indexName, objects};
 }
 
-export async function serveCodexAnnotation(request, response, rest, root, skill, moduleUrl) {
+export async function serveCodexAnnotation(request, response, rest, root, skill, moduleUrl, { viewer, bootScript } = {}) {
   const route = rest.replace(/^\//, '');
-  if (route !== '__codex/annotations.js' && route !== '__codex/annotation-context' && route !== '__codex/editor-session') return false;
+  if (!['__codex/annotations.js', '__codex/annotation-context', '__codex/editor-session', '__codex/boot.js', '__codex/history-ui.js'].includes(route)) return false;
+  // These routes expose local filesystem identity or native boot metadata.
+  // Keep them behind the upstream grant and viewer checks, and never expose
+  // that information through a shared guest session.
+  if (viewer?.role !== 'owner') { response.writeHead(403, {'Cache-Control': 'no-store'}).end(); return true; }
   if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405, {Allow: 'GET, HEAD'}).end(); return true; }
   let body, type;
-  if (route.endsWith('.js')) { body = await fs.readFile(new URL('./browser-annotations.js', moduleUrl)); type = 'text/javascript; charset=utf-8'; }
-  else { body = Buffer.from(JSON.stringify(route.endsWith('/editor-session') ? {root: path.resolve(root), kind: editorKinds[skill], pid: process.pid} : await annotationContext(root, skill))); type = 'application/json; charset=utf-8'; }
+  if (route === '__codex/boot.js') {
+    if (typeof bootScript !== 'function') { response.writeHead(404, {'Cache-Control': 'no-store'}).end(); return true; }
+    body = Buffer.from(bootScript(new URL(request.url ?? '/', 'http://localhost').searchParams)); type = 'text/javascript; charset=utf-8';
+  }
+  else if (route === '__codex/history-ui.js') {
+    const file = path.join(path.dirname(fileURLToPath(moduleUrl)), 'editor', 'share-ui.js');
+    let info;
+    try { info = await fs.lstat(file); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (!info?.isFile() || info.isSymbolicLink() || await fs.realpath(file) !== file) { response.writeHead(404, {'Cache-Control': 'no-store'}).end(); return true; }
+    body = await fs.readFile(file); type = 'text/javascript; charset=utf-8';
+  }
+  else if (route.endsWith('.js')) { body = await fs.readFile(new URL('./browser-annotations.js', moduleUrl)); type = 'text/javascript; charset=utf-8'; }
+  else { body = Buffer.from(JSON.stringify(route.endsWith('/editor-session') ? {root: path.resolve(root), kind: editorKinds[skill], pid: process.pid, nativeSessionVersion: 2, nativeLocalOnly: nativeSession()} : await annotationContext(root, skill))); type = 'application/json; charset=utf-8'; }
   response.writeHead(200, {'Content-Type': type, 'Content-Length': body.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'});
   response.end(request.method === 'HEAD' ? undefined : body);
   return true;
@@ -116,8 +141,42 @@ export async function serveCodexAnnotation(request, response, rest, root, skill,
 `;
 
 function replaceOnce(source, needle, replacement, filename) {
-  if (!source.includes(needle)) throw new Error(`Annotation patch anchor missing in ${filename}: ${needle}`);
+  const first = source.indexOf(needle);
+  if (first < 0 || first !== source.lastIndexOf(needle)) throw new Error(`Annotation patch anchor missing or ambiguous in ${filename}: ${needle}`);
   return source.replace(needle, replacement);
+}
+
+function adaptAtomicCommentRename(runtime, file) {
+  // Upstream Dashboard bundles several fs aliases and archive writes. Patch
+  // only the comments transaction's atomic replacement, not the first rename.
+  const expression = /(async function writeAtomic\d*\(file, text\) \{\n  const temp = [^\n]+;\n  await ([\w$]+)\.writeFile\(temp, text\);\n  try \{\n    )await \2\.rename\(temp, file\);/g;
+  const matches = [...runtime.matchAll(expression)];
+  if (matches.length !== 1) throw new Error(`Comment atomic rename anchor missing or ambiguous in ${file}`);
+  return runtime.replace(expression, '$1await codexRenameWithRetry(temp, file);');
+}
+
+function adaptNativeNetwork(runtime, file) {
+  if (!runtime.includes('var ShareHost = class {') || runtime.includes('codexAssertNativeNetwork')) return runtime;
+  const listen = /  async listen\(([\w$]+), \{ port, host, lan = false, portGiven = false \}\) \{\n    const \{ state \} = this\.sharing;/g;
+  if ([...runtime.matchAll(listen)].length !== 1) throw new Error(`Native listener anchor missing or ambiguous in ${file}`);
+  runtime = runtime.replace(listen, match => `${match}\n    codexAssertNativeNetwork({host, lan});`);
+  runtime = replaceOnce(runtime, 'const linksPort = !portGiven && (lan || state.lan) && state.port ? state.port : void 0;',
+    'const linksPort = !codexNativeSession() && !portGiven && (lan || state.lan) && state.port ? state.port : void 0;', file);
+  runtime = replaceOnce(runtime, 'if (this.sharing.state.lan) await this.setLan(true);',
+    'if (!codexNativeSession() && this.sharing.state.lan) await this.setLan(true);', file);
+  runtime = replaceOnce(runtime, '  async setLan(on) {', '  async setLan(on) {\n    if (on && codexNativeSession()) codexAssertNativeNetwork({host: "127.0.0.1", lan: true});', file);
+  // Root Share API writes include Copy link's implicit LAN enable. Folder ZIP
+  // and exports-to-exports writes also bypass Codex's content-only Save As.
+  // Preserve their standalone behavior, but refuse them in internal services.
+  runtime = replaceOnce(runtime, '    if (!ours) return false;', [
+    '    if (!ours) return false;',
+    '    if (codexNativeSession() && (!["GET", "HEAD"].includes(method) || p === "/__share/archive" || p === "/__share/save")) {',
+    '      request.resume();',
+    '      response.writeHead(403, {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}).end(JSON.stringify({code: "native_local_only", message: "Use the native artwork and Save As controls."}));',
+    '      return true;',
+    '    }',
+  ].join('\n'), file);
+  return runtime.replace(/(#![^\n]*\n)/, '$1import { nativeSession as codexNativeSession, assertNativeNetwork as codexAssertNativeNetwork } from "./codex-annotation-server.mjs";\n');
 }
 
 export async function adaptAnnotations(pluginRoot) {
@@ -149,10 +208,11 @@ export async function adaptAnnotations(pluginRoot) {
       }
       runtime = runtime.replaceAll('{ detached: true, stdio:', '{ detached: true, windowsHide: true, stdio:');
       runtime = runtime.replace(/spawn\(command, \{\r?\n\s*shell: true,(?!\r?\n\s*windowsHide:)/g, 'spawn(command, {\n        shell: true,\n        windowsHide: true,');
+      runtime = adaptNativeNetwork(runtime, file);
       // Retry the rename alone, retaining the same temporary file and lock.
       // Re-running updateComments could apply the user's mutation twice.
       if (!runtime.includes('codexRenameWithRetry')) {
-        runtime = replaceOnce(runtime, 'await fsp.rename(temp, file);', 'await codexRenameWithRetry(temp, file);', file);
+        runtime = adaptAtomicCommentRename(runtime, file);
         runtime = runtime.replace(/(#![^\n]*\n)/, '$1import { renameWithRetry as codexRenameWithRetry } from "./codex-annotation-server.mjs";\n');
       }
       if ((entry === 'server.mjs' || skill === 'codex-dashboard') && !runtime.includes('codexSameCommentRevision')) {
@@ -179,9 +239,9 @@ export async function adaptAnnotations(pluginRoot) {
     if (source.includes('serveCodexAnnotation')) continue;
     source = source.replace(/(#![^\n]*\n)/, '$1import { serveCodexAnnotation } from "./codex-annotation-server.mjs";\n');
     if (skill === 'codex-dashboard') {
-      source = replaceOnce(source, 'const p = url2.pathname;', 'const p = url2.pathname;\n      if (await serveCodexAnnotation(req, res, p, root, "codex-dashboard", import.meta.url)) return;', filename);
+      source = replaceOnce(source, '      const p = at.path;', '      const p = at.path;\n      if (url2.pathname.startsWith(page) && await serveCodexAnnotation(req, res, p, root, "codex-dashboard", import.meta.url, { viewer, bootScript: (query) => share2.bootScript(viewer, query) })) return;', filename);
     } else {
-      source = replaceOnce(source, 'const route = async (request, response, rest) => {', `const route = async (request, response, rest) => {\n    if (await serveCodexAnnotation(request, response, rest, root, ${JSON.stringify(skill)}, import.meta.url)) return;`, filename);
+      source = replaceOnce(source, 'const route = async (request, response, rest, viewer) => {', `const route = async (request, response, rest, viewer) => {\n    if (await serveCodexAnnotation(request, response, rest, root, ${JSON.stringify(skill)}, import.meta.url, { viewer, bootScript: (query) => share.bootScript(viewer, query) })) return;`, filename);
     }
     await fs.writeFile(filename, source);
   }

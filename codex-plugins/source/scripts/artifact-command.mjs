@@ -184,7 +184,8 @@ function refuseIncompleteRecovery(root, kind) {
   const binding = readJson(path.join(root, BINDING_FILE));
   if (binding?.deliveryMode !== 'native') return;
   for (const name of fs.readdirSync(root)) {
-    if (!/^\.artifact-server\.refused-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i.test(name)) continue;
+    const evidence = /^\.artifact-server\.(refused|upgrade)-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i.exec(name);
+    if (!evidence) continue;
     let snapshot, state;
     try {
       snapshot = fileSnapshot(path.join(root, name));
@@ -194,9 +195,99 @@ function refuseIncompleteRecovery(root, kind) {
     if (nativeRecoveryBinding(binding, state, root, kind) && state.kind === kind && samePath(state.root, root)) {
       // An archive is denial evidence, never authority to replay a recovery.
       // A failed raw startup must not become a fresh token/parent on Retry.
-      throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'The previous data-service recovery did not finish starting. Its archived record and original native binding were preserved; inspect the original startup error before retrying.');
+      throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', `The previous data-service ${evidence[1] === 'upgrade' ? 'upgrade' : 'recovery'} did not finish starting. Its archived record and original native binding were preserved; inspect the original startup error before retrying.`);
     }
   }
+}
+
+const currentNativeSession = session => session?.nativeSessionVersion === 2 && session.nativeLocalOnly === true;
+const legacyNativeSession = session => (session?.nativeSessionVersion === undefined || session.nativeSessionVersion === 1)
+  && (session.nativeLocalOnly === undefined || session.nativeLocalOnly === true);
+
+function capturedControls(root) {
+  return new Map([NATIVE_BINDING_FILE, WORKER_FILE, WORKER_JOBS_FILE, 'comments.json'].map(name => {
+    const file = path.join(root, name), stat = fs.lstatSync(file, {throwIfNoEntry: false});
+    if (stat && (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) {
+      throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'Native upgrade control files must be ordinary unaliased files.');
+    }
+    const captured = stat ? fileSnapshot(file) : null;
+    return [name, captured];
+  }));
+}
+
+function controlsUnchanged(root, controls) {
+  return [...controls].every(([name, captured]) => {
+    const file = path.join(root, name), stat = fs.lstatSync(file, {throwIfNoEntry: false});
+    if (stat && (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) return false;
+    const current = stat ? fileSnapshot(file) : null;
+    return captured ? sameSnapshot(current, captured) : current === null;
+  });
+}
+
+// The caller already owns the CLI binding lock. This lock is deliberately held
+// across raw stop/start: a native request cannot claim a writer while its idle
+// data runtime is being replaced. Never call the wrapper's public stop here.
+async function upgradeLegacyNativeRuntime(script, forwarded, env, skillDir, root, kind, captured, session) {
+  let retired = false;
+  const refused = () => new BridgeError('EDITOR_IDENTITY_UNVERIFIED', retired
+    ? 'The old data service was retired, but its replacement could not be safely verified. Existing controller records and upgrade evidence were retained; inspect them before retrying.'
+    : 'The running data service cannot be safely upgraded to the native runtime. Its process, bindings and work were preserved.');
+  if (!legacyNativeSession(session)) throw refused();
+  const serverFile = path.join(root, '.artifact-server.json'), bindingFile = path.join(root, BINDING_FILE);
+  return withLock(path.join(root, WORKER_LOCK_FILE), async () => {
+    recoveryPaths(root);
+    const old = JSON.parse(captured.bytes);
+    const bridgeSnapshot = fileSnapshot(bindingFile), bridge = bridgeSnapshot && JSON.parse(bridgeSnapshot.bytes);
+    if (!nativeRecoveryBinding(bridge, old, root, kind) || !path.isAbsolute(bridge.skillDir)
+      || bridge.threadId != null && !UUID.test(bridge.threadId) || !sameSnapshot(fileSnapshot(serverFile), captured)) throw refused();
+    const protectedFiles = capturedControls(root);
+    const status = await getWorkerStatus(root), jobs = loadJobs(root);
+    const registry = readJson(path.join(root, WORKER_FILE));
+    const native = readJson(path.join(root, NATIVE_BINDING_FILE));
+    if (status.counts.active || status.counts.pending || status.listening
+      || Object.values(jobs.jobs).some(job => ['active', 'pending'].includes(job?.status))
+      || registry?.activeJobId || registry?.listener) {
+      throw new BridgeError('ARTIFACT_BUSY', 'Pause the idle native listener and finish or coordinate queued work before upgrading this artwork data service. No process was stopped.');
+    }
+    if (native && (native.version !== 1 || !samePath(native.root, root) || !['native', 'worker'].includes(native.deliveryMode)
+      || native.requestProtocol !== 'native-draft-v1' || !UUID.test(native.threadId ?? '') || !UUID.test(native.token ?? '')
+      || native.nativeParentThreadId !== undefined && native.nativeParentThreadId !== native.threadId)) throw refused();
+    if (registry && (!['waiting', 'paused'].includes(registry.status) || !UUID.test(registry.nativeThreadId ?? '')
+      || !UUID.test(registry.registrationId ?? '') || registry.nativeThreadId === (native ?? bridge).threadId
+      || registry.originThreadId !== ((native ?? bridge).threadId ?? null)
+      || ['pid', 'url', 'token', 'command'].some(key => Object.hasOwn(registry, key)))) throw refused();
+    const rechecked = await verifyEditorInstance(old, root, kind);
+    if (!legacyNativeSession(rechecked) || !sameSnapshot(fileSnapshot(serverFile), captured)
+      || !sameSnapshot(fileSnapshot(bindingFile), bridgeSnapshot) || !controlsUnchanged(root, protectedFiles)) throw refused();
+
+    // This evidence makes a failed new startup fail closed on a later Retry;
+    // an ordinary fresh-open branch cannot silently generate another binding.
+    const backup = path.join(root, `.artifact-server.upgrade-${Date.now()}-${randomUUID()}.json`);
+    let stopped;
+    try { stopped = await originalJsonCommand(script, ['stop', root], env); }
+    catch (error) {
+      retired = !alive(old.pid);
+      if (retired) { recoveryPaths(root, {files: false}); fs.writeFileSync(backup, captured.bytes, {flag: 'wx', mode: 0o600}); }
+      throw error;
+    }
+    retired = !alive(old.pid);
+    if (retired) { recoveryPaths(root, {files: false}); fs.writeFileSync(backup, captured.bytes, {flag: 'wx', mode: 0o600}); }
+    if (stopped.code !== 0) return stopped.code;
+    if (stopped.result?.stopped !== true || stopped.result.pid !== old.pid || !retired
+      || fileSnapshot(serverFile) !== null || !sameSnapshot(fileSnapshot(bindingFile), bridgeSnapshot)
+      || !controlsUnchanged(root, protectedFiles)) throw refused();
+    const started = await originalJsonCommand(script, forwarded, env);
+    if (started.code !== 0) return started.code;
+    recoveryPaths(root);
+    const fresh = readJson(serverFile);
+    let health;
+    try { health = await verifyEditorInstance(fresh, root, kind); } catch { throw refused(); }
+    if (!currentNativeSession(health) || fresh.pid === old.pid || started.result?.pid !== fresh.pid
+      || !sameSnapshot(fileSnapshot(bindingFile), bridgeSnapshot) || !controlsUnchanged(root, protectedFiles)) throw refused();
+    atomicJson(bindingFile, {...bridge, serverPid: fresh.pid, skillDir});
+    process.stdout.write(`${JSON.stringify({...started.result, runtimeUpgraded: true, nativeSessionVersion: 2}, null, 2)}\n`);
+    return 0;
+  }, {timeoutMs: 10_000, staleMs: 0});
 }
 
 // Called only by the existing CLI binding-lock owner. The worker lock protects
@@ -248,7 +339,8 @@ async function recoverRefusedEditor(script, forwarded, env, skillDir, root, kind
   try {
     recoveryPaths(root);
     const fresh = readJson(serverFile);
-    await verifyEditorInstance(fresh, root, kind);
+    const health = await verifyEditorInstance(fresh, root, kind);
+    if (env.CODEX_DESIGN_NATIVE_SESSION === '1' && !currentNativeSession(health)) throw originalError;
     if (fresh.pid === JSON.parse(captured.bytes).pid || started.result?.pid !== fresh.pid || !sameSnapshot(fileSnapshot(bindingFile), bindingSnapshot)) throw originalError;
     // Change only data-runtime coordinates. Token, parent and native binding
     // remain owned by their existing controller and are never rebound here.
@@ -360,6 +452,11 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
     const { forwarded, options } = parseBridgeArguments(argv);
     let command = forwarded[0];
     const internalOpen = command === 'open-service';
+    const nativeService = internalOpen || command === 'serve-service';
+    if (nativeService) env = { ...env, CODEX_DESIGN_NATIVE_SESSION: '1' };
+    if (['share', 'archive'].includes(command) || forwarded.some(value => /^--lan(?:=|$)/.test(value))) {
+      throw new BridgeError('UNSUPPORTED_NATIVE_WORKFLOW', 'Use the Codex Design artwork tab and its content-only Export action. Network sharing and raw folder archives are not part of this plugin workflow.');
+    }
     if (!command || ['--help', '-h', 'help'].includes(command)) {
       process.stdout.write(publicHelp(skillDir)); process.exitCode = 0; return 0;
     }
@@ -454,13 +551,21 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
           const captured = fileSnapshot(path.join(root, '.artifact-server.json'));
           const state = captured && readJson(path.join(root, '.artifact-server.json'));
           if (state && alive(state.pid)) {
-            try { await verifyEditorInstance(state, root, kindForSkill(skillDir)); }
+            let session;
+            try { session = await verifyEditorInstance(state, root, kindForSkill(skillDir)); }
             catch (error) {
               if (internalOpen && !customHook && captured && options.noAgent) {
                 const code = await recoverRefusedEditor(script, forwarded, env, skillDir, root, kindForSkill(skillDir), captured, error);
                 process.exitCode = code; return code;
               }
               throw error;
+            }
+            if (nativeService && !currentNativeSession(session)) {
+              if (!internalOpen || customHook || !options.noAgent || options.deliveryMode && !['native', 'worker'].includes(options.deliveryMode)) {
+                throw new BridgeError('EDITOR_IDENTITY_UNVERIFIED', 'This data service is not the required native runtime. Only an idle native internal open can upgrade it.');
+              }
+              const code = await upgradeLegacyNativeRuntime(script, forwarded, env, skillDir, root, kindForSkill(skillDir), captured, session);
+              process.exitCode = code; return code;
             }
           }
           if (!state || !alive(state.pid)) refuseIncompleteRecovery(root, kindForSkill(skillDir));
@@ -471,7 +576,10 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       if (['open', 'serve'].includes(command)) {
         const { root } = artifactRoot(skillDir, forwarded);
         const state = readJson(path.join(root, '.artifact-server.json'));
-        if (state && alive(state.pid)) await verifyEditorInstance(state, root, kindForSkill(skillDir));
+        if (state && alive(state.pid)) {
+          const session = await verifyEditorInstance(state, root, kindForSkill(skillDir));
+          if (nativeService && !currentNativeSession(session)) throw new BridgeError('EDITOR_RUNTIME_UPGRADE_REQUIRED', 'Use the internal open-service command to upgrade an idle native runtime before serving it in the foreground.');
+        }
       }
       const code = await originalCommand(script, forwarded, env);
       process.exitCode = code;
@@ -504,10 +612,17 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       const expectedKind = kindForSkill(skillDir);
       if (running && (state.kind !== expectedKind || !samePath(state.root, root))) throw new BridgeError('EDITOR_CONFLICT', 'A different editor is recorded for this folder; stop it explicitly before opening.');
       if (running) {
-        try { await verifyEditorInstance(state, root, expectedKind); }
+        let session;
+        try { session = await verifyEditorInstance(state, root, expectedKind); }
         catch (error) {
           if (!internalOpen || command !== 'open' || !captured) throw error;
           return await recoverRefusedEditor(script, forwarded, env, skillDir, root, expectedKind, captured, error);
+        }
+        if (nativeService && !currentNativeSession(session)) {
+          if (!internalOpen || command !== 'open' || deliveryMode !== 'native' || !captured) {
+            throw new BridgeError('EDITOR_RUNTIME_UPGRADE_REQUIRED', 'Use the internal open-service command to upgrade an idle native runtime before serving it in the foreground.');
+          }
+          return await upgradeLegacyNativeRuntime(script, forwarded, env, skillDir, root, expectedKind, captured, session);
         }
       }
       const owned = running && previous && previous.serverPid === state.pid && sameTarget(previous, target);

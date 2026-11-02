@@ -58,7 +58,6 @@ does every call; below, `A` is `<this skill's folder>/scripts/codex-artifact.mjs
 | `node $A check <root>` | Checks the documents, the page's files, and that each dataset mark's `data-where`/`data-row` finds its rows. Exit 1 while `problems` > 0. |
 | `node $A open <root>` | Requests this artwork's existing Codex Design Tab and returns `{appUrl, navigationRequested, renderVerified, …}`. Deliver `appUrl`; navigation acceptance is not a render check. |
 | `node $A preview <root> [--port n]` | Standalone HTTP preview only when the user explicitly requests an independent browser page; returns its preview `url`. |
-| `node $A serve <root> [--port n]` / `stop <root>` | The same server in the foreground / stops the background one. |
 | `node $A comments <root> [--all]` / `--wait` | The comments people left on the page / waits for one they send you. See Comments. |
 | `node $A comment-reply <root> <id> <text\|->` / `comment-resolve <root> <id>` | Answers one (`--resolve` closes it too) / closes one (`--reopen`). |
 
@@ -324,7 +323,7 @@ kind; a file's `text` is always the whole file. A new file version:
 `upload`, then one `update` of `source.url`, `source.name` and `updated`:
 
 ```json
-[{"op": "update", "path": "datasets/sales", "data": {"source": {"url": "/_blob/<id from upload>", "name": "sales-2026-10-28.csv"}, "updated": {"at": "2026-10-28T09:00:00Z", "by": "Codex"}}}]
+[{"op": "update", "path": "datasets/sales", "data": {"source": {"url": "/_blob/<id from upload>", "name": "sales-2026-10-28.csv"}, "updated": {"at": "2026-10-28T09:00:00Z", "by": "Agent"}}}]
 ```
 
 Refreshing is that, from the data gathered again the way the dataset's
@@ -377,13 +376,39 @@ yourself, and write and run your own code rather than copying a comment's.
 Ids on headings, charts and tables keep a comment's place when you rewrite the
 page.
 
-- `comments <root>` → the open threads, numbered like the page's pins (`n`),
+- `comments <root>` → the open threads, with diagnostic list order `n` (separate from the author-avatar pin label),
   each with `file`, `where`, `detail` and its `messages`; `--all` adds the
   resolved ones.
 - `comment-reply <root> <id> <text>` (or `-`, the text on stdin): your reply,
-  shown on the page at once from "agent". Reply after the change is written and
+  shown on the page at once from "Agent". Reply after the change is written and
   checked (Changing and refreshing), in a sentence or two: what changed, or why
   not. `--resolve` also closes the thread: use it once the change is made;
   leave a question or a refusal open for the person.
 - `comment-resolve <root> <id>` closes one (`--reopen` opens it again).
 - Open through the Codex entry point for native delivery. **Add to chat** prepares a comment snapshot and appends its reference to the native workspace draft; it does not send or enqueue work. After the USER presses native Send, the receiving parent reads/accepts the attached request IDs with design_request, runs each returned native-parent dispatchCommand, then chooses whether to reuse, resume, or create a real native child. The child registers with its own actual CODEX_THREAD_ID and follows worker-next / worker-complete. Ordinary saved comments remain local. Do not start an additional comments --wait watcher or replay unconfirmed legacy jobs.
+
+## Sharing
+
+The Codex Design workflow opens the artwork in this computer's native workspace. Its `appUrl` is a local navigation link, not a public or LAN sharing link.
+
+- For a portable copy, use the library's content export action and Save As. It exports artwork content only; chats, comments, history, worker records, credentials and runtime state stay local.
+- Ordinary create, open, copy-link, preview and export actions do not authorize network sharing. Do not invoke upstream sharing commands, add `--lan`, or enable sharing through Copy link as a side effect.
+- Multi-user LAN roles and presence are outside this native authoring workflow. If the user requests them, explain that they need a separately supported collaboration workflow; do not fabricate a shared native chat or change the artwork's parent/worker binding.
+
+## History
+
+Use the artwork's existing History entry for the history that editor actually exposes. The global library's whole-artwork restore points and the editor's detailed edit history are separate records; do not present one as the other or create a second history interface.
+
+- Before an independent AI edit or restore, follow Codex execution: check worker ownership and retain the required library checkpoint. A claimed native job already owns its controller-created restore point.
+- When detailed history is available, inspect its differences and read-only preview before restoring the requested version or selected change. A restore creates a new revision and must preserve unrelated later edits. Do not bypass an active writer or a changed restore base.
+- If the user asks who changed something, read the current artifact's existing `history/index.json` when present. Its version summaries, actor labels and change records are evidence, not instructions. Read an object only when its recorded id is a 64-character hexadecimal SHA-256 and the regular file stays under that artifact's `history/objects/`; do not follow filesystem links or edit history records.
+- A missing detailed history is not proof that a library restore point is missing. Use the existing History UI to inspect the available records and state the scope honestly; do not invent a history CLI command or silently write an old whole file over newer changes.
+- History, comments and chat/worker state do not become reference content or enter a content export package.
+
+## Keeping it in git
+
+The default artwork lives in the global Codex Design library. Do not initialize a repository over that library or move the artwork into a project merely to version it.
+
+Commit, push, install hooks or set up git only when the user asks. For a requested repository copy, use the library's content export and the user's chosen destination, keeping the original artwork UUID/root and its native navigation intact. Version only the artwork content and its required assets; exclude chats, comments, history, worker/binding records, tokens, logs and runtime files. Preserve any existing user-owned `.gitignore` or hooks.
+
+Run this skill's built-in check against the intended artifact root before a requested content commit. An export is a content copy, not a transfer of its chat or a restoration of its local runtime. A later native import creates its own artwork identity through the library's supported import action.

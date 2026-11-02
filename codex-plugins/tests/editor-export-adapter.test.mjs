@@ -54,6 +54,7 @@ function fixture({ native = true, errorCode = 'EXPORT_UNCONFIRMED', warningCount
     designAnalyticsEvents: { exported: { png: 'png', jpg: 'jpg', zip: 'zip' } },
     exportImageMimeTypes: { png: 'image/png', jpg: 'image/jpeg' }, exportDeliveryEventName: 'export-delivery',
     formatMessage: (value, params = {}) => value.defaultMessage.replace('{name}', params.name ?? ''),
+    savedFileMessage: name => 'Saved ' + name + '.',
     missingExportAssetSuffix: () => undefined,
   };
   const dom = {
@@ -64,13 +65,15 @@ function fixture({ native = true, errorCode = 'EXPORT_UNCONFIRMED', warningCount
   };
   const context = vm.createContext({ e, Blob, Uint8Array, ...dom,
     ...(native ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'export-test-channel' } } : {}),
-    b: () => () => {}, p: () => () => {}, x: async () => false, r: () => true,
+    f: () => () => {}, m: () => () => {}, k: async () => false, v: () => true,
     a: async (_, format) => ({ ok: true, uri: `data:${e.exportImageMimeTypes[format]};base64,AP8q`, embedWarningCount: warningCount }),
     h: async () => ({ blob: new Blob([bytes], { type: 'application/pdf' }), filename: 'Canvas.pdf', pages: 1, exported: 1, embedWarningCount: warningCount }),
-    c: () => ({}), n: 'application/pdf',
+    d: () => ({}), n: 'application/pdf',
   });
   context.__codexThrowNativeExportFailure = vm.runInContext('(' + throwNativeEditorExportFailure.toString() + ')', context);
-  context.w = vm.runInContext('(' + exportedFunction(original, 'downloadErrorCode') + ')', context);
+  const errorCodeName = /^function ([\w$]+)\(/.exec(exportedFunction(original, 'downloadErrorCode'))?.[1];
+  assert.ok(errorCodeName);
+  context[errorCodeName] = vm.runInContext('(' + exportedFunction(original, 'downloadErrorCode') + ')', context);
   e.saveThroughHost = vm.runInContext('(' + exportedFunction(adapted, 'saveThroughHost') + ')', context);
   return { e, context, dom, bytes, saves, downloads, events, reports, toasts, busy,
     setSaveError(value) { currentError = value; },
@@ -82,14 +85,14 @@ function fixture({ native = true, errorCode = 'EXPORT_UNCONFIRMED', warningCount
 // Extract the actual ZIP delivery/catch/finally tail without executing the
 // React canvas or reconstructing its branch logic in this test.
 function zipCaller(f) {
-  const matches = [...adapted.matchAll(/\b([\w$]+)=await\(0,e\.saveThroughHost\)\(([\w$]+),([\w$]+)\),([\w$]+)=\(0,e\.missingExportAssetSuffix\)\(([\w$]+)\.missing\);if\(/g)];
+  const matches = [...adapted.matchAll(/\b([\w$]+)=await\(0,e\.saveThroughHost\)\(([\w$]+),([\w$]+)\),([\w$]+)=([\w$]+)\.missing\.length;if\(/g)];
   assert.equal(matches.length, 1);
   const match = matches[0], after = adapted.slice(match.index);
   const end = /\}finally\{([\w$]+)\(!1\)\}/.exec(after);
   assert.ok(end);
   const tail = after.slice(0, end.index + end[0].length);
   assert.ok(tail.length < 3500);
-  const toast = /,([\w$]+)\("Couldn't build the HTML zip: "/.exec(tail)?.[1];
+  const toast = /,([\w$]+)\(\(0,e\.formatMessage\)\(\{defaultMessage:"Couldn’t build the HTML zip: \{error\}",id:"q0OIrbxby5"/.exec(tail)?.[1];
   assert.ok(toast);
   const context = vm.createContext({ e: f.e, Blob, ...f.dom,
     ...(f.context.__CODEX_DESIGN_EDITOR_TRANSPORT__ ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: f.context.__CODEX_DESIGN_EDITOR_TRANSPORT__ } : {}),
@@ -113,7 +116,7 @@ function warningCardDownload(f) {
     ...(f.context.__CODEX_DESIGN_EDITOR_TRANSPORT__ ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: f.context.__CODEX_DESIGN_EDITOR_TRANSPORT__ } : {}),
     [save[3]]: new Blob([f.bytes], { type: 'image/png' }), [save[4]]: 'Canvas.png',
     [toast]: (...value) => f.toasts.push(value), [busy]: value => f.busy.push(value),
-    w: true, p: new Set(), S() {}, m: code => code, i: 'blob:export-fixture',
+    w: true, p: new Set(), y() {}, m: code => code, l: 'blob:export-fixture',
   });
   return vm.runInContext('(' + code + ')', context);
 }
@@ -135,9 +138,9 @@ function producerFixture({ native = true, released = false, steps = [] } = {}) {
   };
   const context = vm.createContext({ e, AbortController,
     ...(native ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'export-test-channel' } } : {}),
-    r(format, fallback) { takes++; const item = queue.get(format); queue.delete(format); return item ?? fallback; },
-    l() {}, i: value => value.outcome === 'saved' || value.outcome === 'declined',
-    o: () => descriptor, g: queue, h: active, u() {}, c: () => false,
+    s(format, fallback) { takes++; const item = queue.get(format); queue.delete(format); return item ?? fallback; },
+    i() {}, l: value => value.outcome === 'saved' || value.outcome === 'declined',
+    r: () => descriptor, g: queue, h: active, c() {}, d: () => false,
     m: { onResult(value) { results.push(value); } },
   });
   context.v = vm.runInContext('(' + exportedFunction(adapted, 'runExportProducer') + ')', context);
@@ -303,6 +306,7 @@ test('the adapter is idempotent, refuses changed canonical anchors and leaves al
   assert.notEqual(changed, saving);
   assert.throws(() => adaptEditorExportFallbacks(original.replace(saving, changed)), /canonical/);
   assert.throws(() => adaptEditorExportFallbacks(original.replace('id:"dUR5426EKh"', 'id:"changed-card"')), /warning card/);
+  assert.throws(() => adaptEditorExportFallbacks(original.replace('id:"q0OIrbxby5"', 'id:"changed-zip-error"')), /HTML zip/);
   for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
     const raw = await bundle(kind);
     if (kind !== 'design') assert.equal(adaptEditorExportFallbacks(raw), raw);

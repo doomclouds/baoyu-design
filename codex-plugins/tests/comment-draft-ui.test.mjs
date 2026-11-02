@@ -8,7 +8,7 @@ import { adaptCommentDrafts, nativeCommentCanAdd, nativeCommentPresentation } fr
 import { readCommentComponent } from '../source/scripts/comment-toolbar-adapter.mjs';
 import { adaptInlineEditorScript } from '../source/server/editor-document.mjs';
 
-const plugin = fileURLToPath(new URL('../codex-design/', import.meta.url));
+const upstream = fileURLToPath(new URL('../../skills/', import.meta.url));
 const nativeFlag = '__CODEX_DESIGN_EDITOR_TRANSPORT__';
 const rowPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+),current:[\w$]+\}\)\{/;
 const threadPattern = /function ([\w$]+)\(\{controller:([\w$]+),state:([\w$]+),thread:([\w$]+)\}\)\{/;
@@ -16,10 +16,10 @@ const composerPattern = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,win
 const factoryPattern = /function ([\w$]+)\(\{base:[\w$]+,win:[\w$]+=window,modeShortcut:[\w$]+="C",launcher:[\w$]+,header:[\w$]+=!1,toolbar:[\w$]+=!1,pinSide:[\w$]+\}\)\{/;
 
 async function code(kind) {
-  const directory = path.join(plugin, 'skills', 'codex-' + kind, 'scripts/editor');
+  const directory = path.join(upstream, 'claude-' + kind, 'scripts/editor');
   const html = await fs.readFile(path.join(directory, 'index.html'), 'utf8');
   const entry = kind === 'dashboard' ? 'comments.js' : /<script type="module"[^>]*src="([^"]+)"/.exec(html)[1];
-  return fs.readFile(path.join(directory, entry), 'utf8');
+  return (await fs.readFile(path.join(directory, entry), 'utf8')).replaceAll('\r\n', '\n');
 }
 
 function nodes(tree, predicate, result = []) {
@@ -40,7 +40,7 @@ function render(source, pattern, input, { native = true, stateValues = [] } = {}
     useId: () => 'comment-row', useRef: initial => ({ current: initial }), useEffect() {} };
   const values = { input, [nativeFlag]: native ? {} : undefined, encodeURIComponent };
   const label = /label:(?:globalThis\.__CODEX_DESIGN_EDITOR_TRANSPORT__\?"Add to chat":)?([\w$]+),checked:/.exec(definition.text)?.[1];
-  if (label) values[label] = 'Send to agent';
+  if (label) values[label] = new RegExp(`\\b${label}="(Send to [Aa]gent)"`).exec(source)?.[1] ?? 'Send to agent';
   for (const name of new Set([...definition.text.matchAll(/([\w$]+)\.(?:jsx|jsxs)\b/g)].map(match => match[1]))) values[name] = jsx;
   for (const name of new Set([...definition.text.matchAll(/([\w$]+)\.(?:useState|useId|useRef|useEffect)\b/g)].map(match => match[1]))) values[name] = react;
   let context;
@@ -59,6 +59,7 @@ function fixture(status, { reply = false, legacy = false } = {}) {
   const calls = [];
   const state = { busy: {}, drafts: {}, snapshot: { threads: [thread], me: { name: 'You' } } };
   const controller = { agentAvailable: () => true, setDraft: (...args) => calls.push(['draft', ...args]),
+    canComment: () => true, canEdit: () => true, canDelete: () => true,
     reply: (...args) => calls.push(['reply', ...args]), editMessage: (...args) => (calls.push(['edit', ...args]), Promise.resolve(true)),
     resolve: (...args) => (calls.push(['resolve', ...args]), Promise.resolve()), reopen: (...args) => calls.push(['reopen', ...args]),
     remove: (...args) => calls.push(['remove', ...args]), openThread: (...args) => calls.push(['open', ...args]),
@@ -110,7 +111,7 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
     assert.equal(nodes(httpAdapted, node => node.props?.label === 'Reply')[0].props.sendBox.label,
       nodes(httpOriginal, node => node.props?.label === 'Reply')[0].props.sendBox.label);
     const httpRow = render(adapted, rowPattern, legacy, { native: false, stateValues: [true] });
-    assert.equal(nodes(httpRow, node => node.props?.savedValue)[0].props.sendBox.label, 'Send to agent');
+    assert.equal(nodes(httpRow, node => node.props?.savedValue)[0].props.sendBox.label, 'Send to Agent');
     assert.equal(nodes(httpRow, node => node.props?.['data-codex-comment-status']).length, 0);
   });
 
@@ -148,8 +149,24 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
 
   test(`${kind}: changed canonical anchors refuse adaptation`, async () => {
     const original = await code(kind);
-    assert.throws(() => adaptCommentDrafts(original.replace('"Send to agent"', '"Changed native label"')), /adaptation was refused/);
+    assert.throws(() => adaptCommentDrafts(original.replace('"Send to Agent"', '"Changed native label"')), /adaptation was refused/);
     assert.throws(() => adaptCommentDrafts(original.replace(/==="delivered"\?"working"/, '==="delivered"?"unknown"')), /adaptation was refused/);
+  });
+
+  test(`${kind}: native drafting retains the new canonical viewer and commenter permissions`, async () => {
+    const adapted = adaptCommentDrafts(await code(kind));
+    const viewer = fixture('prepared');
+    Object.assign(viewer.controller, { agentAvailable: () => false, canComment: () => false, canEdit: () => false, canDelete: () => false });
+    const view = render(adapted, threadPattern, viewer);
+    assert.equal(nodes(view, node => node.props?.label === 'Reply').length, 0);
+    assert.equal(nodes(view, node => Array.isArray(node.props?.items)).flatMap(node => node.props.items).length, 0);
+    const commenter = fixture('prepared');
+    Object.assign(commenter.controller, { agentAvailable: () => false, canEdit: () => false, canDelete: () => false });
+    const comment = render(adapted, threadPattern, commenter);
+    const reply = nodes(comment, node => node.props?.label === 'Reply')[0];
+    assert.ok(reply, 'a permitted commenter can still write a normal local reply');
+    assert.equal(reply.props.sendBox, undefined, 'native mode does not grant the host-owner Send capability');
+    assert.equal(nodes(comment, node => Array.isArray(node.props?.items)).flatMap(node => node.props.items).some(item => /Add.*chat/.test(item.label)), false);
   });
 }
 

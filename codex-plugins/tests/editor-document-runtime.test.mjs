@@ -9,12 +9,13 @@ import { fileURLToPath } from 'node:url';
 import { createLibraryStore } from '../source/library/index.mjs';
 import { createDesignService } from '../source/server/service.mjs';
 import { createFixture } from './fixtures.mjs';
+import http from 'node:http';
 
 const execute = promisify(execFile);
 const pluginRoot = path.resolve(process.env.CODEX_DESIGN_TEST_PLUGIN_ROOT || fileURLToPath(new URL('../codex-design/', import.meta.url)));
 const cli = kind => path.join(pluginRoot, 'skills', `codex-${kind}`, 'scripts', 'codex-artifact.mjs');
 
-test('native documents use the current installed chrome even when the reused data service cannot serve static assets', async t => {
+test('native documents use installed chrome while the scoped data service supplies only session metadata', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'codex-editor-current-chrome-'));
   t.after(async () => {
     const relative = path.relative(os.tmpdir(), root);
@@ -23,13 +24,23 @@ test('native documents use the current installed chrome even when the reused dat
   });
   const store = createLibraryStore({ root });
   const record = await store.create({ kind: 'slides', title: 'Current installed editor' });
+  const requests = [];
+  const data = http.createServer((request, response) => {
+    requests.push(request.url);
+    if (request.url === '/old-runtime/__codex/boot.js') {
+      response.writeHead(200, { 'content-type': 'text/javascript' }).end('window.__baoyuHistory={base:"/old-runtime/",canRestore:true};');
+    } else response.writeHead(503).end('Static editor files are unavailable from this data service.');
+  });
+  await new Promise(resolve => data.listen(0, '127.0.0.1', resolve));
+  t.after(() => { data.closeAllConnections(); data.close(); });
   const service = createDesignService({ store, pluginRoot,
-    editorOpen: async () => ({ url: 'http://127.0.0.1:1/old-runtime/', kind: 'slides', artifactId: record.id }) });
+    editorOpen: async () => ({ url: `http://127.0.0.1:${data.address().port}/old-runtime/`, kind: 'slides', artifactId: record.id }) });
   const result = await service.invoke('editor.document', { id: record.id, channel: 'current-chrome-test-channel', language: 'zh' });
   assert.ok(result.html.includes('"language":"en"'), 'old caller preferences cannot change the native editor UI language');
   assert.ok(result.html.includes('__CODEX_DESIGN_EDITOR_RESOURCES__'));
   assert.ok(result.html.includes('__CODEX_DESIGN_EDITOR_FLUSH__'));
   assert.ok(result.html.includes('Current installed editor') === false, 'Document content loads through the separate data transport.');
+  assert.deepEqual(requests, ['/old-runtime/__codex/boot.js'], 'packaged scripts, CSS and fonts never come from the old service');
 });
 
 async function command(kind, ...args) {

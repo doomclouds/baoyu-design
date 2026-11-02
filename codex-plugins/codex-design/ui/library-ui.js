@@ -78,6 +78,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let currentSurface = null;
   let currentEditorUrl = null;
   let currentNativeEditor = null;
+  let currentEditorLoad = null;
+  let editHistoryAction = null;
   const renamingIds = new Set();
   const recordLoads = new Map();
   let editorRecordLoad = null;
@@ -101,6 +103,13 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   const menuDismissal = createMenuDismissal({ document, window, onDismiss: closeMenu });
   const recordFor = (id) => state.records.find((record) => record.id === id);
   const activeRecord = () => recordFor(state.view.activeTabId);
+  function cancelEditHistory(closeDialog = false) {
+    const current = editHistoryAction;
+    if (!current) return;
+    editHistoryAction = null;
+    current.abort.abort(new BridgeError('Opening edit history was cancelled.', 'EDITOR_HISTORY_CANCELLED'));
+    if (closeDialog && elements.dialog.querySelector('[data-history-id]') === current.form) elements.dialog.close();
+  }
   async function flushCurrentEditor() {
     const editor = currentNativeEditor;
     if (typeof editor?.flush !== 'function') return;
@@ -406,6 +415,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const host = elements.panel.querySelector('.editor-frame-host');
     if (!host) return;
     host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p></div>';
+    let finishLoading;
+    const loading = { id, sequence, promise: new Promise(resolve => { finishLoading = resolve; }) };
+    currentEditorLoad = loading;
     try {
       const native = bridge.supportsInlineEditor === true;
       const channel = native ? crypto.randomUUID() : null;
@@ -450,6 +462,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       if (external) { external.hidden = native; if (url) external.href = url.href; }
     } catch (error) {
       if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error), id);
+    } finally {
+      finishLoading();
+      if (currentEditorLoad === loading) currentEditorLoad = null;
     }
   }
   function renderEditorFailure(message, id) {
@@ -584,6 +599,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   function applyView(value) {
     state.view = normalizeViewState(value?.viewState || value);
+    if (editHistoryAction && state.view.activeTabId !== editHistoryAction.id) cancelEditHistory(true);
     renderTabs();
     renderSidebar();
     renderWorkspace();
@@ -610,6 +626,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       const records = Array.isArray(result) ? result : result?.artifacts;
       if (!Array.isArray(records)) throw new BridgeError('The library returned an invalid list.', 'INVALID_RESPONSE');
       state.records = records.filter(isRecord);
+      if (editHistoryAction && (!recordFor(editHistoryAction.id) || isDeleted(recordFor(editHistoryAction.id)))) cancelEditHistory(true);
       state.error = null;
     } catch (error) {
       if (sequence !== recordsSequence) return;
@@ -693,24 +710,69 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   async function openHistory(id) {
     const record = recordFor(id);
     if (!record || isDeleted(record)) return;
+    cancelEditHistory();
     closeMenu();
     const dialog = elements.dialog;
-    dialog.innerHTML = '<section class="dialog-form history-dialog" data-history-id="' + escape(id) + '"><header><h2 id="design-dialog-title">' + escape(t('versionHistory')) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><p class="dialog-description">' + escape(t('historyDescription')) + '</p><button type="button" class="button secondary" data-action="snapshot-create" data-id="' + escape(id) + '"' + disabled('library.snapshot') + '>' + icon('plus') + escape(t('createSnapshot')) + '</button><div class="snapshot-list" aria-live="polite"><p class="field-hint">' + escape(t('loadingHistory')) + '</p></div><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape(t('done')) + '</button></footer></section>';
+    const detailed = bridge.supportsInlineEditor === true && enabled('editor.document');
+    dialog.innerHTML = '<section class="dialog-form history-dialog" data-history-id="' + escape(id) + '"><header><h2 id="design-dialog-title">' + escape(t('versionHistory')) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><p class="dialog-description">' + escape(t('historyDescription')) + '</p><button type="button" class="button secondary" data-action="snapshot-create" data-id="' + escape(id) + '"' + disabled('library.snapshot') + '>' + icon('plus') + escape(t('createSnapshot')) + '</button><button type="button" class="button secondary" data-action="edit-history" data-id="' + escape(id) + '"' + (detailed ? '' : ' disabled') + '>' + icon('clock') + escape(t('editHistory')) + '</button><p class="field-hint">' + escape(t(detailed ? 'editHistoryDescription' : 'editHistoryUnavailable')) + '</p><p class="dialog-error edit-history-error" role="alert" hidden></p><div class="snapshot-list" aria-live="polite"><p class="field-hint">' + escape(t('loadingHistory')) + '</p></div><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape(t('done')) + '</button></footer></section>';
+    const historyForm = dialog.querySelector('[data-history-id]');
     dialog.setAttribute('aria-labelledby', 'design-dialog-title');
     if (!dialog.open) dialog.showModal();
     try {
       const snapshots = await transfer.listSnapshots(id);
-      if (state.destroyed || !dialog.open || dialog.querySelector('[data-history-id]')?.dataset.historyId !== id) return;
+      if (state.destroyed || !dialog.open || dialog.querySelector('[data-history-id]') !== historyForm) return;
       const automaticLabels = { Snapshot: 'manualSnapshot', 'Before restore': 'beforeRestoreSnapshot', 'Before AI edit': 'beforeAiSnapshot', 'Before resumed AI edit': 'beforeResumedAiSnapshot' };
       dialog.querySelector('.snapshot-list').innerHTML = snapshots.length ? snapshots.map(snapshot => '<article class="snapshot-row"><div><strong>' + escape(Object.hasOwn(automaticLabels, snapshot.label) ? t(automaticLabels[snapshot.label]) : snapshot.label || t('manualSnapshot')) + '</strong><time datetime="' + escape(snapshot.createdAt) + '">' + escape(new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.createdAt))) + '</time></div><button type="button" class="button secondary" data-action="snapshot-restore" data-id="' + escape(id) + '" data-snapshot-id="' + escape(snapshot.id) + '"' + disabled('library.restoreSnapshot') + '>' + escape(t('restoreVersion')) + '</button></article>').join('') : '<p class="field-hint">' + escape(t('historyEmpty')) + '</p>';
     } catch (error) {
-      if (dialog.querySelector('[data-history-id]')?.dataset.historyId === id) dialog.querySelector('.snapshot-list').innerHTML = '<p class="dialog-error">' + escape(errorMessage(error)) + '</p>';
+      if (!state.destroyed && dialog.open && dialog.querySelector('[data-history-id]') === historyForm) dialog.querySelector('.snapshot-list').innerHTML = '<p class="dialog-error">' + escape(errorMessage(error)) + '</p>';
+    }
+  }
+  async function openEditHistory(id, button) {
+    const dialog = elements.dialog, form = dialog.querySelector('[data-history-id]');
+    if (!dialog.open || !form || form.dataset.historyId !== id || editHistoryAction) return;
+    const errorNode = dialog.querySelector('.edit-history-error');
+    const action = { id, form, abort: new AbortController() };
+    editHistoryAction = action;
+    const current = () => !state.destroyed && !action.abort.signal.aborted && editHistoryAction === action
+      && dialog.open && dialog.querySelector('[data-history-id]') === form;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = icon('clock') + escape(t('openingEditHistory'));
+    if (errorNode) { errorNode.hidden = true; errorNode.textContent = ''; }
+    try {
+      if (bridge.supportsInlineEditor !== true || !enabled('editor.document')) throw new BridgeError(t('editHistoryUnavailable'), 'NATIVE_HISTORY_UNAVAILABLE');
+      const record = await invoke('library.get', { id });
+      if (!current()) return;
+      if (!isRecord(record) || record.id !== id) throw new BridgeError('The library returned an invalid artwork record.', 'INVALID_RESPONSE');
+      if (isDeleted(record)) throw new BridgeError(t('artifactNotFound'), 'ARTIFACT_UNAVAILABLE');
+      if (record.contentStatus && record.contentStatus !== 'ok') throw new BridgeError(t(record.contentStatus === 'missing' ? 'missingBody' : 'invalidBody'), 'ARTIFACT_UNAVAILABLE');
+      if (state.view.activeTabId !== id && !await changeView('openTab', { id })) throw new BridgeError(t('editorUnavailable'), 'EDITOR_OPEN_FAILED');
+      if (!current() || state.view.activeTabId !== id) return;
+      if (currentEditorLoad?.id === id) await currentEditorLoad.promise;
+      if (!current() || state.view.activeTabId !== id) return;
+      const editor = currentNativeEditor;
+      if (typeof editor?.openHistory !== 'function') throw new BridgeError(t('editHistoryUnavailable'), 'NATIVE_HISTORY_UNAVAILABLE');
+      const result = await editor.openHistory({ signal: action.abort.signal });
+      if (!current() || state.view.activeTabId !== id || currentNativeEditor !== editor) return;
+      if (result?.opened !== true) throw new BridgeError(t('editHistoryUnavailable'), 'NATIVE_HISTORY_UNAVAILABLE');
+      editHistoryAction = null;
+      dialog.close();
+    } catch (error) {
+      if (current() && errorNode) { errorNode.textContent = errorMessage(error); errorNode.hidden = false; }
+    } finally {
+      if (editHistoryAction === action) editHistoryAction = null;
+      if (!state.destroyed && dialog.open && dialog.querySelector('[data-history-id]') === form) {
+        button.disabled = bridge.supportsInlineEditor !== true || !enabled('editor.document');
+        button.removeAttribute('aria-busy');
+        button.innerHTML = icon('clock') + escape(t('editHistory'));
+      }
     }
   }
   function openPurgeDialog(records) {
     if (busy('purge-trash') || !enabled('library.purge')) return;
     const eligible = records.filter(record => record && isDeleted(record));
     if (!eligible.length) return;
+    cancelEditHistory();
     closeMenu();
     purgeConfirmation = eligible.map(record => ({ id: record.id, title: record.title }));
     elements.dialog.innerHTML = '<form class="dialog-form" data-dialog-type="purge"><header><h2 id="design-dialog-title">' + escape(t('purgeTitle', { count: eligible.length })) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape(t('closeDialog')) + '">' + icon('close') + '</button></header><div class="dialog-fields"><p class="dialog-description">' + escape(t('purgeBody', { count: eligible.length })) + '</p><ul class="purge-title-list">' + eligible.map(record => '<li>' + escape(record.title) + '</li>').join('') + '</ul><p class="purge-warning">' + escape(t('purgeIrreversible')) + '</p></div><p class="dialog-error purge-error" role="alert" hidden></p><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape(t('cancel')) + '</button><button type="submit" class="button destructive">' + escape(t('deletePermanently')) + '</button></footer></form>';
@@ -770,6 +832,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     }
   }
   function openDialog(type, record, details = {}) {
+    cancelEditHistory();
     closeMenu();
     const dialog = elements.dialog;
     let title, fields = '', submit;
@@ -917,6 +980,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       await runAction('import', async () => { if (await task) toast(t('imported')); });
     } else if (action === 'export') await runAction('export-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); const saved = await transfer.exportArtifact(id, recordFor(id)?.title); toast(saved?.path ? t('exported') + ': ' + saved.path : t('exported')); });
     else if (action === 'history') await openHistory(id);
+    else if (action === 'edit-history') await openEditHistory(id, button);
     else if (action === 'snapshot-create') await runAction('snapshot-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.createSnapshot(id, t('manualSnapshot')); await openHistory(id); });
     else if (action === 'snapshot-restore') { const record = recordFor(id); if (record) openDialog('restore-snapshot', record, { snapshotId: button.dataset.snapshotId }); }
     else if (action === 'rename' || action === 'copy' || action === 'trash-dialog') {
@@ -932,7 +996,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     } else if (action === 'trash-select-all' && !busy('purge-trash') && state.category === 'trash') {
       for (const record of visibleRecords()) { if (button.checked) state.trashSelection.add(record.id); else state.trashSelection.delete(record.id); }
       renderRecords();
-    } else if (action === 'close-dialog') { if (!busy('purge-trash')) { purgeConfirmation = null; elements.dialog.close(); } }
+    } else if (action === 'close-dialog') { if (!busy('purge-trash')) { purgeConfirmation = null; cancelEditHistory(); elements.dialog.close(); } }
     else if (action === 'category') await setCategory(button.dataset.category);
     else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; state.trashSelection.clear(); renderLibrary(); }
     else if (action === 'layout') { state.layout = button.dataset.layout; renderLibrary(); }
@@ -986,7 +1050,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (event.target.matches('.dialog-form')) { event.preventDefault(); submitDialog(event.target); }
     if (event.target.matches('.conversation-composer')) { event.preventDefault(); sendConversation(); }
   }, { signal: abort.signal });
-  elements.dialog.addEventListener('cancel', event => { if (busy('purge-trash')) event.preventDefault(); else purgeConfirmation = null; }, { signal: abort.signal });
+  elements.dialog.addEventListener('cancel', event => { if (busy('purge-trash')) event.preventDefault(); else { purgeConfirmation = null; cancelEditHistory(); } }, { signal: abort.signal });
+  elements.dialog.addEventListener('close', () => cancelEditHistory(), { signal: abort.signal });
   root.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && state.mobileSidebar) { state.mobileSidebar = false; renderSidebar(); }
     if (event.target.matches('.conversation-composer textarea') && event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendConversation(); }
@@ -1071,6 +1136,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     activateArtifact: (id) => changeView('openTab', { id }),
     destroy() {
       state.destroyed = true;
+      cancelEditHistory();
       if (bridge.beforeNavigate === navigationGuard) bridge.beforeNavigate = previousNavigationGuard;
       currentNativeEditor?.dispose();
       currentNativeEditor = null;

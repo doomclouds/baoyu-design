@@ -84,3 +84,95 @@ test('adapting a disposable plugin writes the same native workflow and Codex com
   }
   assert.doesNotMatch(await fs.readFile(path.join(root, 'skills/codex-dataviz/SKILL.md'), 'utf8'), /Open and deliver in Codex Design/);
 });
+
+test('all real upstream editor workflows retain local delivery and content-only transfer instead of LAN/archive recipes', async () => {
+  for (const kind of kinds) {
+    const source = await fs.readFile(path.join(upstream, 'claude-' + kind, 'SKILL.md'), 'utf8');
+    const adapted = adaptSkillMarkdown(source, 'codex-' + kind, 'SKILL.md');
+    const calls = section(adapted, 'The calls');
+    assert.doesNotMatch(calls, /`(?:node \$A )?(?:share|archive|serve) <root>/, kind);
+    assert.doesNotMatch(calls, /--lan/, kind);
+    const sharing = section(adapted, 'Sharing');
+    assert.match(sharing, /appUrl.*local navigation link/);
+    assert.match(sharing, /content export action and Save As/);
+    assert.match(sharing, /chats, comments, history, worker records, credentials and runtime state stay local/);
+    assert.match(sharing, /do not authorize network sharing/);
+    assert.match(sharing, /Do not invoke upstream sharing commands/);
+    assert.doesNotMatch(sharing, /`share <root>`|http:\/\/|whoever has one gets/);
+    const git = section(adapted, 'Keeping it in git');
+    assert.match(git, /Do not initialize a repository over that library/);
+    assert.match(git, /only when the user asks/);
+    assert.match(git, /exclude chats, comments, history/);
+    assert.match(git, /Preserve any existing user-owned/);
+    assert.doesNotMatch(git, /comments\.json.*included|history included|whole folder/);
+    assert.match(adapted, kind === 'dashboard' ? /## The documents/ : kind === 'slides' ? /## The slide format/ : kind === 'design' ? /## One artboard: the skeleton/ : /## tokens.json, in brief/);
+    assert.equal(await fs.readFile(path.join(upstream, 'claude-' + kind, 'SKILL.md'), 'utf8'), source);
+  }
+});
+
+test('detailed editor history does not claim to replace whole-artwork checkpoints or bypass current writer ownership', async () => {
+  for (const kind of kinds) {
+    const source = await fs.readFile(path.join(upstream, 'claude-' + kind, 'SKILL.md'), 'utf8');
+    const history = section(adaptSkillMarkdown(source, 'codex-' + kind, 'SKILL.md'), 'History');
+    assert.match(history, /whole-artwork restore points and the editor's detailed edit history are separate/);
+    assert.match(history, /check worker ownership/);
+    assert.match(history, /restore creates a new revision.*preserve unrelated later edits/);
+    assert.match(history, /Do not bypass an active writer or a changed restore base/);
+    assert.match(history, /existing `history\/index\.json` when present/);
+    assert.match(history, /64-character hexadecimal SHA-256/);
+    assert.match(history, /do not follow filesystem links or edit history records/);
+    assert.match(history, /do not invent a history CLI command/);
+    assert.doesNotMatch(history, /Nothing here is refused as out of date|the later one win|the page's change wins/);
+  }
+});
+
+test('dependent dashboard retrievals are materialized as attached snapshots rather than hosted viewer queries', async () => {
+  const relative = 'artifact-type/reference/dependent-calls.md';
+  const source = await fs.readFile(path.join(upstream, 'claude-dashboard', relative), 'utf8');
+  assert.match(source, /Claude Data/);
+  const adapted = adaptSkillMarkdown(source, 'codex-dashboard', relative);
+  assert.match(adapted, /CSV, TSV or JSON snapshots/);
+  assert.match(adapted, /obtain that answer first/);
+  assert.match(adapted, /preserve the type/);
+  assert.match(adapted, /valid zero\/false value/);
+  assert.match(adapted, /No viewer connector, shared credentials/);
+  assert.match(adapted, /codex-artifact\.mjs upload <root> <file>/);
+  assert.match(adapted, /A parameter change filters a snapshot; it does not rerun/);
+  assert.match(adapted, /Keep their dates\/ids consistent/);
+  assert.doesNotMatch(adapted, /claude|datasets\/latest|semantic_query|sharer then approves|runs as the sharer/i);
+  assert.equal(await fs.readFile(path.join(upstream, 'claude-dashboard', relative), 'utf8'), source);
+});
+
+test('comment list order is not documented as the author-avatar pin label', async () => {
+  for (const kind of kinds) {
+    const source = await fs.readFile(path.join(upstream, 'claude-' + kind, 'SKILL.md'), 'utf8');
+    const comments = section(adaptSkillMarkdown(source, 'codex-' + kind, 'SKILL.md'), 'Comments');
+    assert.match(comments, /diagnostic list order `n` \(separate from the author-avatar pin label\)/);
+    assert.doesNotMatch(comments, /numbered like (?:the editor's|the page's) pins/);
+    assert.match(comments, /Add to chat.*snapshot.*native workspace draft/);
+    assert.doesNotMatch(comments, /run `comments <root> --wait` as a background/);
+  }
+});
+
+test('every actual upstream markdown reference adapts, while unknown host wording still fails closed', async () => {
+  let files = 0;
+  for (const kind of [...kinds, 'dataviz']) {
+    const base = path.join(upstream, kind === 'dataviz' ? kind : 'claude-' + kind);
+    const walk = async directory => {
+      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+        const filename = path.join(directory, entry.name);
+        if (entry.isDirectory()) await walk(filename);
+        else if (entry.isFile() && entry.name.endsWith('.md')) {
+          const relative = path.relative(base, filename).split(path.sep).join('/');
+          const adapted = adaptSkillMarkdown(await fs.readFile(filename, 'utf8'), 'codex-' + kind, relative);
+          assert.doesNotMatch(adapted, /claude/i, kind + '/' + relative);
+          assert.doesNotMatch(adapted, /\n\n$/, 'Instruction Markdown has no excess final blank line: ' + relative);
+          files++;
+        }
+      }
+    };
+    await walk(base);
+  }
+  assert.ok(files >= 52, 'The real upstream markdown inventory must be exercised.');
+  assert.throws(() => adaptSkillMarkdown('# Unknown\n\nUse Claude Example Service.\n', 'codex-dashboard', 'artifact-type/reference/new-service.md'), /Unadapted host wording/);
+});

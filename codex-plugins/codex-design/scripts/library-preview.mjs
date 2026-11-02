@@ -68,18 +68,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker7 = markers[0];
+  const marker8 = markers[0];
   let owner;
-  if (marker7) {
+  if (marker8) {
     try {
-      owner = readJson(path.join(directory, marker7));
+      owner = readJson(path.join(directory, marker8));
     } catch (error3) {
       if (error3.code !== "INVALID_BRIDGE_STATE") throw error3;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker7) fs.rmSync(path.join(directory, marker7), { force: true });
+  if (marker8) fs.rmSync(path.join(directory, marker8), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error3) {
@@ -88,12 +88,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker7 = `owner-${token}.json`;
+  const marker8 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker7), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker8), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -104,7 +104,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error3;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker7), { force: true });
+      fs.rmSync(path.join(directory, marker8), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error3) {
@@ -113,7 +113,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker7), { force: true });
+      fs.rmSync(path.join(staging, marker8), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error3) {
@@ -454,11 +454,11 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker7 = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker7, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker7, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker8 = { v: 1, at: at2 };
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker8, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker8, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker7, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker8, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
@@ -1803,7 +1803,7 @@ init_bridge_core();
 init_artifact_command();
 import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash9 } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, lstat } from "node:fs/promises";
 import path11 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -2499,17 +2499,19 @@ function isValidBase64(value) {
 // source/server/editor-transport.mjs
 var fail2 = (code, message) => Object.assign(new Error(message), { code });
 var METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
-var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]);
-var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control"];
+var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename", "x-deck-client"]);
+var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control", "content-security-policy", "referrer-policy", "x-content-type-options"];
 var MAX_BODY = 32 * 1024 * 1024;
 var MAX_RESPONSE = 64 * 1024 * 1024;
 function validateEditorRequest(request = {}) {
+  if (!request || typeof request !== "object" || Array.isArray(request)) throw fail2("INVALID_EDITOR_REQUEST", "An editor request object is required.");
   const method = String(request.method || "GET").toUpperCase();
   if (!METHODS.has(method)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
   const headers = new Headers();
   if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
   for (const [name, value] of Object.entries(request.headers || {})) {
     if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+    if (name.toLowerCase() === "x-deck-client" && !/^[A-Za-z0-9_-]{8,64}$/.test(value)) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor client identity.");
     headers.set(name, value);
   }
   let body;
@@ -2534,6 +2536,7 @@ function editorRequestUrl(base, relative) {
   if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
   const target = new URL(relative, root);
   if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (decoded.split("/").filter(Boolean)[0] === "__share") throw fail2("EDITOR_NETWORK_SHARING_UNAVAILABLE", "Network sharing and raw folder archives are not available through this native editor.");
   return target;
 }
 async function limitedBody(response, limit) {
@@ -2546,6 +2549,17 @@ async function limitedBody(response, limit) {
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, size);
+}
+function previewReadUrl(editor, url, method) {
+  const root = new URL(editor.url);
+  const relative = url.pathname.slice(root.pathname.length);
+  const preview = /^v\/([1-9][0-9]{0,8})\/(.*)$/.exec(relative);
+  if (!preview) return url;
+  if (!["GET", "HEAD"].includes(method)) throw fail2("EDITOR_PREVIEW_READ_ONLY", "Earlier versions are read-only.");
+  if (editor.kind !== "dashboard") return url;
+  const translated = editorRequestUrl(root.href, preview[2] + url.search);
+  translated.searchParams.set("at", preview[1]);
+  return translated;
 }
 function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {}) {
   const streams = /* @__PURE__ */ new Map();
@@ -2605,8 +2619,9 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
   };
   return {
     async request(id, request = {}) {
-      const { url } = await get(id, request.path);
+      const { url: granted, editor } = await get(id, request.path);
       const { method, headers, body } = validateEditorRequest(request);
+      const url = previewReadUrl(editor, granted, method);
       headers.set("origin", url.origin);
       const response = await fetcher(url, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
       if (response.headers.get("content-type")?.includes("text/event-stream")) {
@@ -2617,7 +2632,8 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
     },
     async openEvents(id, path14) {
-      const { url } = await get(id, path14);
+      const { url: granted, editor } = await get(id, path14);
+      const url = previewReadUrl(editor, granted, "GET");
       if (!/(?:^|\/)events$/.test(url.pathname)) throw fail2("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
       const abort = new AbortController();
       let response;
@@ -2662,6 +2678,439 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       for (const stream of streams.values()) close(stream);
     }
   };
+}
+
+// source/scripts/native-preview.mjs
+function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
+  target ??= window;
+  const document2 = target.document;
+  if (!document2?.body || typeof rpc !== "function") throw new TypeError("A native preview needs its editor document and scoped transport.");
+  if (target.__CODEX_DESIGN_EDITOR_TRANSPORT__?.readOnly === true) return { open: async () => false, close() {
+  }, updateHostContext() {
+  }, dispose() {
+  } };
+  const base = new URL(baseUrl);
+  if (base.protocol !== "https:" || base.hostname !== "codex-design.invalid" || base.username || base.password || base.search || base.hash || !/^\/artifacts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/i.test(base.pathname)) throw new TypeError("A preview needs its artwork virtual root.");
+  const originalOpen = target.open;
+  const LIMIT = 24 * 1024 * 1024, PASSIVE_LIMIT = 2 * 1024 * 1024;
+  const MAX_PENDING = 32, MAX_CACHE = 128, MAX_PENDING_BYTES = 48 * 1024 * 1024, MAX_CACHE_BYTES = 64 * 1024 * 1024;
+  const UUID3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$/;
+  const PASSIVE_CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; frame-src 'none'; media-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+  let disposed = false, current;
+  let hostContext = {};
+  const failure3 = (code, message) => Object.assign(new Error(message), { code });
+  const detail2 = (error3) => ({ code: typeof error3?.code === "string" ? error3.code.slice(0, 100) : "PREVIEW_FAILED", message: String(error3?.message || error3).slice(0, 2e3) });
+  const plain = (value) => value && typeof value === "object" && !Array.isArray(value);
+  const alive3 = (entry2) => !disposed && !entry2.closed && current === entry2;
+  const classify = (value) => {
+    if (typeof value !== "string" || !value || value.length > 4096 || /[\\\u0000-\u0020]/.test(value)) return { refused: true };
+    let url;
+    try {
+      url = new URL(value, base);
+    } catch {
+      return { refused: true };
+    }
+    if (url.username || url.password) return { refused: true };
+    if (url.origin !== base.origin) {
+      const local = /^(?:localhost\.?|.*\.localhost\.?|0\.0\.0\.0|127(?:\.\d{1,3}){3}|\[::(?:1)?\]|\[::ffff:[^\]]+\])$/i.test(url.hostname);
+      const virtual = /(?:^|\.)codex-design\.invalid\.?$/i.test(url.hostname);
+      return !local && !virtual && (url.protocol === "https:" || url.protocol === "http:" || url.protocol === "mailto:") ? { external: true } : { refused: true };
+    }
+    if (!url.pathname.startsWith(base.pathname) || url.search || url.hash) return { refused: true };
+    const relative = url.pathname.slice(base.pathname.length);
+    const system = /^__ds\/([a-z0-9][a-z0-9_-]{0,63})\/$/.exec(relative);
+    if (system) return { path: relative, kind: "system", title: "Design system reference" };
+    const version = /^v\/(\d{1,9})\/$/.exec(relative);
+    if (version && Number(version[1]) > 0) return { path: `v/${Number(version[1])}/`, kind: "history", version: Number(version[1]), title: `Version ${Number(version[1])} - Read only` };
+    return { refused: true };
+  };
+  const send = (entry2, message) => {
+    if (alive3(entry2)) entry2.frame?.contentWindow?.postMessage({ ...message, channel: entry2.channel }, "*");
+  };
+  const closeSubscriptions = (entry2) => {
+    for (const id of entry2.subscriptions.keys()) void Promise.resolve().then(() => rpc("editor.events.close", { subscriptionId: id })).catch(() => {
+    });
+    entry2.subscriptions.clear();
+  };
+  const close = (restoreFocus = true) => {
+    const entry2 = current;
+    if (!entry2) return;
+    entry2.closed = true;
+    current = void 0;
+    clearTimeout(entry2.startup);
+    closeSubscriptions(entry2);
+    entry2.requests.clear();
+    entry2.cacheBytes = 0;
+    entry2.overlay.remove();
+    for (const url of entry2.urls) target.URL.revokeObjectURL(url);
+    entry2.urls.clear();
+    if (restoreFocus && !disposed && entry2.focus?.isConnected !== false) {
+      try {
+        entry2.focus?.focus?.({ preventScroll: true });
+      } catch {
+      }
+    }
+  };
+  const create = (title) => {
+    close(false);
+    const overlay = document2.createElement("section"), header = document2.createElement("div"), heading = document2.createElement("strong");
+    const button = document2.createElement("button"), status = document2.createElement("p"), content = document2.createElement("div");
+    overlay.setAttribute("data-codex-native-preview", "");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", title);
+    overlay.style.cssText = "position:fixed;inset:12px;z-index:2147483640;display:flex;flex-direction:column;overflow:hidden;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:12px;background:Canvas;color:CanvasText;font:inherit;box-shadow:0 12px 40px #0004";
+    header.style.cssText = "display:flex;align-items:center;gap:16px;min-height:48px;padding:8px 16px;border-bottom:1px solid color-mix(in srgb,currentColor 15%,transparent);flex:none";
+    heading.textContent = title;
+    heading.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px";
+    button.type = "button";
+    button.textContent = "Back to current";
+    button.setAttribute("aria-label", "Close read-only preview");
+    button.style.cssText = "font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,currentColor 25%,transparent);border-radius:7px;padding:6px 10px;cursor:pointer";
+    status.textContent = "Opening read-only preview...";
+    status.setAttribute("role", "status");
+    status.style.cssText = "margin:12px 16px;font-size:13px;overflow-wrap:anywhere";
+    content.style.cssText = "flex:1;min-height:0;display:flex";
+    header.append(heading, button);
+    overlay.append(header, status, content);
+    document2.body.append(overlay);
+    const entry2 = {
+      overlay,
+      content,
+      status,
+      button,
+      closed: false,
+      focus: document2.activeElement,
+      subscriptions: /* @__PURE__ */ new Map(),
+      pendingStreams: 0,
+      requests: /* @__PURE__ */ new Map(),
+      pending: 0,
+      pendingBytes: 0,
+      cacheBytes: 0,
+      urls: /* @__PURE__ */ new Set()
+    };
+    current = entry2;
+    button.addEventListener("click", () => {
+      if (alive3(entry2)) close();
+    });
+    button.focus?.({ preventScroll: true });
+    return entry2;
+  };
+  const showError = (entry2, error3) => {
+    if (!alive3(entry2)) return;
+    clearTimeout(entry2.startup);
+    entry2.status.textContent = detail2(error3).message;
+    entry2.status.setAttribute("role", "alert");
+    entry2.status.hidden = false;
+  };
+  const frame = (entry2, sandbox) => {
+    const child = document2.createElement("iframe");
+    child.title = entry2.title || "Read-only preview";
+    child.setAttribute("sandbox", sandbox);
+    child.setAttribute("referrerpolicy", "no-referrer");
+    child.style.cssText = "display:block;border:0;flex:1;min-width:0;width:100%;height:100%;background:transparent";
+    entry2.frame = child;
+    entry2.content.append(child);
+    return child;
+  };
+  const passiveHtml = (html) => {
+    const template = document2.createElement("template");
+    if (!template.content?.querySelectorAll) throw failure3("PREVIEW_UNAVAILABLE", "An inert reference parser is unavailable.");
+    template.innerHTML = html;
+    const content = template.content;
+    for (const node of content.querySelectorAll("script,noscript,base,meta,link,iframe,object,embed,form,input,button,textarea,select,video,audio,source,track,template,foreignObject,animate,set")) node.remove();
+    for (const node of content.querySelectorAll("*")) {
+      for (const attribute2 of [...node.attributes]) {
+        const name = attribute2.name.toLowerCase(), value = attribute2.value;
+        if (name.startsWith("on") || ["target", "download", "ping", "action", "formaction", "srcdoc", "xlink:href"].includes(name) || name === "href" && !/^#[A-Za-z0-9_:.\-]{1,128}$/.test(value) || name === "src" && !(node.localName === "img" && /^data:image\/(?:png|gif|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/i.test(value))) node.removeAttribute(attribute2.name);
+      }
+      if (node.localName === "a" && !node.hasAttribute("href")) {
+        node.setAttribute("aria-disabled", "true");
+        node.setAttribute("title", "Links are disabled in this read-only reference.");
+      }
+    }
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + PASSIVE_CSP + '"><meta name="referrer" content="no-referrer"></head><body>' + template.innerHTML + "</body></html>";
+  };
+  function loadSnapshotDocument(channel) {
+    let accepted = false, editor;
+    const outgoing = /* @__PURE__ */ new Set(["codex-design:editor-request", "codex-design:editor-transport-ready", "codex-design:editor-app-ready", "codex-design:editor-diagnostic", "codex-design:preview-close"]);
+    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed"]);
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (message?.channel !== channel) return;
+      if (event.source === window.parent) {
+        if (!accepted && message.type === "codex-design:editor-document" && typeof message.html === "string" && message.html.length <= 24 * 1024 * 1024) {
+          accepted = true;
+          editor = document2.createElement("iframe");
+          editor.setAttribute("sandbox", "allow-scripts allow-same-origin");
+          editor.setAttribute("referrerpolicy", "no-referrer");
+          editor.title = "Read-only historical editor";
+          editor.srcdoc = message.html;
+          document2.body.append(editor);
+        } else if (editor && incoming.has(message.type)) editor.contentWindow?.postMessage(message, "*");
+      } else if (editor && event.source === editor.contentWindow && outgoing.has(message.type)) window.parent.postMessage(message, "*");
+    });
+    window.parent.postMessage({ type: "codex-design:editor-document-request", channel }, "*");
+  }
+  const historyPath = (entry2, value, events = false) => {
+    if (typeof value !== "string" || !value || value.length > 4096 || /[\\\u0000-\u0020]/.test(value) || value.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(value)) throw failure3("PREVIEW_READ_ONLY", "A historical preview can only read its own version.");
+    const encoded = value.split(/[?#]/, 1)[0];
+    let decoded;
+    try {
+      decoded = decodeURIComponent(encoded);
+    } catch {
+      throw failure3("PREVIEW_READ_ONLY", "Invalid historical preview path.");
+    }
+    if (/%2f|%5c/i.test(encoded) || decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || /%2f|%5c|%2e/i.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || !decoded.startsWith(entry2.prefix)) throw failure3("PREVIEW_READ_ONLY", "A historical preview cannot leave its captured version.");
+    const url = new URL(value, base);
+    if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname + entry2.prefix) || url.hash || events && !/(?:^|\/)events$/.test(decoded)) throw failure3("PREVIEW_READ_ONLY", "The historical preview endpoint is unavailable.");
+    return value;
+  };
+  const validate = (entry2, action, payload) => {
+    if (!plain(payload)) throw failure3("PREVIEW_READ_ONLY", "Invalid historical preview request.");
+    if (action === "editor.request") {
+      const value = payload.request;
+      if (!plain(value) || Object.hasOwn(value, "body")) throw failure3("PREVIEW_READ_ONLY", "A historical preview cannot write files.");
+      const method = String(value.method || "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") throw failure3("PREVIEW_READ_ONLY", "A historical preview is read only.");
+      const headers = {};
+      if (value.headers !== void 0) {
+        if (!plain(value.headers) || Object.keys(value.headers).length > 8) throw failure3("PREVIEW_READ_ONLY", "Invalid preview headers.");
+        for (const [key2, item] of Object.entries(value.headers)) {
+          if (!["accept", "content-type", "if-match", "if-none-match", "last-event-id"].includes(key2.toLowerCase()) || typeof item !== "string" || item.length > 4096 || /[\r\n]/.test(item)) throw failure3("PREVIEW_READ_ONLY", "Unsupported preview header.");
+          headers[key2.toLowerCase()] = item;
+        }
+      }
+      return { request: { path: historyPath(entry2, value.path), method, headers } };
+    }
+    if (action === "editor.digest") {
+      const text = payload.base64;
+      if (payload.algorithm !== "SHA-256" || typeof text !== "string" || text.length > 44739244 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text)) throw failure3("PREVIEW_READ_ONLY", "Only a bounded SHA-256 digest is available.");
+      const bytes = target.atob(text);
+      if (bytes.length > 32 * 1024 * 1024 || target.btoa(bytes) !== text) throw failure3("PREVIEW_READ_ONLY", "Invalid preview digest payload.");
+      return { algorithm: "SHA-256", base64: text };
+    }
+    if (action === "editor.events.open") return { path: historyPath(entry2, payload.path, true) };
+    if (action === "editor.events.poll" || action === "editor.events.close") {
+      if (typeof payload.subscriptionId !== "string" || !entry2.subscriptions.has(payload.subscriptionId)) throw failure3("PREVIEW_READ_ONLY", "This event stream does not belong to the preview.");
+      if (action === "editor.events.poll" && (!Number.isSafeInteger(payload.cursor) || payload.cursor < 0 || payload.cursor > entry2.subscriptions.get(payload.subscriptionId))) throw failure3("PREVIEW_READ_ONLY", "Invalid preview event cursor.");
+      return { subscriptionId: payload.subscriptionId, ...action === "editor.events.poll" ? { cursor: payload.cursor } : {} };
+    }
+    throw failure3("PREVIEW_READ_ONLY", "Historical previews cannot save, download or send requests to chat.");
+  };
+  const execute = async (entry2, action, payload) => {
+    if (!alive3(entry2)) throw failure3("PREVIEW_CLOSED", "The read-only preview has closed.");
+    if (action === "editor.events.open") {
+      if (entry2.subscriptions.size + entry2.pendingStreams >= 4) throw failure3("PREVIEW_BUSY", "The preview already has its event streams.");
+      entry2.pendingStreams++;
+      try {
+        const result2 = await rpc(action, payload);
+        if (!UUID3.test(result2?.subscriptionId || "") || !Number.isSafeInteger(result2.cursor) || result2.cursor < 0) {
+          if (UUID3.test(result2?.subscriptionId || "")) void Promise.resolve().then(() => rpc("editor.events.close", { subscriptionId: result2.subscriptionId })).catch(() => {
+          });
+          throw failure3("PREVIEW_FAILED", "The preview event service returned an invalid stream.");
+        }
+        if (!alive3(entry2)) {
+          void Promise.resolve().then(() => rpc("editor.events.close", { subscriptionId: result2.subscriptionId })).catch(() => {
+          });
+          return;
+        }
+        entry2.subscriptions.set(result2.subscriptionId, result2.cursor);
+        return result2;
+      } finally {
+        entry2.pendingStreams--;
+      }
+    }
+    if (action === "editor.events.close") {
+      const result2 = await rpc(action, payload);
+      entry2.subscriptions.delete(payload.subscriptionId);
+      return result2;
+    }
+    const result = await rpc(action, payload);
+    if (action === "editor.events.poll" && alive3(entry2)) {
+      if (!Number.isSafeInteger(result?.cursor) || result.cursor < payload.cursor || !Array.isArray(result.events) || result.events.length > 128) throw failure3("PREVIEW_FAILED", "The preview event service returned invalid events.");
+      if (entry2.subscriptions.has(payload.subscriptionId)) entry2.subscriptions.set(payload.subscriptionId, Math.max(entry2.subscriptions.get(payload.subscriptionId), result.cursor));
+    }
+    return result;
+  };
+  const forget = (entry2, id, cached) => {
+    if (entry2.requests.get(id) !== cached) return;
+    entry2.requests.delete(id);
+    entry2.cacheBytes -= cached.bytes;
+  };
+  const trimCache = (entry2, needed, currentId) => {
+    for (const [id, cached] of entry2.requests) {
+      if (entry2.requests.size < MAX_CACHE && entry2.cacheBytes + needed <= MAX_CACHE_BYTES) break;
+      if (id !== currentId && cached.settled && !(cached.subscriptionId && entry2.subscriptions.has(cached.subscriptionId))) forget(entry2, id, cached);
+    }
+  };
+  const resultFor = (entry2, id, cached, answer) => {
+    if (!alive3(entry2)) return answer;
+    const bytes = new TextEncoder().encode(JSON.stringify(answer)).byteLength;
+    if (bytes > MAX_CACHE_BYTES) throw failure3("PREVIEW_TOO_LARGE", "The preview response exceeds its transfer limit.");
+    trimCache(entry2, bytes, id);
+    if (entry2.cacheBytes + bytes <= MAX_CACHE_BYTES) {
+      cached.bytes += bytes;
+      entry2.cacheBytes += bytes;
+    } else cached.evictWhenSettled = true;
+    return answer;
+  };
+  const receive = async (event) => {
+    const entry2 = current, message = event.data;
+    if (!entry2 || !alive3(entry2) || entry2.kind !== "history" || event.source !== entry2.frame?.contentWindow || message?.channel !== entry2.channel) return;
+    if (message.type === "codex-design:editor-document-request") {
+      send(entry2, { type: "codex-design:editor-document", html: entry2.html });
+      return;
+    }
+    if (message.type === "codex-design:preview-close") {
+      close();
+      return;
+    }
+    if (message.type === "codex-design:editor-transport-ready") {
+      send(entry2, { type: "codex-design:host-context-changed", context: hostContext, hostContextIsSnapshot: true });
+      return;
+    }
+    if (message.type === "codex-design:editor-app-ready") {
+      clearTimeout(entry2.startup);
+      entry2.status.hidden = true;
+      return;
+    }
+    if (message.type === "codex-design:editor-diagnostic") {
+      showError(entry2, failure3("PREVIEW_RUNTIME_ERROR", typeof message.message === "string" ? message.message.slice(0, 2e3) : "The historical preview could not be displayed."));
+      return;
+    }
+    if (message.type !== "codex-design:editor-request" || typeof message.requestId !== "string" || !REQUEST_ID.test(message.requestId)) return;
+    const respond = (value) => send(entry2, { type: "codex-design:editor-response", requestId: message.requestId, ...value });
+    try {
+      const payload = validate(entry2, message.action, message.payload);
+      const signature = message.action + ":" + JSON.stringify(payload);
+      const bytes = new TextEncoder().encode(signature).byteLength;
+      if (bytes > MAX_PENDING_BYTES) throw failure3("PREVIEW_BUSY", "The preview request exceeds its transfer limit.");
+      let cached = entry2.requests.get(message.requestId);
+      if (cached && cached.signature !== signature) throw failure3("PREVIEW_REQUEST_CONFLICT", "A preview request identifier was reused with different content.");
+      if (!cached) {
+        if (entry2.pending >= MAX_PENDING || entry2.pendingBytes + bytes > MAX_PENDING_BYTES) throw failure3("PREVIEW_BUSY", "The preview has too many pending reads.");
+        trimCache(entry2, bytes);
+        if (entry2.requests.size >= MAX_CACHE || entry2.cacheBytes + bytes > MAX_CACHE_BYTES) throw failure3("PREVIEW_BUSY", "The preview request cache is full.");
+        cached = { signature, settled: false, bytes };
+        entry2.pending++;
+        entry2.pendingBytes += bytes;
+        entry2.cacheBytes += bytes;
+        cached.promise = Promise.resolve().then(() => execute(entry2, message.action, payload)).then((result) => {
+          if (message.action === "editor.events.open" && UUID3.test(result?.subscriptionId || "")) cached.subscriptionId = result.subscriptionId;
+          return resultFor(entry2, message.requestId, cached, { result });
+        }).catch((error3) => resultFor(entry2, message.requestId, cached, { error: detail2(error3) })).finally(() => {
+          cached.settled = true;
+          entry2.pending--;
+          entry2.pendingBytes -= bytes;
+          if (cached.evictWhenSettled || !alive3(entry2)) forget(entry2, message.requestId, cached);
+        });
+        entry2.requests.set(message.requestId, cached);
+      }
+      respond(await cached.promise);
+    } catch (error3) {
+      respond({ error: detail2(error3) });
+    }
+  };
+  const open = async (value) => {
+    const item = classify(value);
+    if (disposed || item.external) return false;
+    const entry2 = create(item.title || "Read-only preview");
+    entry2.kind = item.kind;
+    entry2.title = item.title;
+    try {
+      if (item.refused) throw failure3("PREVIEW_UNAVAILABLE", "This link cannot be opened as a read-only Codex Design preview.");
+      const saved = typeof flush === "function" ? await flush() : void 0;
+      if (!alive3(entry2)) return false;
+      if (saved?.saved === false) throw failure3("EDITOR_UNSAVED_CHANGES", "Save the current editor before opening its preview.");
+      if (item.kind === "system") {
+        const response = await target.fetch(new URL(item.path, base).href, { method: "GET" });
+        if (!alive3(entry2)) return false;
+        if (!response.ok || !/^text\/html(?:;|$)/i.test(response.headers.get("content-type") || "")) throw failure3("PREVIEW_UNAVAILABLE", `The design system reference could not be loaded (HTTP ${response.status}).`);
+        if (Number(response.headers.get("content-length")) > PASSIVE_LIMIT) throw failure3("PREVIEW_TOO_LARGE", "The design system reference exceeds its preview limit.");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (!alive3(entry2)) return false;
+        if (bytes.byteLength > PASSIVE_LIMIT) throw failure3("PREVIEW_TOO_LARGE", "The design system reference exceeds its preview limit.");
+        const html = passiveHtml(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+        if (!alive3(entry2)) return false;
+        const url = target.URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        entry2.urls.add(url);
+        frame(entry2, "").src = url;
+        entry2.status.hidden = true;
+      } else {
+        entry2.channel = target.crypto.randomUUID();
+        entry2.prefix = item.path;
+        if (!UUID3.test(entry2.channel)) throw failure3("PREVIEW_FAILED", "A unique preview channel could not be created.");
+        const result = await rpc("editor.previewDocument", { version: item.version, channel: entry2.channel });
+        if (!alive3(entry2)) return false;
+        if (typeof result?.html !== "string" || !result.html.trim() || new TextEncoder().encode(result.html).byteLength > LIMIT) throw failure3("PREVIEW_TOO_LARGE", "The historical editor document is missing or exceeds its preview limit.");
+        entry2.html = result.html;
+        const loader = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="form-action &#39;none&#39;"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><script>(' + loadSnapshotDocument.toString().replace(/<\/script/gi, "<\\/script") + ")(" + JSON.stringify(entry2.channel) + ");</script></body></html>";
+        frame(entry2, "allow-scripts allow-same-origin").src = "data:text/html;base64," + target.btoa(loader);
+        entry2.startup = setTimeout(() => showError(entry2, failure3("PREVIEW_START_TIMEOUT", "The historical editor did not finish opening. Close and retry this preview.")), 3e4);
+        entry2.startup.unref?.();
+      }
+      return true;
+    } catch (error3) {
+      showError(entry2, error3);
+      return false;
+    }
+  };
+  const wrappedOpen = function(value, ...args) {
+    const item = classify(value);
+    if (item.external) return typeof originalOpen === "function" ? originalOpen.call(target, value, ...args) : null;
+    void open(value);
+    return null;
+  };
+  const click = (event) => {
+    if (event.defaultPrevented || event.button !== void 0 && event.button !== 0 && event.button !== 1) return;
+    const link = event.composedPath?.().find((node) => node?.nodeType === 1 && String(node.localName).toLowerCase() === "a" && node.hasAttribute("href"));
+    if (!link || link.hasAttribute("download")) return;
+    const href = link.getAttribute("href");
+    if (href?.startsWith("#")) return;
+    const item = classify(href);
+    if (item.external) return;
+    event.preventDefault();
+    event.stopPropagation?.();
+    void open(href);
+  };
+  const key = (event) => {
+    if (current && event.key === "Escape" && !event.defaultPrevented) {
+      event.preventDefault();
+      event.stopPropagation?.();
+      close();
+    }
+  };
+  const updateHostContext = (context) => {
+    const value = { ...context?.theme === "light" || context?.theme === "dark" ? { theme: context.theme } : {}, ...plain(context?.styles) ? { styles: context.styles } : {} };
+    try {
+      const text = JSON.stringify(value);
+      hostContext = text.length <= 2 * 1024 * 1024 ? JSON.parse(text) : { theme: value.theme };
+    } catch {
+      hostContext = {};
+    }
+    if (current?.kind === "history") send(current, { type: "codex-design:host-context-changed", context: hostContext, hostContextIsSnapshot: true });
+  };
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    close(false);
+    target.removeEventListener("message", receive);
+    target.removeEventListener("unload", dispose);
+    document2.removeEventListener("click", click, true);
+    document2.removeEventListener("auxclick", click, true);
+    document2.removeEventListener("keydown", key, true);
+    if (target.open === wrappedOpen) target.open = originalOpen;
+  };
+  target.open = wrappedOpen;
+  target.addEventListener("message", receive);
+  target.addEventListener("unload", dispose);
+  document2.addEventListener("click", click, true);
+  document2.addEventListener("auxclick", click, true);
+  document2.addEventListener("keydown", key, true);
+  updateHostContext(target.__CODEX_DESIGN_EDITOR_TRANSPORT__?.hostContext);
+  return { open, close, updateHostContext, dispose };
 }
 
 // source/server/native-comments.mjs
@@ -2840,13 +3289,14 @@ function readCommentComponent(source, pattern) {
 }
 function adaptCommentToolbar(source) {
   if (source.includes(marker)) return source;
-  let changed = false;
-  const factory = /function ([\w$]+)\(\{base:[\w$]+,win:[\w$]+=window,modeShortcut:[\w$]+="C",launcher:[\w$]+,header:[\w$]+=!1,toolbar:[\w$]+=!1,pinSide:[\w$]+\}\)\{/.exec(source);
-  if (factory) {
-    const call = new RegExp(`${escape3(factory[1])}\\(\\{base:([\\w$]+)\\}\\)`, "g");
-    source = source.replace(call, (_, base) => {
+  let changed = false, factoryCalls = 0;
+  const factory2 = /function ([\w$]+)\(\{base:[\w$]+,win:[\w$]+=window,modeShortcut:[\w$]+="C",launcher:[\w$]+,header:[\w$]+=!1,toolbar:[\w$]+=!1,pinSide:[\w$]+\}\)\{/.exec(source);
+  if (factory2) {
+    const call = new RegExp(`${escape3(factory2[1])}\\(\\{base:([\\w$]+)(,header:!0)?\\}\\)`, "g");
+    source = source.replace(call, (_, base, header) => {
       changed = true;
-      return `${factory[1]}({base:${base},toolbar:!!${native}})`;
+      factoryCalls++;
+      return `${factory2[1]}({base:${base}${header ? `,header:${native}?!1:!0` : ""},toolbar:!!${native}})`;
     });
     const top = /function ([\w$]+)\(([\w$]+)\)\{for\((?:const|let) ([\w$]+) of \2\)\{(?:const|let) ([\w$]+)=\(\3\.el\.closest\([\w$]+\)\?\?\3\.el\.parentElement\)\?\.getBoundingClientRect\(\);if\(!\(!\4\|\|\4\.height===0\)\)return Math\.round\(\4\.bottom\+([\w$]+)\)\}return null\}/;
     let positioned = 0;
@@ -2862,6 +3312,7 @@ function adaptCommentToolbar(source) {
   const sidebar = readCommentComponent(source, /function ([\w$]+)\(\{sections:[\w$]+,tail:[\w$]+,current:[\w$]+,onJump:[\w$]+,dropProps:[\w$]+,footer:([\w$]+),navRef:[\w$]+,marks:[\w$]+,search:[\w$]+,pending:[\w$]+\}\)\{/);
   if (floating || sidebar) {
     if (!floating || !sidebar) throw new Error("The design-system navigation modes changed; adaptation was refused.");
+    if (factoryCalls !== 1) throw new Error("The design-system comment mounting options changed; adaptation was refused.");
     const jsx = /return ([\w$]+)\.jsx\(/.exec(floating.text)?.[1];
     if (!jsx) throw new Error("The design-system navigation JSX runtime was not found.");
     const status = floating.match[2], footer = sidebar.match[2];
@@ -2971,8 +3422,9 @@ function adaptEditorExportFallbacks(source) {
   );
   if (cardCount !== 1) throw new Error("The canonical export warning card changed; native export recovery was refused.");
   let catchCount = 0;
+  const zipFailure = /\}catch\(([\w$]+)\)\{e\.healthReporter\.report\(\.\.\.\(0,e\.classifyExportFailure\)\("zip"\)\),([\w$]+)\((?:"Couldn't build the HTML zip: "\+String\(\1\)|\(0,e\.formatMessage\)\(\{defaultMessage:"Couldn’t build the HTML zip: \{error\}",id:"q0OIrbxby5"\},\{error:String\(\1\)\}\)),"error"\)\}finally\{([\w$]+)\(!1\)\}/g;
   source = source.replace(
-    /\}catch\(([\w$]+)\)\{e\.healthReporter\.report\(\.\.\.\(0,e\.classifyExportFailure\)\("zip"\)\),([\w$]+)\("Couldn't build the HTML zip: "\+String\(\1\),"error"\)\}finally\{([\w$]+)\(!1\)\}/g,
+    zipFailure,
     (match, error3, toast) => {
       catchCount++;
       const guard = `if(${native2}&&${error3}?.nativeExportSaveFailure===true){e.healthReporter.report(...(0,e.classifyExportFailure)("zip"));${toast}(${error3}.message,"error");return{outcome:"failed",code:${error3}.code}}`;
@@ -3062,7 +3514,7 @@ function syncNativeBlankArtboardPreviews(state, indexFile, owner) {
 }
 function adaptBlankArtboardCreation(source) {
   if (source.includes(marker3) || !source.includes('"blankDcDocument"')) return source;
-  const once = (expression, replacement, label) => {
+  const once2 = (expression, replacement, label) => {
     let count = 0;
     source = source.replace(expression, (...values) => {
       count++;
@@ -3072,14 +3524,14 @@ function adaptBlankArtboardCreation(source) {
   };
   const ui = /let ([\w$]+)=([\w$]+)\?\(0,e\.insertBlankArtboardMarkup\)\(\(0,e\.blankDcDocument\)\(\),\2\):\(0,e\.blankDcDocument\)\(\);(await\(0,e\.getKvClient\)\(\)\.set\(\(0,e\.PlatformFileContentHandler_4\)\(([\w$]+)\),\1\));/g;
   let text, body, save, file;
-  once(ui, (match, html, markup, write, name) => {
+  once2(ui, (match, html, markup, write, name) => {
     [text, body, save, file] = [html, markup, write, name];
     return match.replace(write + ";", `if(!${native3}||${body})${write};`);
   }, "new empty artboard save");
   const uiCommit = new RegExp(`;([\\w$]+)\\.current\\(\\{kind:"add",entries:\\[\\{file:${escape5(file)},src:${escape5(text)},spec:([\\w$]+)\\}\\]\\}`, "g");
-  once(uiCommit, (match, history, spec) => `;if(${native3}&&!${body}){${text}=__codexCompleteBlankArtboard(${text},${spec});${save};}${match.slice(1)}`, "new empty artboard metadata");
+  once2(uiCommit, (match, history, spec) => `;if(${native3}&&!${body}){${text}=__codexCompleteBlankArtboard(${text},${spec});${save};}${match.slice(1)}`, "new empty artboard metadata");
   const batch = /([\w$]+)\[([\w$]+)\]=([\w$]+);let [\s\S]{0,1700}?([\w$]+)\.push\(([\w$]+)\),([\w$]+)\.push\(\{file:\2,src:\3,spec:\5\}\)/g;
-  once(batch, (match, files, name, html, boards, spec, entries, offset) => {
+  once2(batch, (match, files, name, html, boards, spec, entries, offset) => {
     const bodyInput = /typeof ([\w$]+)\.x==/.exec(match)?.[1];
     const selection = source.slice(Math.max(0, offset - 900), offset);
     if (!bodyInput || !selection.includes(`${bodyInput}.body.trim()===""`) || !selection.includes(`${bodyInput}.from!==void 0?`)) {
@@ -3089,7 +3541,7 @@ function adaptBlankArtboardCreation(source) {
     const before = `if(${guard}){${html}=__codexCompleteBlankArtboard(${html},${spec});${files}[${name}]=${html};}`;
     return match.replace(`${boards}.push(${spec}),${entries}.push`, before + `${boards}.push(${spec}),${entries}.push`);
   }, "blank batch artboard metadata");
-  once(
+  once2(
     /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2,([\w$]+)\(\2\.content\.files\),([\w$]+)\(!1\),([\w$]+)\(\)\}/g,
     (match, name, value, state) => match.replace(`{${state}=`, `{if(${native3})${value}=__codexSyncBlankPreviews(${value},e.canvasMetadataFile,${name});${state}=`),
     "local canvas content update"
@@ -3232,15 +3684,21 @@ function adaptCommentDrafts(source) {
   }
   if (!row || !thread || !composer) throw new Error("The canonical comment components are incomplete; native comment adaptation was refused.");
   const label = /label:([\w$]+),checked:/.exec(thread.text)?.[1];
-  if (!label || !new RegExp(`\\b${escape6(label)}="Send to agent"`).test(source)) {
+  if (!label || !new RegExp(`\\b${escape6(label)}="Send to [Aa]gent"`).test(source)) {
     throw new Error("The canonical send-to-agent label changed; native comment adaptation was refused.");
   }
   let rowText = addActions(addPresentation(row.text, row), row);
-  rowText = replaceRequired(rowText, /label:"Send to agent"/g, `label:${native4}?"Add to chat":"Send to agent"`, 1, "comment edit label");
   rowText = replaceRequired(
     rowText,
-    /"aria-label":"Sent to agent"/g,
-    `"aria-label":${native4}?(__codexComment?.label??"Added to chat"):"Sent to agent"`,
+    /label:"(Send to [Aa]gent)"/g,
+    (_, canonical) => `label:${native4}?"Add to chat":${JSON.stringify(canonical)}`,
+    1,
+    "comment edit label"
+  );
+  rowText = replaceRequired(
+    rowText,
+    /"aria-label":"(Sent to [Aa]gent)"/g,
+    (_, canonical) => `"aria-label":${native4}?(__codexComment?.label??"Added to chat"):${JSON.stringify(canonical)}`,
     1,
     "comment sent indicator"
   );
@@ -3438,8 +3896,22 @@ function definitionFor2(source, property) {
   if (parameters.some((value) => !/^[\w$]+$/.test(value))) throw new Error(`The canonical ${property} parameters changed; native artwork drafting was refused.`);
   return { ...part, start, end: start + part.end, parameters, async: source.slice(start - 6, start) === "async " };
 }
+function isEditorResourceData(source) {
+  const prefix = "globalThis.__CODEX_DESIGN_EDITOR_RESOURCES__=";
+  if (!source.startsWith(prefix)) return false;
+  const text = source.slice(prefix.length).trimEnd();
+  if (!text.endsWith(";")) return false;
+  try {
+    const value = JSON.parse(text.slice(0, -1));
+    const messages = value?.resources?.en?.editor;
+    return ["slides", "design", "design-system", "dashboard"].includes(value?.kind) && value.language === "en" && messages !== null && typeof messages === "object" && !Array.isArray(messages);
+  } catch {
+    return false;
+  }
+}
 function adaptAgentDrafts(source) {
   if (source.includes(marker6)) return source;
+  if (isEditorResourceData(source)) return source;
   const updates = [];
   const insert = (property, make, expected) => {
     const part = definitionFor2(source, property);
@@ -3494,7 +3966,11 @@ function adaptAgentDrafts(source) {
     });
     if (count !== expected) throw new Error("The canonical artwork request label changed; native artwork drafting was refused.");
   };
-  if (kind === "slides") label(/children:"Ask the agent to fix"/g, () => `children:${native6}?"Add fix to chat":"Ask the agent to fix"`, 1);
+  if (kind === "slides") label(
+    /children:("Ask the agent to fix"|\(0,e\.formatMessage\)\(\{defaultMessage:"Ask the agent to fix",id:"[^"\\]+"\}\))/g,
+    (_, canonical) => `children:${native6}?"Add fix to chat":${canonical}`,
+    1
+  );
   if (kind === "design") label(/children:([\w$]+)\.ask(?=[,}])/g, (_, value) => `children:${native6}?"Add fix to chat":${value}.ask`, 2);
   if (kind === "dashboard") {
     label(/([\w$]+)="Ask the agent to fix"/g, (_, value) => `${value}=${native6}?"Add fix to chat":"Ask the agent to fix"`, 1);
@@ -3506,6 +3982,114 @@ function adaptAgentDrafts(source) {
     label(new RegExp(escape8(prefix + instruction), "g"), () => prefix + "${" + native6 + "?" + JSON.stringify(instruction.replace("claude-design-system", "codex-design-system")) + ":" + JSON.stringify(instruction) + "}", 1);
   }
   return marker6 + "\nconst __codexNativeAgentDraft=(" + createNativeAgentDraft.toString() + ")();\n" + nativeAgentDraftMessage.toString().replace("nativeAgentDraftMessage", "__codexNativeAgentMessage") + "\n" + source;
+}
+
+// source/scripts/native-history-adapter.mjs
+var marker7 = "/* codex-design:native-history-v1 */";
+var language = String.raw`var y=/^zh\b/i.test(navigator.language),`;
+var saveBoundary = 'var Oe="/__share/save"';
+var historyBoundary = "var l=y?{title:";
+var factory = 'function be(){let t=window.__baoyuHistory;return t&&typeof t.base=="string"?new Z(t):null}';
+var sharingBoundary = 'var C=window.__baoyuShare??{},M=C.role==="owner";ce(M);ge(M);';
+var noticeTimer = "e(),window.setInterval(()=>void e(),5e3)";
+var bannerNavigation = 'r.addEventListener("click",()=>location.href=e.current_url)';
+function unsupported(detail2) {
+  return Object.assign(new Error("The upstream History interface changed; review its native adapter before loading it. " + detail2), {
+    code: "NATIVE_HISTORY_ADAPTER_UNSUPPORTED"
+  });
+}
+function once(source, needle) {
+  const at2 = source.indexOf(needle);
+  if (at2 < 0 || at2 !== source.lastIndexOf(needle)) throw unsupported("Expected one " + needle.slice(0, 64));
+  return at2;
+}
+function installNativeHistory(controller) {
+  const target = globalThis;
+  if (!controller) throw Object.assign(new Error("History is unavailable for this artwork."), { code: "NATIVE_HISTORY_UNAVAILABLE" });
+  target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
+  let disposed = false, generation = 0, opening;
+  const anchor = controller.button;
+  anchor.tabIndex = -1;
+  anchor.setAttribute("tabindex", "-1");
+  anchor.setAttribute("aria-hidden", "true");
+  anchor.setAttribute("data-codex-native-history-anchor", "");
+  Object.assign(anchor.style, { position: "fixed", top: "16px", right: "16px", width: "1px", height: "1px", opacity: "0", visibility: "hidden", pointerEvents: "none" });
+  document.body.append(anchor);
+  const closeController = () => {
+    controller.asking?.();
+    controller.close();
+    controller.hideToast();
+  };
+  const release = () => {
+    closeController();
+    target.clearInterval(controller.__codexNoticeTimer);
+    target.clearInterval(controller.timer);
+    target.clearTimeout(controller.toastTimer);
+    anchor.remove();
+    controller.layer.remove();
+  };
+  const api = Object.freeze({
+    open() {
+      if (disposed) return Promise.resolve(false);
+      if (opening) return opening;
+      if (controller.pop) return Promise.resolve(true);
+      const ticket = ++generation;
+      let tracked;
+      tracked = (async () => {
+        const flush = target.__CODEX_DESIGN_EDITOR_FLUSH__;
+        if (typeof flush === "function" && await flush() !== true) {
+          throw Object.assign(new Error("Save the artwork before opening History."), { code: "EDITOR_UNSAVED_CHANGES" });
+        }
+        if (disposed || ticket !== generation) return false;
+        await controller.open();
+        if (disposed || ticket !== generation) {
+          if (disposed) release();
+          else closeController();
+          return false;
+        }
+        return true;
+      })().finally(() => {
+        if (opening === tracked) opening = void 0;
+      });
+      opening = tracked;
+      return tracked;
+    },
+    close() {
+      if (disposed) return false;
+      generation++;
+      closeController();
+      return true;
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      generation++;
+      release();
+      if (target.__CODEX_DESIGN_NATIVE_HISTORY__ === api) delete target.__CODEX_DESIGN_NATIVE_HISTORY__;
+    }
+  });
+  target.__CODEX_DESIGN_NATIVE_HISTORY__ = api;
+}
+function adaptNativeHistoryUi(original) {
+  if (typeof original !== "string" || original.length > 2 * 1024 * 1024 || original.includes(marker7)) throw unsupported("Expected the unmodified packaged share UI.");
+  const source = original.replaceAll("\r\n", "\n");
+  const languageAt = once(source, language), saveAt = once(source, saveBoundary);
+  const historyAt = once(source, historyBoundary), factoryAt = once(source, factory), sharingAt = once(source, sharingBoundary);
+  const noticeAt = once(source, noticeTimer);
+  const bannerAt = once(source, bannerNavigation);
+  if (languageAt !== 0 || !(saveAt < historyAt && historyAt < noticeAt && noticeAt < factoryAt && factoryAt + factory.length < sharingAt) || !(historyAt < bannerAt && bannerAt < factoryAt) || !source.slice(historyAt, factoryAt).includes('var Z=class{button=o("button"')) {
+    throw unsupported("The History/common-code boundaries are inconsistent.");
+  }
+  const common = source.slice(0, saveAt).replace(language, "var y=false,");
+  const history = source.slice(historyAt, factoryAt + factory.length).replace(noticeTimer, "e(),this.__codexNoticeTimer=window.setInterval(()=>void e(),5e3)").replace(bannerNavigation, 'r.addEventListener("click",()=>globalThis.__CODEX_DESIGN_PREVIEW_CLOSE__?.())');
+  return `${marker7}
+(()=>{
+'use strict';
+${common}
+${history}
+(${installNativeHistory.toString()})(be());
+})();
+`;
 }
 
 // source/server/editor-document.mjs
@@ -3523,6 +4107,7 @@ async function replaceAsync2(source, expression, transform) {
   return source;
 }
 function adaptInlineEditorScript(source, scriptUrl) {
+  if (new URL(scriptUrl).pathname.endsWith("/__codex/history-ui.js")) return adaptNativeHistoryUi(source);
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
   source = adaptCommentDrafts(source);
@@ -3550,10 +4135,15 @@ function adaptInlineEditorScript(source, scriptUrl) {
     /([\w$]+)=([\w$]+)\(([\w$]+)\),([\w$]+)=\1\?null:([\w$]+)\.localComments\?\.\(([\w$]+)\)/g,
     (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`
   );
+  let flushCaptures = 0;
   source = source.replace(
-    /return ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\),\5&&\(\5\.onMessage\(async ([\w$]+)=>\{if\(\6\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(\2,\4\);/g,
-    (match, listen, win, base, client, parent, request, saved, flush) => `return globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match.slice(7)}`
+    /([\w$]+)&&\(\1\.onMessage\(async ([\w$]+)=>\{if\(\2\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(([\w$]+),([\w$]+)\);/g,
+    (match, parent, request, saved, flush, win, client) => {
+      flushCaptures++;
+      return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match}`;
+    }
   );
+  if (flushCaptures > 1 || /type:["']editor:flushed["']/.test(source) && flushCaptures !== 1) throw error("EDITOR_FLUSH_ADAPTER_UNSUPPORTED", "The editor save barrier changed; review its native adapter before loading it.");
   source = source.replace(
     /new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,
     (match) => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.language??${match})`
@@ -3625,6 +4215,10 @@ async function buildEditorDocument({ baseUrl, fetchLocal, config = {}, maxBytes 
   };
   let html = (await bytes(base.href)).toString("utf8");
   if (!/<head\b[^>]*>/i.test(html)) throw error("EDITOR_INVALID_DOCUMENT", "The editor did not return an HTML document.");
+  if (config.nativeHistory === true) {
+    html = html.replace(/<script\b[^>]*\bsrc\s*=\s*(["'])\/__share\/(?:boot|ui)\.js(?:\?[^"']*)?\1[^>]*>\s*<\/script>/gi, "");
+    html = html.replace(/<head\b[^>]*>/i, (match) => `${match}<script src="./__codex/boot.js"></script><script type="module" src="./__codex/history-ui.js"></script>`);
+  }
   html = html.replace("appifact_extra_export_formats:window.parent===window", "appifact_extra_export_formats:true");
   html = html.replace(/<base\b[^>]*>/gi, "");
   html = await replaceAsync2(html, /<link\b([^>]*\bhref\s*=\s*(["'])([^"']+)\2[^>]*)>/gi, async (match) => {
@@ -3656,11 +4250,15 @@ ${scriptText(body)}
 }
 
 // source/scripts/editor-native-transport.js
-function installNativeEditorTransport(configuration, target) {
+function installNativeEditorTransport(configuration, target, installPreviews) {
   "use strict";
   target ??= window;
   const base = new URL(configuration.baseUrl);
   const channel = configuration.channel;
+  const readOnly = configuration.readOnly === true;
+  const requestPrefix = configuration.requestPrefix || "";
+  if (requestPrefix && (!readOnly || !/^v\/[1-9][0-9]{0,8}\/$/.test(requestPrefix))) throw new TypeError("Invalid read-only preview scope.");
+  const rootBase = new URL(configuration.rootBaseUrl || base.href);
   if (target.document) {
     const host = configuration.hostDepth === 2 ? target.parent.parent : target.parent;
     let blocked = 0;
@@ -3725,6 +4323,8 @@ function installNativeEditorTransport(configuration, target) {
   const pending = /* @__PURE__ */ new Map();
   let disposed = false;
   const pendingWrites = /* @__PURE__ */ new Set();
+  let historyOpenId;
+  let previews;
   const sources = /* @__PURE__ */ new Set();
   const assetCache = /* @__PURE__ */ new Map();
   const assetAliases = /* @__PURE__ */ new Map();
@@ -3744,9 +4344,28 @@ function installNativeEditorTransport(configuration, target) {
   target.__CODEX_DESIGN_EDITOR_TRANSPORT__ = {
     baseUrl: base.href,
     artifactId: configuration.artifactId,
-    canDraftComments: configuration.canDraftComments !== false,
+    canDraftComments: !readOnly && configuration.canDraftComments !== false,
+    readOnly,
     commentViewport: { bottom: 72 }
   };
+  if (readOnly) target.__CODEX_DESIGN_PREVIEW_CLOSE__ = () => {
+    if (!disposed) target.parent.postMessage({ type: "codex-design:preview-close", channel }, "*");
+  };
+  let historyMetadata;
+  Object.defineProperty(target, "__baoyuHistory", {
+    configurable: true,
+    enumerable: true,
+    get: () => historyMetadata,
+    set: (value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.base !== "string") throw new TypeError("Invalid artwork History metadata.");
+      historyMetadata = {
+        ...value,
+        base: base.pathname,
+        canRestore: !readOnly && value.canRestore === true,
+        ...value.preview && typeof value.preview === "object" ? { preview: { ...value.preview, current_url: rootBase.href } } : {}
+      };
+    }
+  });
   const updateCommentViewport = (hint) => {
     const supplied = hint?.bottom;
     const bottom = typeof supplied === "number" && Number.isFinite(supplied) && supplied >= 0 ? supplied : 72;
@@ -3839,7 +4458,7 @@ function installNativeEditorTransport(configuration, target) {
     let tokens = {};
     const owned = /* @__PURE__ */ new Map();
     const content = "[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]";
-    const commentHosts = "[data-baoyu-comments], [data-baoyu-comments-seat]";
+    const commentHosts = "[data-baoyu-comments], [data-baoyu-comments-seat], [data-baoyu-history-layer]";
     const observed = /* @__PURE__ */ new WeakSet();
     const observeScope = (scope) => {
       if (!observer || observed.has(scope)) return;
@@ -3868,20 +4487,45 @@ function installNativeEditorTransport(configuration, target) {
     const refresh = () => {
       if (!root || disposed) return;
       const candidates = new Set([root].filter(eligible));
-      for (const scope of scopes()) for (const element of scope.querySelectorAll?.(".cds-root") || []) if (eligible(element)) candidates.add(element);
+      const historyRoots = /* @__PURE__ */ new Set();
+      for (const scope of scopes()) {
+        for (const element of scope.querySelectorAll?.(".cds-root") || []) if (eligible(element)) candidates.add(element);
+        if (scope.host?.matches?.("[data-baoyu-history-layer]") && !scope.host.closest?.(content)) {
+          for (const element of scope.querySelectorAll?.(".wrap") || []) {
+            candidates.add(element);
+            historyRoots.add(element);
+          }
+        }
+      }
       for (const [element, state] of owned) if (!candidates.has(element)) {
         restore(element, state);
         owned.delete(element);
       }
       for (const element of candidates) {
         if (!element.style) continue;
+        const elementTokens = historyRoots.has(element) ? {
+          ...tokens,
+          "font-family": tokens["--cds-font-sans"],
+          "font-size": tokens["--cds-font-size-body"],
+          "line-height": tokens["--cds-leading-body"],
+          "--bg": tokens["--cds-surface-panel"],
+          "--fg": tokens["--cds-text-primary"],
+          "--muted": tokens["--cds-text-secondary"],
+          "--faint": tokens["--cds-text-muted"],
+          "--line": tokens["--cds-border"],
+          "--soft": tokens["--cds-surface-2"],
+          "--hover": tokens["--cds-fill-button-ghost-hover"],
+          "--check": tokens["--cds-fill-accent"],
+          "--danger": tokens["--cds-text-danger"],
+          "--shadow": tokens["--cds-shadow-popover"]
+        } : tokens;
         let state = owned.get(element);
         if (!state) {
           state = { original: /* @__PURE__ */ new Map(), applied: /* @__PURE__ */ new Map() };
           owned.set(element, state);
         }
-        for (const name of /* @__PURE__ */ new Set([...state.applied.keys(), ...Object.keys(tokens)])) {
-          const value = tokens[name];
+        for (const name of /* @__PURE__ */ new Set([...state.applied.keys(), ...Object.keys(elementTokens)])) {
+          const value = elementTokens[name];
           const current = element.style.getPropertyValue(name), priority = element.style.getPropertyPriority?.(name) || "";
           if (!state.original.has(name) || state.applied.has(name) && (current !== state.applied.get(name) || priority !== "important")) {
             state.original.set(name, { value: current, priority });
@@ -4041,6 +4685,22 @@ function installNativeEditorTransport(configuration, target) {
       }
     };
   })();
+  const flushEditor = async () => {
+    if (readOnly) return true;
+    target.document?.activeElement?.blur?.();
+    if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === "function") {
+      if (await target.__CODEX_DESIGN_EDITOR_FLUSH__() !== true) throw new Error("The editor still has unsaved changes.");
+    } else {
+      const deadline = Date.now() + 8e3;
+      while (!target.dispatchEvent(new Event("beforeunload", { cancelable: true }))) {
+        if (Date.now() >= deadline) throw new Error("The editor still has unsaved changes.");
+        if (pendingWrites.size) await Promise.all([...pendingWrites]);
+        else await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    await Promise.all([...pendingWrites]);
+    return true;
+  };
   target.addEventListener("message", (event) => {
     const message = event.data;
     if (disposed || event.source !== target.parent || message?.channel !== channel) return;
@@ -4051,19 +4711,7 @@ function installNativeEditorTransport(configuration, target) {
     if (message.type === "codex-design:editor-flush") {
       void (async () => {
         try {
-          target.document?.activeElement?.blur?.();
-          if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === "function") {
-            const saved = await target.__CODEX_DESIGN_EDITOR_FLUSH__();
-            if (saved !== true) throw new Error("The editor still has unsaved changes.");
-          } else {
-            const deadline = Date.now() + 8e3;
-            while (!target.dispatchEvent(new Event("beforeunload", { cancelable: true }))) {
-              if (Date.now() >= deadline) throw new Error("The editor still has unsaved changes.");
-              if (pendingWrites.size) await Promise.all([...pendingWrites]);
-              else await new Promise((resolve) => setTimeout(resolve, 20));
-            }
-          }
-          await Promise.all([...pendingWrites]);
+          await flushEditor();
           target.parent.postMessage({ type: "codex-design:editor-flushed", channel, requestId: message.requestId, saved: true }, "*");
         } catch (error3) {
           target.parent.postMessage({
@@ -4077,8 +4725,42 @@ function installNativeEditorTransport(configuration, target) {
       })();
       return;
     }
+    if (message.type === "codex-design:editor-history-open") {
+      if (typeof message.requestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.requestId)) return;
+      historyOpenId = message.requestId;
+      void (async () => {
+        try {
+          await flushEditor();
+          if (disposed || historyOpenId !== message.requestId) return;
+          const history = target.__CODEX_DESIGN_NATIVE_HISTORY__;
+          if (!history || readOnly) throw new Error("Edit history is not available in this view.");
+          const opened = await history.open();
+          if (disposed || historyOpenId !== message.requestId) return;
+          target.parent.postMessage({ type: "codex-design:editor-history-opened", channel, requestId: message.requestId, opened: opened === true }, "*");
+        } catch (error3) {
+          if (disposed || historyOpenId !== message.requestId) return;
+          target.parent.postMessage({
+            type: "codex-design:editor-history-opened",
+            channel,
+            requestId: message.requestId,
+            opened: false,
+            error: { code: error3.code || "EDITOR_HISTORY_UNAVAILABLE", message: String(error3.message || error3) }
+          }, "*");
+        }
+      })();
+      return;
+    }
+    if (message.type === "codex-design:editor-history-close") {
+      if (message.requestId !== historyOpenId) return;
+      historyOpenId = void 0;
+      target.__CODEX_DESIGN_NATIVE_HISTORY__?.close?.();
+      return;
+    }
     if (message.type === "codex-design:host-context-changed") {
       hostTheme.update(message.context, message.hostContextIsSnapshot === true);
+      const styles = { theme: message.context?.theme, styles: message.context?.styles };
+      target.__CODEX_DESIGN_EDITOR_TRANSPORT__.hostContext = styles;
+      previews?.updateHostContext?.(styles);
       if (message.hostContextIsSnapshot === true || Object.hasOwn(message, "commentViewport")) updateCommentViewport(message.commentViewport);
       return;
     }
@@ -4091,10 +4773,10 @@ function installNativeEditorTransport(configuration, target) {
     const url = new URL(value, base);
     if (url.origin !== base.origin) return null;
     if (!url.pathname.startsWith(base.pathname)) {
-      if (!/^\/(?:_api(?:\/|$)|_blob\/|_files\.json$|__comments(?:\/|$)|__deck\/|__design(?:-system)?\/|project\/|db\/)/.test(url.pathname)) return null;
-      return url.pathname.slice(1) + url.search;
+      if (!/^\/(?:_api(?:\/|$)|_blob\/|_files\.json$|__comments(?:\/|$)|__deck\/|__design(?:-system)?\/|__history(?:\/|$)|__ds\/|project\/|db\/)/.test(url.pathname)) return null;
+      return requestPrefix + url.pathname.slice(1) + url.search;
     }
-    return url.pathname.slice(base.pathname.length) + url.search;
+    return requestPrefix + url.pathname.slice(base.pathname.length) + url.search;
   };
   const originalAssets = async (text) => {
     if (!text.includes("data:")) return text;
@@ -4135,11 +4817,15 @@ function installNativeEditorTransport(configuration, target) {
   };
   target.fetch = async (input, init) => {
     const url = typeof input === "string" || input instanceof URL ? new URL(String(input), base).href : input.url;
+    const requestedMethod = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    if (readOnly && !["GET", "HEAD"].includes(requestedMethod)) throw Object.assign(new Error("Earlier versions are read-only."), { code: "EDITOR_PREVIEW_READ_ONLY" });
     const path14 = relative(url);
     if (path14 === null) return originalFetch(input, init);
     const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
+    if (readOnly && !["GET", "HEAD"].includes(request.method)) throw Object.assign(new Error("Earlier versions are read-only."), { code: "EDITOR_PREVIEW_READ_ONLY" });
+    if (!["GET", "HEAD"].includes(request.method) && /^__history\/(?:\d+\/restore|notice\/[^/?]+\/recover)(?:\?|$)/.test(path14)) await flushEditor();
     const headers = {};
-    for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
+    for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename", "x-deck-client"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
     let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
     if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path14.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
     const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
@@ -4152,7 +4838,22 @@ function installNativeEditorTransport(configuration, target) {
     } finally {
       if (writing) pendingWrites.delete(responseTask);
     }
-    const result = new Response([101, 204, 205, 304].includes(response.status) || request.method === "HEAD" ? null : base64ToBytes(response.body), { status: response.status, statusText: response.statusText, headers: response.headers });
+    let responseBytes = base64ToBytes(response.body);
+    if (!readOnly && /^__history(?:\/|\?|$)/.test(path14) && response.headers?.["content-type"]?.includes("application/json")) {
+      try {
+        const value = JSON.parse(new TextDecoder().decode(responseBytes));
+        for (const row of Array.isArray(value.rows) ? value.rows : []) {
+          if (typeof row.preview !== "string") continue;
+          const serverPath = configuration.serverPath;
+          const route = typeof serverPath === "string" && row.preview.startsWith(serverPath) ? row.preview.slice(serverPath.length) : row.preview;
+          if (/^v\/[1-9][0-9]{0,8}\/$/.test(route)) row.preview = new URL(route, rootBase).href;
+          else if (configuration.kind === "dashboard" && Number.isSafeInteger(row.n) && row.n >= 1 && row.n <= 999999999 && route === `?at=${row.n}`) row.preview = new URL(`v/${row.n}/`, rootBase).href;
+        }
+        responseBytes = new TextEncoder().encode(JSON.stringify(value));
+      } catch {
+      }
+    }
+    const result = new Response([101, 204, 205, 304].includes(response.status) || request.method === "HEAD" ? null : responseBytes, { status: response.status, statusText: response.statusText, headers: response.headers });
     Object.defineProperty(result, "url", { value: url });
     return result;
   };
@@ -4344,6 +5045,29 @@ function installNativeEditorTransport(configuration, target) {
     }
   }
   target.EventSource = EditorEventSource;
+  const startPreviews = () => {
+    if (disposed || readOnly || previews || typeof installPreviews !== "function" || !target.document?.body) return;
+    previews = installPreviews({ target, baseUrl: rootBase.href, rpc, flush: flushEditor });
+    const context = target.__CODEX_DESIGN_EDITOR_TRANSPORT__.hostContext;
+    if (context) previews?.updateHostContext?.(context);
+  };
+  if (target.document?.body) startPreviews();
+  else target.document?.addEventListener?.("DOMContentLoaded", startPreviews, { once: true });
+  if (readOnly && target.document) {
+    target.document.addEventListener("click", (event) => {
+      const anchor = event.target?.closest?.("a[href]");
+      if (!anchor) return;
+      let url;
+      try {
+        url = new URL(anchor.getAttribute("href"), base);
+      } catch {
+        return;
+      }
+      if (url.href !== rootBase.href) return;
+      event.preventDefault();
+      target.parent.postMessage({ type: "codex-design:preview-close", channel }, "*");
+    }, true);
+  }
   const anchorPrototype = target.HTMLAnchorElement?.prototype;
   if (anchorPrototype) {
     const click = anchorPrototype.click;
@@ -4360,7 +5084,11 @@ function installNativeEditorTransport(configuration, target) {
   target.addEventListener("unload", () => {
     for (const source of sources) source.close();
     disposed = true;
+    target.document?.removeEventListener?.("DOMContentLoaded", startPreviews);
     hostTheme.dispose();
+    previews?.dispose?.();
+    target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
+    if (readOnly) delete target.__CODEX_DESIGN_PREVIEW_CLOSE__;
     for (const call of [...pending.values()]) call.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
   });
   target.addEventListener("error", (event) => {
@@ -4384,6 +5112,8 @@ function installNativeEditorTransport(configuration, target) {
 
 // source/server/service.mjs
 init_worker_client();
+init_bridge_core();
+init_worker_core();
 
 // source/server/editor-lifecycle.mjs
 init_bridge_core();
@@ -4449,7 +5179,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.5.3";
+var PLUGIN_UI_VERSION = "0.6.0";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
@@ -4475,6 +5205,7 @@ var ACTIONS = Object.freeze([
   "view.reorderTabs",
   "editor.open",
   "editor.document",
+  "editor.previewDocument",
   "editor.request",
   "editor.digest",
   "editor.events.open",
@@ -4520,16 +5251,18 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
   const current = readJson(path11.join(record.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     try {
-      await verifyEditorInstance(current, record.path, record.kind);
+      const session = await verifyEditorInstance(current, record.path, record.kind);
       const binding = readJson(path11.join(record.path, ".codex-design-bridge.json"));
-      return {
-        url: current.url,
-        artifactId: record.id,
-        kind: record.kind,
-        reused: true,
-        delivery: binding?.deliveryMode || "manual",
-        nativeConversationBound: false
-      };
+      if (session.nativeSessionVersion === 2 && session.nativeLocalOnly === true) {
+        return {
+          url: current.url,
+          artifactId: record.id,
+          kind: record.kind,
+          reused: true,
+          delivery: binding?.deliveryMode || "manual",
+          nativeConversationBound: false
+        };
+      }
     } catch (error3) {
       if (error3.code !== "EDITOR_IDENTITY_UNVERIFIED" || error3.reason !== "SESSION_CONNECTION_REFUSED") throw error3;
     }
@@ -4539,7 +5272,7 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [cli, "open-service", record.path, "--delivery", "native"], {
       cwd: record.path,
-      env,
+      env: { ...env, CODEX_DESIGN_NATIVE_SESSION: "1" },
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
@@ -4765,6 +5498,18 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
           return await store.reorderTabs(payload.ids.map((id) => id === "library" ? "library" : idOf(id)));
         case "editor.open":
           return await editorFor(payload.id);
+        case "editor.previewDocument": {
+          if (!Number.isSafeInteger(payload.version) || payload.version < 1 || payload.version > 999999999) throw failure2("INVALID_EDITOR_PREVIEW", "Choose an existing positive history version.");
+          const listed = await transport.request(idOf(payload.id), { path: "__history", method: "GET" });
+          let history;
+          try {
+            history = JSON.parse(Buffer.from(listed.body, "base64").toString("utf8"));
+          } catch {
+            throw failure2("EDITOR_HISTORY_UNAVAILABLE", "The artwork history could not be read.");
+          }
+          if (listed.status !== 200 || !Array.isArray(history.rows) || !history.rows.some((row) => row.n === payload.version)) throw failure2("EDITOR_PREVIEW_UNAVAILABLE", "That history version is no longer available.");
+          return await this.invoke("editor.document", { id: payload.id, channel: payload.channel, previewVersion: payload.version, canDraftComments: false });
+        }
         case "request.draftAdded":
           return await requests.markDraftAdded(idOf(payload.requestId));
         case "request.draftFailed":
@@ -4772,16 +5517,25 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
         case "editor.document": {
           const id = idOf(payload.id);
           if (typeof payload.channel !== "string" || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure2("INVALID_EDITOR_REQUEST", "A unique editor channel is required.");
-          const language = "en";
+          const language2 = "en";
           const editor = await editorFor(id);
-          const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
+          const rootBaseUrl = `https://codex-design.invalid/artifacts/${id}/`;
+          const previewVersion = payload.previewVersion;
+          if (previewVersion !== void 0 && (!Number.isSafeInteger(previewVersion) || previewVersion < 1 || previewVersion > 999999999)) throw failure2("INVALID_EDITOR_PREVIEW", "Choose an existing positive history version.");
+          const requestPrefix = previewVersion === void 0 ? "" : `v/${previewVersion}/`;
+          const virtualBase = rootBaseUrl + requestPrefix;
           const configuration = {
             artifactId: id,
+            kind: editor.kind,
             channel: payload.channel,
             baseUrl: virtualBase,
-            language,
+            language: language2,
             hostDepth: 2,
-            canDraftComments: payload.canDraftComments === true
+            rootBaseUrl,
+            serverPath: new URL(editor.url).pathname,
+            requestPrefix,
+            readOnly: previewVersion !== void 0,
+            canDraftComments: previewVersion === void 0 && payload.canDraftComments === true
           };
           if (editor.kind === "design-system") {
             configuration.previewVendors = await Promise.all([
@@ -4793,7 +5547,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
               return { file, url: "data:text/javascript;base64," + bytes.toString("base64") };
             }));
           }
-          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, "\\u003c")});`;
+          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, "\\u003c")},undefined,${installNativePreviews.toString()});`;
           const root = new URL(editor.url);
           const fetchLocal = async (value) => {
             const url = new URL(String(value));
@@ -4803,17 +5557,52 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
             let asset;
             if (!relative) asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
             else if (relative === "__codex/annotations.js") asset = path11.join(pluginRoot, "scripts/browser-annotations.js");
+            else if (relative === "__codex/boot.js") {
+              const response = await transport.request(id, { path: "__codex/boot.js" + (previewVersion === void 0 ? "" : `?at=${previewVersion}`), method: "GET" });
+              return new Response(Buffer.from(response.body, "base64"), { status: response.status, headers: response.headers });
+            } else if (relative === "__codex/history-ui.js") asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/share-ui.js");
             else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
               asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
             } else throw failure2("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
             const bytes = await readFile(asset);
             return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
           };
-          const document2 = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap } });
+          const document2 = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap, nativeHistory: true } });
           return { ...editor, ...document2, artifactId: id, channel: payload.channel, transport: "mcp" };
         }
-        case "editor.request":
-          return await nativeComments.request(idOf(payload.id), payload.request);
+        case "editor.request": {
+          const id = idOf(payload.id), request = payload.request ?? {};
+          const { method } = validateEditorRequest(request);
+          const editor = await editorFor(id);
+          const url = editorRequestUrl(editor.url, request.path);
+          const route = decodeURIComponent(url.pathname.slice(new URL(editor.url).pathname.length)).split("/").filter(Boolean).join("/");
+          if (method === "POST" && /^__history\/(?:\d+\/restore|notice\/[^/]+\/recover)$/.test(route)) {
+            const record = await requireRecord(id);
+            return await withLock(path11.join(record.path, WORKER_LOCK_FILE), async () => {
+              const worker = await getWorkerStatus(record.path);
+              const jobs = loadJobs(record.path);
+              let registry;
+              try {
+                const file = path11.join(record.path, WORKER_FILE);
+                const info = await lstat(file).catch((error3) => {
+                  if (error3.code === "ENOENT") return null;
+                  throw error3;
+                });
+                if (info) {
+                  if (!info.isFile() || info.isSymbolicLink()) throw new Error("Unverified worker registry.");
+                  registry = JSON.parse(await readFile(file, "utf8"));
+                  if (!registry || registry.version !== 1 || !samePath(registry.root, record.path) || !["waiting", "paused"].includes(registry.status) || registry.activeJobId || !UUID2.test(registry.nativeThreadId || "") || ["pid", "url", "token", "command"].some((key) => Object.hasOwn(registry, key))) throw new Error("Unverified worker ownership.");
+                }
+              } catch {
+                throw failure2("ARTIFACT_BUSY", "Worker ownership could not be verified before restoring edit history.");
+              }
+              if (worker.counts.active || worker.counts.pending || Object.values(jobs.jobs).some((job) => !job || !["completed", "failed", "superseded"].includes(job.status))) throw failure2("ARTIFACT_BUSY", "Finish or coordinate queued AI work before restoring edit history.");
+              await store.snapshot(id, { label: "Before partial restore" });
+              return await nativeComments.request(id, request);
+            }, { timeoutMs: 1e4, staleMs: 0 });
+          }
+          return await nativeComments.request(id, request);
+        }
         case "editor.digest": {
           await requireRecord(payload.id);
           if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase64(payload.base64)) throw failure2("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");

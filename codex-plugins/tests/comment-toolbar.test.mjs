@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { adaptCommentToolbar, readCommentComponent } from '../source/scripts/comment-toolbar-adapter.mjs';
 
-const plugin = fileURLToPath(new URL('../codex-design/', import.meta.url));
+const upstream = fileURLToPath(new URL('../../skills/', import.meta.url));
 const rootPattern = /function ([\w$]+)\(\{controller:[\w$]+,modeShortcut:[\w$]+="C",launcher:[\w$]+=\{bottom:16\},header:[\w$]+=!1,seats:[\w$]+,pinSide:[\w$]+\}\)\{/;
 const listPattern = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,dark:[\w$]+,top:[\w$]+,onClose:[\w$]+\}\)\{/;
 const factoryPattern = /function ([\w$]+)\(\{base:[\w$]+,win:[\w$]+=window,modeShortcut:[\w$]+="C",launcher:[\w$]+,header:[\w$]+=!1,toolbar:[\w$]+=!1,pinSide:[\w$]+\}\)\{/;
@@ -14,9 +14,9 @@ const nativeFlag = '__CODEX_DESIGN_EDITOR_TRANSPORT__';
 const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function code(kind, comments = false) {
-  const directory = path.join(plugin, 'skills', 'codex-' + kind, 'scripts/editor');
+  const directory = path.join(upstream, 'claude-' + kind, 'scripts/editor');
   const html = await fs.readFile(path.join(directory, 'index.html'), 'utf8');
-  return fs.readFile(path.join(directory, comments ? 'comments.js' : /<script type="module"[^>]*src="([^"]+)"/.exec(html)[1]), 'utf8');
+  return (await fs.readFile(path.join(directory, comments ? 'comments.js' : /<script type="module"[^>]*src="([^"]+)"/.exec(html)[1]), 'utf8')).replaceAll('\r\n', '\n');
 }
 function nodes(tree, predicate, result = []) {
   if (Array.isArray(tree)) { for (const child of tree) nodes(child, predicate, result); return result; }
@@ -51,18 +51,20 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
     const factory = readCommentComponent(adapted, factoryPattern);
     assert.equal(factory.text, readCommentComponent(source, factoryPattern).text, 'The original controller, queue and reply API is unchanged.');
     assert.match(factory.text, /sendRequest:[\w$]+=>[\w$]+\.sendRequest\(/);
-    const call = new RegExp(`${escape(factory.match[1])}\\(\\{base:([\\w$]+),toolbar:([^}]+)\\}\\)`).exec(adapted);
+    const call = new RegExp(`${escape(factory.match[1])}\\(\\{base:([\\w$]+),(?:header:[^,}]+,)?toolbar:([^}]+)\\}\\)`).exec(adapted);
     assert.ok(call, 'Native creation enables canonical toolbar seats.');
     const options = native => vm.runInNewContext(call[0], { [nativeFlag]: native ? {} : undefined, [factory.match[1]]: value => value, [call[1]]: 'root' });
     assert.equal(options(true).toolbar, true);
     assert.notEqual(options(true).header, true, 'Do not add the legacy Updated/header bar.');
     assert.equal(options(false).toolbar, ['slides', 'design'].includes(kind));
+    assert.equal(options(false).header, kind === 'design-system' ? true : undefined, 'retain the current canonical HTTP header choice');
     const root = readCommentComponent(adapted, rootPattern), list = readCommentComponent(adapted, listPattern);
     assert.equal(root.text, readCommentComponent(source, rootPattern).text, 'Toolbar mounting retains the complete canonical comment state machine.');
     assert.equal(list.text, readCommentComponent(source, listPattern).text);
     const state = { status: 'ready', mode: false, pins: { positions: {}, threads: [] }, busy: {}, drafts: {}, openId: null, toasts: [], snapshot: { threads: [] } };
     const reopened = [], modes = [], panels = [];
     const controller = { get: () => state, subscribe() {}, thread() {}, agentAvailable: () => false,
+      canComment: () => true, canEdit: () => true, canDelete: () => true,
       win: { innerWidth: 1280 }, reopen: id => reopened.push(id), setMode: value => modes.push(value) };
     const tree = render(root, { controller, seats: {} }, { native: true, aliases: { [list.match[1]]: 'canonical-list' } });
     assert.equal(nodes(tree, node => node.type === 'canonical-list').length, 1);

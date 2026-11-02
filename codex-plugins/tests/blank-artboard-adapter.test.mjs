@@ -14,7 +14,7 @@ import { adaptInlineEditorScript } from '../source/server/editor-document.mjs';
 
 const rawAssets = fileURLToPath(new URL('../../skills/claude-design/scripts/editor/assets/', import.meta.url));
 const filename = (await fs.readdir(rawAssets)).find(name => /^index.*\.js$/.test(name));
-const original = await fs.readFile(path.join(rawAssets, filename), 'utf8');
+const original = (await fs.readFile(path.join(rawAssets, filename), 'utf8')).replaceAll('\r\n', '\n');
 const adapted = adaptBlankArtboardCreation(original);
 const prelude = adapted.slice(0, adapted.indexOf(original.slice(0, 80)));
 assert.ok(prelude.length > 0 && prelude.length < 12_000);
@@ -46,15 +46,73 @@ function vendorRuntime() {
     vm.runInContext('(' + text + ')', context)(registry)();
   };
   const registry = new Proxy(target, { get(object, property) { if (!Reflect.has(object, property)) load(property); return Reflect.get(object, property); } });
+  const bootstrap = readCommentComponent(original, /function ([\w$]+)\(e\)\{(?=e\.load_react=)/);
+  assert.ok(bootstrap, 'the real vendor dependency registry bootstrap exists');
+  for (const entry of bootstrap.text.matchAll(/e\.(initializeNpm_[\w$]+)=\(\)=>\{\}/g)) target[entry[1]] = () => {};
   context = vm.createContext({ e: registry, t: (object, name, get, set) => Object.defineProperty(object, name, { get, set, configurable: true }),
     TextEncoder, TextDecoder, Uint8Array, Blob, URL, atob, btoa, setTimeout, clearTimeout, setInterval, clearInterval, performance, structuredClone, console,
-    PC: 0, Yo: {}, FC: 0, xm: {}, __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'actual-resize-test' } });
-  const react = readCommentComponent(original, /function kM\(\)\{/);
-  const jsx = readCommentComponent(original, /function LM\(\)\{/);
+    __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'actual-resize-test' } });
+  const runtimeFactories = [...original.matchAll(/function ([\w$]+)\(\)\{if\(([\w$]+)\)return ([\w$]+);\2=1;var [\w$]+=Symbol\.for\("react\.transitional\.element"\)/g)]
+    .map(match => ({ ...readCommentComponent(original, new RegExp(`function (${match[1]})\\(\\)\\{`)), flag: match[2], value: match[3] }));
+  const react = runtimeFactories.find(part => part.text.includes('.useState=') && /\.version="19\./.test(part.text));
+  const jsx = runtimeFactories.find(part => part.text.includes('.jsx=') && part.text.includes('.jsxs='));
   assert.ok(react && react.text.length < 10_000 && jsx && jsx.text.length < 1_000);
+  for (const part of [react, jsx]) Object.assign(context, { [part.flag]: 0, [part.value]: {} });
   const reactRuntime = vm.runInContext('(' + react.text + ')()', context);
   const jsxRuntime = vm.runInContext('(' + jsx.text + ')()', context);
   target.load_react = () => reactRuntime; target.load_react_jsx_runtime = () => jsxRuntime;
+  const dom = [...original.matchAll(/function ([\w$]+)\(\)\{if\(([\w$]+)\)return ([\w$]+);\2=1;/g)]
+    .map(match => ({ ...readCommentComponent(original, new RegExp(`function (${match[1]})\\(\\)\\{`)), flag: match[2], value: match[3] }))
+    .find(part => part.text.length < 10_000 && part.text.includes('.createPortal=') && /\.version="19\./.test(part.text));
+  assert.ok(dom, 'the real ReactDOM exports factory exists');
+  const reactLoader = /;var [\w$]+=([\w$]+)\(\)/.exec(dom.text)?.[1];
+  assert.ok(reactLoader);
+  Object.assign(context, { [dom.flag]: 0, [dom.value]: {}, [reactLoader]: () => reactRuntime });
+  const domRuntime = vm.runInContext('(' + dom.text + ')()', context);
+  target.load_react_dom = () => domRuntime;
+  const provideRuntime = (factory, runtime) => {
+    const use = original.indexOf('.exports=' + factory.match[1] + '()');
+    let wrapper;
+    for (let start = original.lastIndexOf('function ', use); start >= 0 && use - start < 2_000; start = original.lastIndexOf('function ', start - 1)) {
+      const part = readCommentComponent(original.slice(start), /^function ([\w$]+)\(\)\{/);
+      if (part && start + part.end > use) { wrapper = { ...part, end: start + part.end }; break; }
+    }
+    assert.ok(wrapper, 'the actual package loader for ' + factory.match[1]);
+    const declaration = new RegExp(`^var ([\\w$]+)=${wrapper.match[1]}\\(\\);const ([\\w$]+)=[\\w$]+\\(\\1\\),([\\w$]+)=`).exec(original.slice(wrapper.end));
+    assert.ok(declaration, 'the actual imported runtime namespace');
+    Object.assign(context, { [wrapper.match[1]]: () => runtime, [declaration[1]]: runtime,
+      [declaration[2]]: runtime, [declaration[3]]: { ...runtime, default: runtime } });
+  };
+  provideRuntime(react, reactRuntime); provideRuntime(jsx, jsxRuntime); provideRuntime(dom, domRuntime);
+  // The new history/document module shares the real, pure class-name runtime.
+  // Load those shipped definitions rather than replacing metadata or merge code.
+  const classNames = /e\.npm_clsx_[\w$]+=([\w$]+)/.exec(bootstrap.text)?.[1];
+  const classFunction = classNames && readCommentComponent(original, new RegExp(`function (${classNames})\\([^)]*\\)\\{`));
+  const classHelper = /=[\w$]+\[[\w$]+\]\)&&\([\w$]+=([\w$]+)\(/.exec(classFunction?.text ?? '')?.[1];
+  const validators = /e\.npm_validators_[\w$]+=([\w$]+)/.exec(bootstrap.text)?.[1];
+  assert.ok(classHelper && validators, 'canonical pure dependency names');
+  const pureStart = original.indexOf('function ' + classHelper + '('), minimum = original.indexOf(validators + '=Object.defineProperty(', pureStart);
+  let pure;
+  for (let end = original.indexOf(';', minimum); minimum >= 0 && end > 0 && end < pureStart + 100_000; end = original.indexOf(';', end + 1)) {
+    const candidate = original.slice(pureStart, end + 1);
+    try { new vm.Script(candidate); pure = candidate; break; } catch { /* Find the full canonical declaration boundary. */ }
+  }
+  assert.ok(pure && pure.length < 100_000, 'the bounded, pure dependency program exists');
+  vm.runInContext(pure, context);
+  const unmountedUi = name => new Proxy(function () { throw new Error('Unexpected UI execution in filesystem fixture: ' + name); }, {
+    get(_target, property) { return property === '__esModule' ? false : unmountedUi(name + '.' + String(property)); },
+    apply() { throw new Error('Unexpected UI execution in filesystem fixture: ' + name); },
+    construct() { throw new Error('Unexpected UI construction in filesystem fixture: ' + name); },
+  });
+  for (const entry of bootstrap.text.matchAll(/e\.(npm_[\w$]+)=([\w$]+)/g)) {
+    try { target[entry[1]] = vm.runInContext(entry[2], context); }
+    catch (error) {
+      if (error.name !== 'ReferenceError') throw error;
+      // The verified host bootstrap also supplies opaque UI dependencies.
+      // This filesystem port never mounts them; fail if one is actually used.
+      target[entry[1]] = unmountedUi(entry[1]);
+    }
+  }
   vm.runInContext(prelude, context);
   return { e: registry, context };
 }
@@ -109,21 +167,45 @@ function fixture({ native = true, source = adapted, files = {}, boards = [], nex
     getKvClient: () => ({ async set(key, text) { writes.push({ key, text }); events.push('write'); files[key] = text; }, async get(key) { return files[key]; }, async delete(key) { delete files[key]; } }),
     frameAnalyticsReporter() {}, designAnalyticsEvents: { artboardInserted: 'inserted' },
   };
-  const context = vm.createContext({ e,
-    ...(native ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'blank-test' } } : {}),
-    se: { content: () => ({ files }) }, Et: () => 'id', sa: { current: false }, tl: { current: boards }, ga: { current: { artboards: boards } },
-    ne: () => ({ x: 0, y: 0 }), _l: () => ({}), xg: { current: () => ({}) }, Hn: { current: new Map() }, be: () => boards,
-    fs: { current(value) { history.push(value); events.push('history'); } },
-    Mr() { events.push('metadata'); }, Cn() {}, Ms() {}, Qi() {}, $d() {}, An() {},
-    ge(message) { errors.push(message); },
+  const ui = uiOwner(source), batch = batchOwner(source);
+  const names = {
+    document: /let [\w$]+=([\w$]+)\.content\(\)\.files/.exec(ui)?.[1],
+    allocating: /\(0,e\.uniqueArtboardFile\)\([\w$]+,"Artboard",([\w$]+)\)/.exec(ui)?.[1],
+    adding: /&&\(([\w$]+)\.current=!0\)/.exec(ui)?.[1],
+    boards: /let [\w$]+=([\w$]+)\.current\.filter/.exec(ui)?.[1],
+    manifest: /\.\.\.([\w$]+)\.current\.artboards/.exec(ui)?.[1],
+    position: /[\w$]+\?\?([\w$]+)\([\w$]+\),/.exec(ui)?.[1],
+    appearance: /\.\.\.([\w$]+)\(\)\}/.exec(ui)?.[1],
+    history: /([\w$]+)\.current\(\{kind:"add",entries:/.exec(ui)?.[1],
+    metadata: /([\w$]+)\(\{artboards:/.exec(ui)?.[1],
+    errors: /,([\w$]+)\(\(0,e\.formatMessage\)/.exec(ui)?.[1],
+    pendingOwners: /=>?([\w$]+)\.current\.get\(/.exec(batch)?.[1],
+    boardList: /,[\w$]+=\[\.\.\.([\w$]+)\(\)\]/.exec(batch)?.[1],
+    batchAppearance: /\.\.\.([\w$]+)\.current\(\)\}/.exec(batch)?.[1],
+  };
+  for (const [name, value] of Object.entries(names)) assert.ok(value, 'actual creation seam: ' + name);
+  const bindings = { e, ...(native ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'blank-test' } } : {}) };
+  // Only callbacks surrounding the extracted creation owners are substituted;
+  // their source-selection, sizing and file-writing code executes unchanged.
+  for (const text of [ui, batch]) for (const match of text.matchAll(/(?<![\w$.])([\w$]+)\(/g)) {
+    if (!['if', 'for', 'catch', 'async', 'Set', 'String'].includes(match[1]) && !match[1].startsWith('__codex')) bindings[match[1]] ??= () => {};
+  }
+  Object.assign(bindings, {
+    [names.document]: { content: () => ({ files }) }, [names.allocating]: () => 'id', [names.adding]: { current: false },
+    [names.boards]: { current: boards }, [names.manifest]: { current: { artboards: boards } },
+    [names.position]: () => ({ x: 0, y: 0 }), [names.appearance]: () => ({}),
+    [names.batchAppearance]: { current: () => ({}) }, [names.pendingOwners]: { current: new Map() }, [names.boardList]: () => boards,
+    [names.history]: { current(value) { history.push(value); events.push('history'); } },
+    [names.metadata]() { events.push('metadata'); }, [names.errors](message) { errors.push(message); },
   });
+  const context = vm.createContext(bindings);
   // Preserve the actual batch owner's existing rounding/clamping expression.
-  const sizing = /Ce=Le=>(Math\.min\(e\.PlatformFileContentLimit_6,Math\.max\(e\.PlatformFileContentConstant_16,Math\.round\(Le\)\)\))/.exec(original);
-  assert.ok(sizing); context.Ce = vm.runInContext('(Le=>' + sizing[1] + ')', context);
+  const sizing = /([\w$]+)=([\w$]+)=>(Math\.min\(e\.PlatformFileContentLimit_6,Math\.max\(e\.PlatformFileContentConstant_16,Math\.round\(\2\)\)\))/.exec(original);
+  assert.ok(sizing); context[sizing[1]] = vm.runInContext('(' + sizing[2] + '=>' + sizing[3] + ')', context);
   vm.runInContext(prelude, context);
   return { files, writes, history, errors, events, e, context,
-    ui: vm.runInContext('(' + uiOwner(source) + ')', context),
-    batch: vm.runInContext('(' + batchOwner(source) + ')', context),
+    ui: vm.runInContext('(' + ui + ')', context),
+    batch: vm.runInContext('(' + batch + ')', context),
   };
 }
 
@@ -181,7 +263,9 @@ function localStore(native = true) {
   const part = readCommentComponent(adapted, /function ([\w$]+)\(([\w$]+)\)\{(?=if\(globalThis\.__CODEX_DESIGN_EDITOR_TRANSPORT__\)\2=__codexSyncBlankPreviews)/);
   assert.ok(part && part.text.length < 350);
   const observed = [];
-  const context = vm.createContext({ O: null, e: { canvasMetadataFile: 'canvas.json' }, he() {}, ge() {}, at() { observed.push(context.O); },
+  const aliases = /;([\w$]+)=([\w$]+),([\w$]+)\(\2\.content\.files\),([\w$]+)\(!1\),([\w$]+)\(\)\}/.exec(part.text);
+  assert.ok(aliases, 'the actual local update callbacks must be identifiable');
+  const context = vm.createContext({ [aliases[1]]: null, e: { canvasMetadataFile: 'canvas.json' }, [aliases[3]]() {}, [aliases[4]]() {}, [aliases[5]]() { observed.push(context[aliases[1]]); },
     ...(native ? { __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'state-test' } } : {}) });
   vm.runInContext(prelude, context);
   const update = vm.runInContext('(' + part.text + ')', context);
@@ -249,6 +333,16 @@ async function actualDocument(t, runtime = vendorRuntime()) {
   const mutation = readCommentComponent(original, /\(([\w$]+),([\w$]+)\)=>\{(?=let [\w$]+=\(0,e\.mergeMissingCanvasManifestMetadata\))/);
   assert.ok(mutation && mutation.text.length < 700);
   const owner = vm.runInContext('(' + mutation.text + ')', context);
+  const aliases = {
+    manifest: /\?\?([\w$]+)\.current/.exec(mutation.text)?.[1],
+    pending: /;([\w$]+)\.current=[\w$]+,/.exec(mutation.text)?.[1],
+    revision: /,([\w$]+)\.current\+\+/.exec(mutation.text)?.[1],
+    normalize: /===void 0\?([\w$]+)\(/.exec(mutation.text)?.[1],
+    errors: /=>?([\w$]+)\(\(0,e\.formatMessage\)/.exec(mutation.text)?.[1],
+  };
+  for (const [name, value] of Object.entries(aliases)) assert.ok(value, 'actual Resize seam: ' + name);
+  const callbacks = {};
+  for (const match of mutation.text.matchAll(/(?<![\w$.])([\w$]+)\(/g)) if (!['if', 'String'].includes(match[1])) callbacks[match[1]] ??= () => {};
   const manifest = () => e.parseCanvasMetadata(doc.content().files[e.canvasMetadataFile], doc.content().files);
   return { doc, kv, batches, runtime, manifest,
     async text(value) {
@@ -258,8 +352,9 @@ async function actualDocument(t, runtime = vendorRuntime()) {
     },
     async commit(value) {
       e.setKvClient(kv);
-      Object.assign(context, { ga: { current: manifest() }, Ra: { current: null }, Ve: { current: 0 }, Ca() {}, Ct() {}, kr: value => value,
-        ge(message) { throw new Error(message); } });
+      Object.assign(context, callbacks, { [aliases.manifest]: { current: manifest() }, [aliases.pending]: { current: null },
+        [aliases.revision]: { current: 0 }, [aliases.normalize]: value => value,
+        [aliases.errors](message) { throw new Error(message); } });
       owner(value); await doc.settle();
     },
     async disk() { return { index: JSON.parse(await fs.readFile(path.join(directory, 'project/canvas.json'), 'utf8')),
@@ -429,14 +524,21 @@ test('the unchanged legacy blank remains a real original-checker failure rather 
 test('blank adaptation is idempotent, refuses drift, preserves the shared factory and leaves all four assemblies parseable', async () => {
   assert.equal(adaptBlankArtboardCreation(adapted), adapted);
   assert.equal(vm.runInNewContext('(' + exported('blankDcDocument') + ')')().includes('data-dc-script'), false);
-  for (const [from, to] of [['(0,e.insertBlankArtboardMarkup)((0,e.blankDcDocument)(),be)', '(0,e.changedBlankMarkup)((0,e.blankDcDocument)(),be)'], ['kind:"add",entries:[{file:Ge,src:st,spec:Dt}]', 'kind:"changed-add",entries:[{file:Ge,src:st,spec:Dt}]'], ['Pt.body.trim()===""', 'Pt.changedBody.trim()===""']]) {
-    assert.ok(original.includes(from)); assert.throws(() => adaptBlankArtboardCreation(original.replace(from, to)), /canonical/);
+  const ui = uiOwner(original);
+  const markup = /\(0,e\.insertBlankArtboardMarkup\)\(\(0,e\.blankDcDocument\)\(\),[\w$]+\)/.exec(ui)?.[0];
+  const add = /kind:"add",entries:\[\{file:[\w$]+,src:[\w$]+,spec:[\w$]+\}\]/.exec(ui)?.[0];
+  const batch = batchOwner(original);
+  const body = /[\w$]+\.body\.trim\(\)===""/.exec(batch)?.[0];
+  assert.ok(markup && add && body);
+  for (const [from, to, scope] of [[markup, markup.replace('insertBlankArtboardMarkup', 'changedBlankMarkup'), ui], [add, add.replace('kind:"add"', 'kind:"changed-add"'), ui], [body, body.replace('.body.', '.changedBody.'), batch]]) {
+    assert.ok(original.includes(from));
+    const changed = scope ? original.replace(scope, scope.replace(from, to)) : original.replace(from, to);
+    assert.throws(() => adaptBlankArtboardCreation(changed), /canonical/);
   }
-  const pluginRoot = path.resolve(process.env.CODEX_DESIGN_TEST_PLUGIN_ROOT || fileURLToPath(new URL('../codex-design/', import.meta.url)));
   for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
-    const dir = path.join(pluginRoot, 'skills', 'codex-' + kind, 'scripts/editor/assets');
+    const dir = fileURLToPath(new URL('../../skills/claude-' + kind + '/scripts/editor/assets/', import.meta.url));
     const file = (await fs.readdir(dir)).find(name => /^index.*\.js$/.test(name));
-    const source = await fs.readFile(path.join(dir, file), 'utf8');
+    const source = (await fs.readFile(path.join(dir, file), 'utf8')).replaceAll('\r\n', '\n');
     if (kind !== 'design') assert.equal(adaptBlankArtboardCreation(source), source);
     const script = adaptInlineEditorScript(source, `https://codex-design.invalid/${kind}/index.js`);
     const checked = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: script, encoding: 'utf8', windowsHide: true });

@@ -2,4 +2,6 @@
 /codex-plugins/** text eol=lf
 /codex-plugins/**/*.png -text
 /codex-plugins/codex-design/** -text
+# Compiled vendor templates contain meaningful PDF/string whitespace.
+/codex-plugins/codex-design/skills/*/scripts/editor/assets/*.js -whitespace
 /.agents/plugins/marketplace.json text eol=lf

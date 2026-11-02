@@ -1,4 +1,4 @@
-const ALLOWED = new Set(['editor.request', 'editor.digest', 'editor.events.open', 'editor.events.poll', 'editor.events.close', 'editor.download']);
+const ALLOWED = new Set(['editor.request', 'editor.digest', 'editor.events.open', 'editor.events.poll', 'editor.events.close', 'editor.download', 'editor.previewDocument']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REQUEST_LIMIT = 128;
 const errorDetail = error => ({ code: error?.code || 'EDITOR_REQUEST_FAILED', message: String(error?.message || error).slice(0, 2000) });
@@ -61,8 +61,8 @@ function reuseRequest(cache, requestId, execute) {
 function loadEditorDocument(channel) {
   let accepted = false;
   let editor;
-  const outgoing = new Set(['codex-design:editor-request', 'codex-design:editor-transport-ready', 'codex-design:editor-app-ready', 'codex-design:editor-diagnostic', 'codex-design:editor-flushed']);
-  const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:comment-viewport-changed', 'codex-design:editor-flush', 'codex-design:ui-language-changed']);
+  const outgoing = new Set(['codex-design:editor-request', 'codex-design:editor-transport-ready', 'codex-design:editor-app-ready', 'codex-design:editor-diagnostic', 'codex-design:editor-flushed', 'codex-design:editor-history-opened']);
+  const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:comment-viewport-changed', 'codex-design:editor-flush', 'codex-design:ui-language-changed', 'codex-design:editor-history-open', 'codex-design:editor-history-close']);
   const receive = event => {
     const message = event.data;
     if (message?.channel !== channel) return;
@@ -86,7 +86,7 @@ function loadEditorDocument(channel) {
 
 // The inner document receives no host/tool access. Requests are accepted only
 // from this exact frame, with a per-open channel, and the artwork id is fixed.
-export function mountNativeEditor({ iframe, bridge, artifactId, channel, document: editorDocument, onError, onReady, startupTimeoutMs = 30_000 } = {}) {
+export function mountNativeEditor({ iframe, bridge, artifactId, channel, document: editorDocument, onError, onReady, startupTimeoutMs = 30_000, historyTimeoutMs = 10_000 } = {}) {
   if (typeof editorDocument?.html !== 'string' || !editorDocument.html.trim()) throw new TypeError('The editor document is missing.');
   const ownerWindow = iframe.ownerDocument?.defaultView || window;
   const subscriptions = new Set();
@@ -94,9 +94,16 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
   let disposed = false;
   let appReady = false;
   let flush;
+  let readyFailure, historyAction;
+  const readyWaiters = new Set();
   let viewportObserver, lastViewportBottom;
   const startup = setTimeout(() => {
-    if (!disposed) onError?.({ code: 'EDITOR_START_TIMEOUT', message: 'The artwork editor did not finish opening. Retry this artwork tab.' });
+    if (!disposed) {
+      readyFailure = Object.assign(new Error('The artwork editor did not finish opening. Retry this artwork tab.'), { code: 'EDITOR_START_TIMEOUT' });
+      for (const waiter of readyWaiters) waiter.reject(readyFailure);
+      readyWaiters.clear();
+      onError?.(errorDetail(readyFailure));
+    }
   }, startupTimeoutMs);
   startup.unref?.();
   const sendHostContext = () => {
@@ -177,11 +184,25 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
       return;
     }
     if (message.type === 'codex-design:editor-transport-ready') { sendHostContext(); return; }
-    if (message.type === 'codex-design:editor-app-ready') { appReady = true; clearTimeout(startup); onReady?.(); return; }
+    if (message.type === 'codex-design:editor-app-ready') {
+      appReady = true; clearTimeout(startup);
+      for (const waiter of readyWaiters) waiter.resolve();
+      readyWaiters.clear();
+      onReady?.(); return;
+    }
     if (message.type === 'codex-design:editor-flushed') {
       if (!flush || message.requestId !== flush.requestId) return;
       const current = flush; flush = undefined; clearTimeout(current.timer);
       message.saved === true ? current.resolve({ saved: true }) : current.reject(Object.assign(new Error(message.error?.message || 'The editor still has unsaved changes.'), { code: message.error?.code || 'EDITOR_UNSAVED_CHANGES' }));
+      return;
+    }
+    if (message.type === 'codex-design:editor-history-opened') {
+      const current = historyAction;
+      if (!current?.reply || message.requestId !== current.requestId) return;
+      clearTimeout(current.timer);
+      if (message.opened === true) current.reply.resolve({ opened: true });
+      else current.reply.reject(Object.assign(new Error(message.error?.message || 'Detailed edit history is unavailable for this artwork.'), { code: message.error?.code || 'NATIVE_HISTORY_UNAVAILABLE' }));
+      current.reply = undefined;
       return;
     }
     if (message.type === 'codex-design:editor-diagnostic') { onError?.({ code: 'EDITOR_RUNTIME_ERROR', message: message.message }); return; }
@@ -222,29 +243,71 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     disposed = true; clearTimeout(startup); stopViewport(); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
     throw error;
   }
+  const flushEditor = () => {
+    if (disposed) return Promise.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
+    // Before the actual controls mount the user cannot have made an edit.
+    if (!appReady) return Promise.resolve({ saved: true });
+    if (flush) return flush.promise;
+    const requestId = crypto.randomUUID();
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    const timer = setTimeout(() => {
+      if (flush?.requestId !== requestId) return;
+      flush = undefined;
+      reject(Object.assign(new Error('The editor did not confirm that changes were saved.'), { code: 'EDITOR_UNSAVED_CHANGES' }));
+    }, 10_000);
+    flush = { requestId, promise, resolve, reject, timer };
+    iframe.contentWindow?.postMessage({ type: 'codex-design:editor-flush', channel, requestId }, '*');
+    return promise;
+  };
+  const openHistory = ({ signal } = {}) => {
+    if (disposed) return Promise.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
+    if (signal?.aborted) return Promise.reject(signal.reason || Object.assign(new Error('Opening edit history was cancelled.'), { code: 'EDITOR_HISTORY_CANCELLED' }));
+    if (historyAction) return historyAction.promise;
+    const action = {};
+    let rejectCancelled;
+    const cancelled = new Promise((_resolve, reject) => { rejectCancelled = reject; });
+    void cancelled.catch(() => {});
+    action.cancel = error => {
+      if (action.requestId) iframe.contentWindow?.postMessage({ type: 'codex-design:editor-history-close', channel, requestId: action.requestId }, '*');
+      rejectCancelled(error);
+    };
+    const onAbort = () => action.cancel(signal.reason || Object.assign(new Error('Opening edit history was cancelled.'), { code: 'EDITOR_HISTORY_CANCELLED' }));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    action.promise = (async () => {
+      if (!appReady) {
+        if (readyFailure) throw readyFailure;
+        const ready = new Promise((resolve, reject) => { action.ready = { resolve, reject }; readyWaiters.add(action.ready); });
+        await Promise.race([ready, cancelled]);
+      }
+      await Promise.race([flushEditor(), cancelled]);
+      if (disposed || signal?.aborted) throw signal?.reason || Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' });
+      action.requestId = crypto.randomUUID();
+      const reply = new Promise((resolve, reject) => { action.reply = { resolve, reject }; });
+      action.timer = setTimeout(() => action.cancel(Object.assign(new Error('The editor did not confirm opening edit history.'), { code: 'EDITOR_HISTORY_TIMEOUT' })), historyTimeoutMs);
+      iframe.contentWindow?.postMessage({ type: 'codex-design:editor-history-open', channel, requestId: action.requestId }, '*');
+      return await Promise.race([reply, cancelled]);
+    })().finally(() => {
+      signal?.removeEventListener('abort', onAbort);
+      clearTimeout(action.timer);
+      if (action.ready) readyWaiters.delete(action.ready);
+      if (historyAction === action) historyAction = undefined;
+    });
+    historyAction = action;
+    return action.promise;
+  };
   return {
     url,
     post(message) { if (!disposed) iframe.contentWindow?.postMessage({ ...message, channel }, '*'); },
-    flush() {
-      if (disposed) return Promise.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
-      // Before the actual controls mount the user cannot have made an edit.
-      if (!appReady) return Promise.resolve({ saved: true });
-      if (flush) return flush.promise;
-      const requestId = crypto.randomUUID();
-      let resolve, reject;
-      const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
-      const timer = setTimeout(() => {
-        if (flush?.requestId !== requestId) return;
-        flush = undefined;
-        reject(Object.assign(new Error('The editor did not confirm that changes were saved.'), { code: 'EDITOR_UNSAVED_CHANGES' }));
-      }, 10_000);
-      flush = { requestId, promise, resolve, reject, timer };
-      iframe.contentWindow?.postMessage({ type: 'codex-design:editor-flush', channel, requestId }, '*');
-      return promise;
-    },
+    flush: flushEditor,
+    openHistory,
     dispose() {
       if (disposed) return;
       disposed = true; clearTimeout(startup); stopViewport(); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
+      const closed = Object.assign(new Error('The artwork editor closed before edit history opened.'), { code: 'EDITOR_CLOSED' });
+      historyAction?.cancel(closed);
+      for (const waiter of readyWaiters) waiter.reject(closed);
+      readyWaiters.clear();
       if (flush) { clearTimeout(flush.timer); flush.reject(Object.assign(new Error('The editor closed before saving was confirmed.'), { code: 'EDITOR_UNSAVED_CHANGES' })); flush = undefined; }
       for (const subscriptionId of subscriptions) void bridge.invoke('editor.events.close', { id: artifactId, subscriptionId }).catch(() => {});
       subscriptions.clear();

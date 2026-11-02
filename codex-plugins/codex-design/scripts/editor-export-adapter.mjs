@@ -82,7 +82,11 @@ export function adaptEditorExportFallbacks(source) {
   if (cardCount !== 1) throw new Error('The canonical export warning card changed; native export recovery was refused.');
 
   let catchCount = 0;
-  source = source.replace(/\}catch\(([\w$]+)\)\{e\.healthReporter\.report\(\.\.\.\(0,e\.classifyExportFailure\)\("zip"\)\),([\w$]+)\("Couldn't build the HTML zip: "\+String\(\1\),"error"\)\}finally\{([\w$]+)\(!1\)\}/g,
+  // Upstream 2.7 localizes this exact warning instead of concatenating it.
+  // Match only those two audited catch shapes; a generic catch patch would
+  // risk treating a build/encoding failure as a native file-save outcome.
+  const zipFailure = /\}catch\(([\w$]+)\)\{e\.healthReporter\.report\(\.\.\.\(0,e\.classifyExportFailure\)\("zip"\)\),([\w$]+)\((?:"Couldn't build the HTML zip: "\+String\(\1\)|\(0,e\.formatMessage\)\(\{defaultMessage:"Couldn’t build the HTML zip: \{error\}",id:"q0OIrbxby5"\},\{error:String\(\1\)\}\)),"error"\)\}finally\{([\w$]+)\(!1\)\}/g;
+  source = source.replace(zipFailure,
     (match, error, toast) => {
       catchCount++;
       const guard = `if(${native}&&${error}?.nativeExportSaveFailure===true){e.healthReporter.report(...(0,e.classifyExportFailure)("zip"));${toast}(${error}.message,"error");return{outcome:"failed",code:${error}.code}}`;

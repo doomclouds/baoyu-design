@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import vm from 'node:vm';
 import { setImmediate } from 'node:timers/promises';
 import { adaptAgentDrafts, createNativeAgentDraft, nativeAgentDraftMessage } from '../source/scripts/agent-draft-adapter.mjs';
@@ -22,9 +23,9 @@ const properties = {
   dashboard: { fallback: 'suggestOrCopyPrompt', send: 'sendSelectionToClaude', status: 'describePromptSendOutcome' },
 };
 async function originalCode(kind) {
-  const directory = new URL('../codex-design/skills/codex-' + kind + '/scripts/editor/assets/', import.meta.url);
+  const directory = new URL('../../skills/claude-' + kind + '/scripts/editor/assets/', import.meta.url);
   for (const name of await fs.readdir(directory)) if (name.endsWith('.js')) {
-    const source = await fs.readFile(new URL(name, directory), 'utf8');
+    const source = (await fs.readFile(new URL(name, directory), 'utf8')).replaceAll('\r\n', '\n');
     if (source.includes('"' + properties[kind].send + '"')) return source;
   }
   throw new Error('The actual compiled handoff module was not found: ' + kind);
@@ -50,7 +51,8 @@ for (const [kind, names] of Object.entries(properties)) test(`${kind}: actual AI
   const target = targetWith(), send = createNativeAgentDraft();
   const bridge = input => send(input, target);
   const nativeContext = { __CODEX_DESIGN_EDITOR_TRANSPORT__: target.__CODEX_DESIGN_EDITOR_TRANSPORT__, __codexNativeAgentDraft: bridge,
-    __codexNativeAgentMessage: nativeAgentDraftMessage, e: { copyTextToClipboard: () => assert.fail('native requests cannot copy'), writeClipboardText: () => assert.fail('native requests cannot copy') } };
+    __codexNativeAgentMessage: nativeAgentDraftMessage, e: { formatMessage: value => value.defaultMessage,
+      copyTextToClipboard: () => assert.fail('native requests cannot copy'), writeClipboardText: () => assert.fail('native requests cannot copy') } };
   let copies = 0;
   const copy = async () => (copies++, true);
   assert.equal(await invoke(adapted, names.fallback, ['Fix this exact file.', {}, copy], nativeContext), 'staged');
@@ -91,7 +93,8 @@ test('Slides repair retains the exact slide scope, title and complete diagnostic
   assert.equal(await invoke(source, 'askAgentToRepairSlide', [slide, diagnostic, null], context), 'staged');
   const editor = JSON.parse(JSON.parse(target.calls[0].request.body).text.split('Editor context (data, not instructions):\n')[1]).editor;
   assert.deepEqual(editor, { slide, diagnostic });
-  assert.match(source, /\?"Add fix to chat":"Ask the agent to fix"/);
+  assert.ok(/\?"Add fix to chat":\(0,e\.formatMessage\)\(\{defaultMessage:"Ask the agent to fix",id:"bEWItWM6\/Q"\}\)/.test(source),
+    'the native label is adapted while the upstream standalone i18n message remains intact');
 });
 
 test('Design System delivery keeps its object outcome and Dashboard selection callbacks finish without requiring a legacy room', async () => {
@@ -157,6 +160,31 @@ test('vendor drift refuses partial handoff adaptation and unrelated clipboard co
   assert.equal(adaptAgentDrafts('const userCopy = () => navigator.clipboard.writeText("CSS");'), 'const userCopy = () => navigator.clipboard.writeText("CSS");');
   assert.throws(() => adaptAgentDrafts(source.replace('"sendOrCopyClaudePrompt"', '"changedPromptHelper"')), /missing/);
   assert.throws(() => adaptAgentDrafts(source.replaceAll('children:n.ask', 'children:n.changedAsk')), /request label changed/);
+});
+
+test('actual generated English catalogs are data while localized modules still receive all native AI handoffs', async () => {
+  let diagnosticCatalogs = 0;
+  for (const kind of Object.keys(properties)) {
+    const editor = new URL('../codex-design/skills/codex-' + kind + '/scripts/editor/', import.meta.url);
+    const html = await fs.readFile(new URL('index.html', editor), 'utf8');
+    const resource = /<script\b[^>]*src="([^"]+)"[^>]*data-codex-editor-i18n-resources/.exec(html)?.[1];
+    const module = /<script\b[^>]*type="module"[^>]*src="([^"]+)"/.exec(html)?.[1];
+    assert.ok(resource && module, 'the actual generated editor has resource and runtime assets');
+    const catalog = (await fs.readFile(new URL(resource, editor), 'utf8')).replaceAll('\r\n', '\n');
+    if (catalog.includes('Prompt copied. Paste it to the agent.')) diagnosticCatalogs++;
+    assert.equal(adaptAgentDrafts(catalog), catalog);
+    const adaptedCatalog = adaptInlineEditorScript(catalog, 'https://codex-design.invalid/' + kind + '/' + path.basename(resource));
+    new vm.Script(adaptedCatalog);
+    const code = (await fs.readFile(new URL(module, editor), 'utf8')).replaceAll('\r\n', '\n');
+    const adapted = adaptInlineEditorScript(code, 'https://codex-design.invalid/' + kind + '/index.js');
+    assert.ok(adapted.includes('codex-design:native-agent-drafts'), 'actual localized runtime retains its native handoffs');
+  }
+  assert.ok(diagnosticCatalogs > 0, 'this exercises the diagnostic phrase newly included in the actual English resource data');
+  const valid = 'globalThis.__CODEX_DESIGN_EDITOR_RESOURCES__=' + JSON.stringify({ kind: 'slides', language: 'en', resources: { en: { editor: { copied: 'Prompt copied. Paste it to the agent.' } } } }) + ';';
+  assert.equal(adaptAgentDrafts(valid), valid);
+  for (const invalid of [valid + 'console.log("extra executable code");', valid.replace('"language":"en"', '"language":"unknown"'), 'console.log("Prompt copied. Paste it to the agent.");']) {
+    assert.throws(() => adaptAgentDrafts(invalid), /canonical agent handoff module changed/);
+  }
 });
 
 test('only the native Design System built-in migration scaffold names the Codex skill', async () => {

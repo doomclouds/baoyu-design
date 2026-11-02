@@ -1,11 +1,32 @@
 # Codex Design library implementation
 
+## 0.6.0 upstream migration candidate
+
+The development branch now targets upstream 2.7.1 (`6759e35`) while retaining
+the established 0.5.3 library, native comment/request and content-only transfer
+contracts. Updated skill/server/vendor adapters, local-only service startup,
+save/port reliability, canonical detailed History and isolated read-only
+reference/history previews are implemented in the candidate. History manual
+restore selects a file/version; overwrite recovery restores its compared lost
+content, not an arbitrary manually selected hunk.
+
+The after-DOM-fix build reports 190 owned files. The first complete suite was
+640/642 and exposed head-before-body preview initialization plus an obsolete
+port-1 boot fixture. Those results remain in the acceptance record. The next
+complete run passed 643/643, with no failures, skips or cancellations. Generated
+consistency/portable checks and actual installed 0.6.0 host acceptance are still
+pending. The candidate is not yet published or installed; 0.5.3 remains the
+verified release. See [ACCEPTANCE-0.6.0.md](ACCEPTANCE-0.6.0.md) for overlapping
+focused evidence, retained failures and the exact native gates.
+
 ## Upstream source synchronization
 
 `main` now includes upstream 2.7.1. The published Codex Design package remains
-the verified 0.5.3 on `codex/plugin`; new upstream editors need adapter migration
-before rebuilding. See [the synchronization and value assessment](UPSTREAM-2.7.1.md)
-for the exact baseline, failed compatibility check and proposed priorities.
+the verified 0.5.3 on `codex/plugin`. The initial synchronization required an
+adapter migration before rebuilding; the 0.6.0 candidate above now contains
+that work but has not closed its release/native gates. See
+[the synchronization and value assessment](UPSTREAM-2.7.1.md) for the original
+baseline and failed compatibility check.
 
 ## 0.5.3 released repairs
 

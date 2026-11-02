@@ -23,13 +23,17 @@ export function readCommentComponent(source, pattern) {
 /** Reuse canonical toolbar seats and their full comment controller; never add a native bubble or header. */
 export function adaptCommentToolbar(source) {
   if (source.includes(marker)) return source;
-  let changed = false;
+  let changed = false, factoryCalls = 0;
   const factory = /function ([\w$]+)\(\{base:[\w$]+,win:[\w$]+=window,modeShortcut:[\w$]+="C",launcher:[\w$]+,header:[\w$]+=!1,toolbar:[\w$]+=!1,pinSide:[\w$]+\}\)\{/.exec(source);
   if (factory) {
     // Slides/Canvas already pass toolbar:true. DS/Dashboard opt into those
-    // same seats only in the native document; header remains false.
-    const call = new RegExp(`${escape(factory[1])}\\(\\{base:([\\w$]+)\\}\\)`, 'g');
-    source = source.replace(call, (_, base) => { changed = true; return `${factory[1]}({base:${base},toolbar:!!${native}})`; });
+    // same seats only in the native document. New DS enables the HTTP header;
+    // preserve that there, while keeping the native menu's existing seats.
+    const call = new RegExp(`${escape(factory[1])}\\(\\{base:([\\w$]+)(,header:!0)?\\}\\)`, 'g');
+    source = source.replace(call, (_, base, header) => {
+      changed = true; factoryCalls++;
+      return `${factory[1]}({base:${base}${header ? `,header:${native}?!1:!0` : ''},toolbar:!!${native}})`;
+    });
     // A DS sidebar tool row can sit near the bottom. Keep the original list
     // reachable within this editor's viewport instead of opening below it.
     const top = /function ([\w$]+)\(([\w$]+)\)\{for\((?:const|let) ([\w$]+) of \2\)\{(?:const|let) ([\w$]+)=\(\3\.el\.closest\([\w$]+\)\?\?\3\.el\.parentElement\)\?\.getBoundingClientRect\(\);if\(!\(!\4\|\|\4\.height===0\)\)return Math\.round\(\4\.bottom\+([\w$]+)\)\}return null\}/;
@@ -45,6 +49,7 @@ export function adaptCommentToolbar(source) {
   const sidebar = readCommentComponent(source, /function ([\w$]+)\(\{sections:[\w$]+,tail:[\w$]+,current:[\w$]+,onJump:[\w$]+,dropProps:[\w$]+,footer:([\w$]+),navRef:[\w$]+,marks:[\w$]+,search:[\w$]+,pending:[\w$]+\}\)\{/);
   if (floating || sidebar) {
     if (!floating || !sidebar) throw new Error('The design-system navigation modes changed; adaptation was refused.');
+    if (factoryCalls !== 1) throw new Error('The design-system comment mounting options changed; adaptation was refused.');
     const jsx = /return ([\w$]+)\.jsx\(/.exec(floating.text)?.[1];
     if (!jsx) throw new Error('The design-system navigation JSX runtime was not found.');
     const status = floating.match[2], footer = sidebar.match[2];

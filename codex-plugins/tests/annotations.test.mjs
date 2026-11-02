@@ -6,7 +6,7 @@ import os from 'node:os';
 import vm from 'node:vm';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { adaptAnnotations } from '../adapt-annotations.mjs';
 import { createFixture } from './fixtures.mjs';
@@ -25,7 +25,7 @@ test.before(async () => {
     const source = path.join(repository, 'skills', upstreamNames[name], 'scripts');
     const target = path.join(pluginRoot, 'skills', name, 'scripts');
     await fs.mkdir(path.join(target, 'editor'), {recursive: true});
-    for (const relative of ['artifact.mjs', ...(name === 'codex-dashboard' ? [] : ['server.mjs']), 'editor/index.html']) await fs.copyFile(path.join(source, relative), path.join(target, relative));
+    for (const relative of ['artifact.mjs', ...(name === 'codex-dashboard' ? ['editor/local-host.js', 'editor/comments.js'] : ['server.mjs']), 'editor/index.html', 'editor/share-ui.js']) await fs.copyFile(path.join(source, relative), path.join(target, relative));
   }
   await adaptAnnotations(pluginRoot);
   serverModule = await import(pathToFileURL(path.join(pluginRoot, 'skills/codex-slides/scripts/codex-annotation-server.mjs')));
@@ -169,9 +169,239 @@ test('renamed skill namespaces preserve standard editor health kinds', async () 
   for (let i = 0; i < names.length; i++) {
     let body;
     const response = {writeHead(status) { assert.equal(status, 200); }, end(bytes) { body = JSON.parse(bytes.toString()); }};
-    assert.equal(await serverModule.serveCodexAnnotation({method: 'GET'}, response, '__codex/editor-session', temporary, names[i], import.meta.url), true);
-    assert.deepEqual(body, {root: path.resolve(temporary), kind: kinds[i], pid: process.pid});
+    assert.equal(await serverModule.serveCodexAnnotation({method: 'GET'}, response, '__codex/editor-session', temporary, names[i], import.meta.url, {viewer: {role: 'owner'}}), true);
+    assert.deepEqual(body, {root: path.resolve(temporary), kind: kinds[i], pid: process.pid, nativeSessionVersion: 2, nativeLocalOnly: false});
   }
+});
+
+test('native metadata and boot routes refuse guests before reading local state', async () => {
+  for (const role of [undefined, 'viewer', 'commenter', 'editor']) {
+    for (const route of ['__codex/editor-session', '__codex/annotation-context', '__codex/annotations.js', '__codex/boot.js', '__codex/history-ui.js']) {
+      let status, ended = false;
+      const response = {writeHead(value) { status = value; return this; }, end() { ended = true; }};
+      const result = await serverModule.serveCodexAnnotation({method: 'GET'}, response, route,
+        path.join(temporary, 'must-not-read'), 'codex-design', import.meta.url,
+        {viewer: role ? {role} : undefined, bootScript: () => assert.fail('guest boot metadata must not be computed')});
+      assert.equal(result, true);
+      assert.equal(status, 403);
+      assert.equal(ended, true);
+    }
+  }
+});
+
+test('internal native services refuse network opt-ins while standalone options retain their own behavior', () => {
+  const previous = process.env.CODEX_DESIGN_NATIVE_SESSION;
+  try {
+    process.env.CODEX_DESIGN_NATIVE_SESSION = '1';
+    for (const host of ['127.0.0.1', 'localhost', '::1']) serverModule.assertNativeNetwork({host});
+    for (const options of [{host: '0.0.0.0'}, {host: '::'}, {host: '192.0.2.2'}, {host: 'localhost', lan: true}]) {
+      assert.throws(() => serverModule.assertNativeNetwork(options), {code: 'NATIVE_NETWORK_REFUSED'});
+    }
+    delete process.env.CODEX_DESIGN_NATIVE_SESSION;
+    serverModule.assertNativeNetwork({host: '0.0.0.0', lan: true});
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
+    else process.env.CODEX_DESIGN_NATIVE_SESSION = previous;
+  }
+});
+
+test('real adapted artifact servers retain authenticated metadata, history boot and local-only native startup', async () => {
+  const previous = process.env.CODEX_DESIGN_NATIVE_SESSION;
+  process.env.CODEX_DESIGN_NATIVE_SESSION = '1';
+  try {
+    for (const kind of ['slides', 'design', 'design-system']) {
+      const fixture = await createFixture(kind, temporary);
+      const sharing = path.join(fixture.root, '.sharing.json');
+      const persisted = JSON.stringify({lan: true, port: 42399, links: {}, guests: []});
+      await fs.writeFile(sharing, persisted);
+      const scripts = path.join(pluginRoot, 'skills', fixture.skill, 'scripts');
+      const module = await import(pathToFileURL(path.join(scripts, 'server.mjs')));
+      const server = await module.startServer({root: fixture.root, port: 0, log: () => {}});
+      try {
+        assert.equal(server.lan, undefined, 'opening a native editor must not restore persisted LAN listeners');
+        const base = new URL(server.url), origin = base.origin;
+        const session = await fetch(new URL('__codex/editor-session', base));
+        assert.equal(session.status, 200);
+        assert.deepEqual(await session.json(), {root: path.resolve(fixture.root), kind, pid: process.pid, nativeSessionVersion: 2, nativeLocalOnly: true});
+        assert.equal((await fetch(`${origin}/${kind}/wrong/__codex/editor-session`)).status, 404);
+        assert.equal((await fetch(`${origin}/__codex/editor-session`)).status, 404);
+        const head = await fetch(new URL('__codex/editor-session', base), {method: 'HEAD'});
+        assert.equal(head.status, 200); assert.equal(await head.text(), '');
+        const refused = await fetch(new URL('__codex/editor-session', base), {method: 'POST'});
+        assert.equal(refused.status, 405); await refused.arrayBuffer();
+        const boot = await fetch(new URL('__codex/boot.js?at=1', base));
+        assert.equal(boot.status, 200);
+        const code = await boot.text();
+        assert.match(code, /window\.__baoyuShare=/);
+        assert.match(code, /__baoyuHistory/);
+        assert.match(code, /canRestore/);
+        const historyUI = await fetch(new URL('__codex/history-ui.js', base));
+        assert.equal(historyUI.status, 200);
+        assert.equal(await historyUI.text(), await fs.readFile(path.join(scripts, 'editor/share-ui.js'), 'utf8'));
+        const historyHead = await fetch(new URL('__codex/history-ui.js', base), {method: 'HEAD'});
+        assert.equal(historyHead.status, 200); assert.equal(await historyHead.text(), '');
+        const share = await fetch(`${origin}/__share`, {method: 'POST', headers: {origin, 'content-type': 'application/json'}, body: '{"action":"lan","on":true}'});
+        assert.equal(share.status, 403); assert.equal((await share.json()).code, 'native_local_only');
+        const zip = await fetch(`${origin}/__share/archive`);
+        assert.equal(zip.status, 403); await zip.arrayBuffer();
+        assert.equal(await fs.readFile(sharing, 'utf8'), persisted, 'native opening and refused share requests preserve the old sharing record');
+      } finally { server.close(); }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
+    else process.env.CODEX_DESIGN_NATIVE_SESSION = previous;
+  }
+});
+
+test('upstream port probing excludes synthetic always-answering TUN interfaces but still rejects real occupied ports', async () => {
+  for (const name of names) {
+    const file = path.join(pluginRoot, 'skills', name, 'scripts', name === 'codex-dashboard' ? 'artifact.mjs' : 'server.mjs');
+    const runtime = await fs.readFile(file, 'utf8');
+    const start = runtime.indexOf('async function listenFree('), end = runtime.indexOf('\nfunction serverOrigin(', start);
+    assert.ok(start >= 0 && end > start, `${name}: upstream port probe contract changed`);
+    const implementation = runtime.slice(start, end);
+    const probes = [], binds = [];
+    const portError = class extends Error { code = 'PORT_IN_USE'; };
+    const compile = overrides => vm.runInNewContext(`(${implementation})`, {
+      PORT_TRIES: 100, PortsTaken: portError,
+      lanAddresses: () => ['10.255.0.1', '192.0.2.10'],
+      answersAnyPort: async address => address === '10.255.0.1',
+      answers: async (address, port) => { probes.push({address, port}); return address === '127.0.0.1' && port === 4710; },
+      listen: async (_server, port, host) => { binds.push({port, host}); if (port === 4711) throw Object.assign(new Error('bind race'), {code: 'EADDRINUSE'}); return port; },
+      ...overrides,
+    });
+    const port = await compile()({}, 4710, '127.0.0.1');
+    assert.equal(port, 4712);
+    assert.equal(probes.some(probe => probe.address === '10.255.0.1'), false, 'the always-answering interface must not make every port appear occupied');
+    assert.ok(probes.some(probe => probe.address === '192.0.2.10'), 'ordinary local interfaces remain checked');
+    assert.deepEqual(binds.map(bind => bind.port), [4711, 4712], 'occupied port and bind races retain their guards');
+    const exhausted = compile({answers: async () => true, listen: async () => assert.fail('occupied port must not be bound')});
+    await assert.rejects(exhausted({}, 65535, '127.0.0.1'), {code: 'PORT_IN_USE'});
+    const ephemeral = compile({lanAddresses: () => assert.fail('port zero must let the OS select'), listen: async (_server, value) => value === 0 ? 52719 : assert.fail('unexpected bind')});
+    assert.equal(await ephemeral({}, 0, '127.0.0.1'), 52719);
+  }
+});
+
+test('real adapted artifact saves reject stale or missing bases after an intervening edit without partial writes', async () => {
+  const previous = process.env.CODEX_DESIGN_NATIVE_SESSION;
+  process.env.CODEX_DESIGN_NATIVE_SESSION = '1';
+  try {
+    for (const kind of ['slides', 'design', 'design-system']) {
+      const fixture = await createFixture(kind, temporary);
+      const module = await import(pathToFileURL(path.join(pluginRoot, 'skills', fixture.skill, 'scripts/server.mjs')));
+      const server = await module.startServer({root: fixture.root, port: 0, log: () => {}});
+      try {
+        const base = new URL(server.url);
+        const files = (await (await fetch(new URL('_files.json', base))).json()).files;
+        const content = path.join(fixture.root, fixture.contentFile), index = path.join(fixture.root, fixture.indexFile);
+        const original = await fs.readFile(content, 'utf8');
+        const indexBytes = await fs.readFile(index);
+        const send = async batch => {
+          const response = await fetch(new URL('__deck/publish', base), {method: 'POST',
+            headers: {origin: base.origin, 'content-type': 'application/json', 'x-deck-client': 'codex_cas_test'}, body: JSON.stringify({files: batch})});
+          return {status: response.status, body: await response.json()};
+        };
+        const entry = (text, ifMatch) => ({base64: Buffer.from(text).toString('base64'), contentType: 'text/plain', ...(ifMatch === undefined ? {} : {ifMatch})});
+        const first = await send({[fixture.contentFile]: entry(original + '\nPage edit', files[fixture.contentFile].sha256)});
+        assert.equal(first.status, 200, JSON.stringify(first.body));
+        const external = original + '\nExternal user edit, preserved';
+        await fs.writeFile(content, external);
+        const missing = await send({[fixture.contentFile]: entry(original + '\nStale page overwrite')});
+        assert.equal(missing.status, 409);
+        assert.equal(missing.body.code, 'conflict');
+        assert.equal(await fs.readFile(content, 'utf8'), external);
+        const stale = await send({
+          [fixture.indexFile]: entry(indexBytes.toString() + '\n', files[fixture.indexFile].sha256),
+          [fixture.contentFile]: entry(original + '\nAnother stale overwrite', files[fixture.contentFile].sha256),
+        });
+        assert.equal(stale.status, 409);
+        assert.equal(await fs.readFile(content, 'utf8'), external);
+        assert.deepEqual(await fs.readFile(index), indexBytes, 'the unrelated index must not be partially written');
+      } finally { server.close(); }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
+    else process.env.CODEX_DESIGN_NATIVE_SESSION = previous;
+  }
+});
+
+test('actual Dashboard service keeps native metadata behind its stable artwork base and merges concurrent creation', async () => {
+  const fixture = await createFixture('dashboard', temporary);
+  const sharing = path.join(fixture.root, '.sharing.json');
+  const sharingBytes = JSON.stringify({lan: true, port: 42398, links: {}, guests: []});
+  await fs.writeFile(sharing, sharingBytes);
+  const cli = path.join(pluginRoot, 'skills/codex-dashboard/scripts/artifact.mjs');
+  const child = spawn(process.execPath, [cli, 'serve', fixture.root, '--port', '0'], {
+    env: {...process.env, CODEX_DESIGN_NATIVE_SESSION: '1'}, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '', stderr = '';
+  const closed = new Promise(resolve => child.once('close', (code, signal) => resolve({code, signal})));
+  try {
+    const ready = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Dashboard did not start: ${stderr}`)), 10_000);
+      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('exit', code => { clearTimeout(timer); reject(new Error(`Dashboard exited ${code}: ${stderr}`)); });
+      child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8000); });
+      child.stdout.on('data', chunk => {
+        stdout += chunk.toString();
+        let result; try { result = JSON.parse(stdout); } catch { return; }
+        if (result.url) { clearTimeout(timer); resolve(result); }
+      });
+    });
+    const base = new URL(ready.url);
+    assert.match(base.pathname, /^\/dashboard\/[A-Za-z0-9_-]{22}\/$/);
+    assert.equal(ready.lan, undefined);
+    const session = await fetch(new URL('__codex/editor-session', base));
+    assert.equal(session.status, 200);
+    assert.deepEqual(await session.json(), {root: path.resolve(fixture.root), kind: 'dashboard', pid: child.pid, nativeSessionVersion: 2, nativeLocalOnly: true});
+    for (const route of ['__codex/editor-session', '__codex/annotation-context', '__codex/boot.js', '__codex/history-ui.js']) {
+      for (const requestPath of [`/${route}`, `/dashboard/wrong-base/${route}`]) {
+        const refused = await fetch(`${base.origin}${requestPath}`);
+        assert.equal(refused.status, 404, requestPath); await refused.arrayBuffer();
+      }
+    }
+    const boot = await fetch(new URL('__codex/boot.js', base));
+    assert.equal(boot.status, 200); assert.match(await boot.text(), /__baoyuHistory/);
+    const historyUI = await fetch(new URL('__codex/history-ui.js', base));
+    assert.equal(historyUI.status, 200); assert.match(await historyUI.text(), /__baoyuHistory/);
+    const share = await fetch(`${base.origin}/__share`, {method: 'POST', headers: {origin: base.origin, 'content-type': 'application/json'}, body: '{"action":"lan","on":true}'});
+    assert.equal(share.status, 403); await share.arrayBuffer();
+    const zip = await fetch(`${base.origin}/__share/archive`);
+    assert.equal(zip.status, 403); await zip.arrayBuffer();
+    assert.equal(await fs.readFile(sharing, 'utf8'), sharingBytes);
+    const writeDoc = async data => {
+      const result = await fetch(new URL('_api/write', base), {method: 'POST', headers: {origin: base.origin, 'content-type': 'application/json'},
+        body: JSON.stringify({op: 'set', path: 'dash/concurrent', base: null, data})});
+      assert.equal(result.status, 200); await result.arrayBuffer();
+    };
+    await Promise.all([writeDoc({first: 1}), writeDoc({second: 2})]);
+    const read = await fetch(new URL('_api/doc?path=dash%2Fconcurrent', base));
+    assert.deepEqual((await read.json()).data, {first: 1, second: 2});
+  } finally {
+    child.kill();
+    await closed;
+  }
+});
+
+test('native boot preserves upstream history metadata and preview query in the grant-scoped route', async () => {
+  let body, seen;
+  const response = {writeHead(status, headers) { assert.equal(status, 200); assert.match(headers['Content-Type'], /javascript/); }, end(value) { body = value.toString(); }};
+  assert.equal(await serverModule.serveCodexAnnotation({method: 'GET', url: '/design/grant/__codex/boot.js?at=3'}, response,
+    '__codex/boot.js', temporary, 'codex-design', import.meta.url, {
+      viewer: {role: 'owner'},
+      bootScript: query => { seen = query.get('at'); return 'window.__baoyuHistory={base:"__history",canRestore:true,preview:{n:3}};'; },
+    }), true);
+  assert.equal(seen, '3');
+  const context = {window: {}};
+  vm.runInNewContext(body, context);
+  assert.equal(context.window.__baoyuHistory.preview.n, 3);
+  assert.equal(context.window.__baoyuHistory.canRestore, true);
+});
+
+test('upstream comment-transaction rename is adapted without changing archive replacement', async () => {
+  const runtime = await fs.readFile(path.join(pluginRoot, 'skills/codex-dashboard/scripts/artifact.mjs'), 'utf8');
+  assert.match(runtime, /async function writeAtomic2\(file, text\) \{[\s\S]*?await codexRenameWithRetry\(temp, file\);/);
+  assert.match(runtime, /await fsp\.rename\(tmp, file\);/, 'archive output keeps its independent upstream replacement');
 });
 
 test('slide and artboard identities come from the real index and existing safe files', async () => {

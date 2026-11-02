@@ -10,7 +10,7 @@ import { adaptInlineEditorScript } from '../source/server/editor-document.mjs';
 import { installNativeEditorTransport } from '../source/scripts/editor-native-transport.js';
 import { mountNativeEditor, nativeCommentViewportHint } from '../source/ui/native-editor.mjs';
 
-const plugin = fileURLToPath(new URL('../codex-design/', import.meta.url));
+const upstream = fileURLToPath(new URL('../../skills/', import.meta.url));
 const nativeFlag = '__CODEX_DESIGN_EDITOR_TRANSPORT__';
 const viewportEvent = 'codex-design:comment-viewport-changed';
 const popoverPattern = /function ([\w$]+)\(\{pin:[\w$]+,win:[\w$]+,onEscape:[\w$]+,children:[\w$]+\}\)\{/;
@@ -18,9 +18,9 @@ const listPattern = /function ([\w$]+)\(\{controller:[\w$]+,state:[\w$]+,dark:[\
 const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function canonical(kind) {
-  const directory = path.join(plugin, 'skills', 'codex-' + kind, 'scripts/editor');
+  const directory = path.join(upstream, 'claude-' + kind, 'scripts/editor');
   const html = await fs.readFile(path.join(directory, 'index.html'), 'utf8');
-  return fs.readFile(path.join(directory, kind === 'dashboard' ? 'comments.js' : /<script type="module"[^>]*src="([^"]+)"/.exec(html)[1]), 'utf8');
+  return (await fs.readFile(path.join(directory, kind === 'dashboard' ? 'comments.js' : /<script type="module"[^>]*src="([^"]+)"/.exec(html)[1]), 'utf8')).replaceAll('\r\n', '\n');
 }
 
 function helperSource(source) {

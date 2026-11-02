@@ -1,19 +1,22 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readJson, alive } from '../scripts/bridge-core.mjs';
+import { readJson, alive, samePath } from '../scripts/bridge-core.mjs';
 import { verifyEditorInstance } from '../scripts/artifact-command.mjs';
 import { createArtifactThumbnail } from '../library/thumbnail.mjs';
 import { createEditRequestStore } from '../library/edit-requests.mjs';
 import { createExportStore } from '../library/export-store.mjs';
 import { readJson as safeJson } from '../library/safety.mjs';
-import { createEditorTransport, editorRequestUrl, isValidBase64 } from './editor-transport.mjs';
+import { createEditorTransport, editorRequestUrl, isValidBase64, validateEditorRequest } from './editor-transport.mjs';
+import { installNativePreviews } from '../scripts/native-preview.mjs';
 import { createNativeComments } from './native-comments.mjs';
 import { buildEditorDocument } from './editor-document.mjs';
 import { installNativeEditorTransport } from '../scripts/editor-native-transport.js';
-import { stopWorker } from '../scripts/worker-client.mjs';
+import { getWorkerStatus, stopWorker } from '../scripts/worker-client.mjs';
+import { withLock } from '../scripts/bridge-core.mjs';
+import { loadJobs, WORKER_FILE, WORKER_LOCK_FILE } from '../scripts/worker-core.mjs';
 import { stopLocalEditor } from './editor-lifecycle.mjs';
 import { ACTIONS, KINDS, UNSUPPORTED_CHAT_CODE, fileUri, referenceUri } from './contract.mjs';
 
@@ -38,10 +41,14 @@ export async function openLocalEditor(record, { pluginRoot, env = process.env, t
   const current = readJson(path.join(record.path, '.artifact-server.json'));
   if (current && alive(current.pid)) {
     try {
-      await verifyEditorInstance(current, record.path, record.kind);
+      const session = await verifyEditorInstance(current, record.path, record.kind);
       const binding = readJson(path.join(record.path, '.codex-design-bridge.json'));
-      return { url: current.url, artifactId: record.id, kind: record.kind, reused: true,
-        delivery: binding?.deliveryMode || 'manual', nativeConversationBound: false };
+      if (session.nativeSessionVersion === 2 && session.nativeLocalOnly === true) {
+        return { url: current.url, artifactId: record.id, kind: record.kind, reused: true,
+          delivery: binding?.deliveryMode || 'manual', nativeConversationBound: false };
+      }
+      // The internal startup-lock owner handles a verified, idle legacy
+      // service upgrade. A responding old service is never a refused endpoint.
     } catch (error) {
       // Only the CLI startup-lock owner may archive a conclusively refused
       // record. It rechecks identity, bytes and worker ownership before doing so.
@@ -52,7 +59,7 @@ export async function openLocalEditor(record, { pluginRoot, env = process.env, t
   const cli = path.join(pluginRoot, 'skills', skill, 'scripts', 'codex-artifact.mjs');
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [cli, 'open-service', record.path, '--delivery', 'native'], {
-      cwd: record.path, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: record.path, env: { ...env, CODEX_DESIGN_NATIVE_SESSION: '1' }, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '', stderr = '', settled = false, timedOut = false;
     const finish = (error, result) => { if (settled) return; settled = true; clearTimeout(timer); clearTimeout(hardTimer); error ? reject(error) : resolve(result); };
@@ -207,6 +214,14 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'view.closeTab': return await store.closeTab(payload.id === 'library' ? 'library' : idOf(payload.id));
         case 'view.reorderTabs': if (!Array.isArray(payload.ids)) throw failure('INVALID_ARGUMENTS', 'ids must be an array.'); return await store.reorderTabs(payload.ids.map(id => id === 'library' ? 'library' : idOf(id)));
         case 'editor.open': return await editorFor(payload.id);
+        case 'editor.previewDocument': {
+          if (!Number.isSafeInteger(payload.version) || payload.version < 1 || payload.version > 999999999) throw failure('INVALID_EDITOR_PREVIEW', 'Choose an existing positive history version.');
+          const listed = await transport.request(idOf(payload.id), { path: '__history', method: 'GET' });
+          let history;
+          try { history = JSON.parse(Buffer.from(listed.body, 'base64').toString('utf8')); } catch { throw failure('EDITOR_HISTORY_UNAVAILABLE', 'The artwork history could not be read.'); }
+          if (listed.status !== 200 || !Array.isArray(history.rows) || !history.rows.some(row => row.n === payload.version)) throw failure('EDITOR_PREVIEW_UNAVAILABLE', 'That history version is no longer available.');
+          return await this.invoke('editor.document', { id: payload.id, channel: payload.channel, previewVersion: payload.version, canDraftComments: false });
+        }
         case 'request.draftAdded': return await requests.markDraftAdded(idOf(payload.requestId));
         case 'request.draftFailed': return await requests.markDraftFailed(idOf(payload.requestId), payload.error);
         case 'editor.document': {
@@ -214,9 +229,14 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
           if (typeof payload.channel !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.channel)) throw failure('INVALID_EDITOR_REQUEST', 'A unique editor channel is required.');
           const language = 'en';
           const editor = await editorFor(id);
-          const virtualBase = `https://codex-design.invalid/artifacts/${id}/`;
-          const configuration = { artifactId: id, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2,
-            canDraftComments: payload.canDraftComments === true };
+          const rootBaseUrl = `https://codex-design.invalid/artifacts/${id}/`;
+          const previewVersion = payload.previewVersion;
+          if (previewVersion !== undefined && (!Number.isSafeInteger(previewVersion) || previewVersion < 1 || previewVersion > 999999999)) throw failure('INVALID_EDITOR_PREVIEW', 'Choose an existing positive history version.');
+          const requestPrefix = previewVersion === undefined ? '' : `v/${previewVersion}/`;
+          const virtualBase = rootBaseUrl + requestPrefix;
+          const configuration = { artifactId: id, kind: editor.kind, channel: payload.channel, baseUrl: virtualBase, language, hostDepth: 2,
+            rootBaseUrl, serverPath: new URL(editor.url).pathname, requestPrefix, readOnly: previewVersion !== undefined,
+            canDraftComments: previewVersion === undefined && payload.canDraftComments === true };
           if (editor.kind === 'design-system') {
             configuration.previewVendors = await Promise.all([
               ['react.production.min.js', 'd949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd'],
@@ -227,7 +247,7 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
               return { file, url: 'data:text/javascript;base64,' + bytes.toString('base64') };
             }));
           }
-          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, '\\u003c')});`;
+          const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, '\\u003c')},undefined,${installNativePreviews.toString()});`;
           const root = new URL(editor.url);
           const fetchLocal = async value => {
             const url = new URL(String(value));
@@ -240,16 +260,50 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
             let asset;
             if (!relative) asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor/index.html');
             else if (relative === '__codex/annotations.js') asset = path.join(pluginRoot, 'scripts/browser-annotations.js');
+            else if (relative === '__codex/boot.js') {
+              const response = await transport.request(id, { path: '__codex/boot.js' + (previewVersion === undefined ? '' : `?at=${previewVersion}`), method: 'GET' });
+              return new Response(Buffer.from(response.body, 'base64'), { status: response.status, headers: response.headers });
+            }
+            else if (relative === '__codex/history-ui.js') asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor/share-ui.js');
             else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
               asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor', relative);
             } else throw failure('EDITOR_ASSET_REFUSED', 'Only packaged static editor assets can be assembled.');
             const bytes = await readFile(asset);
             return new Response(bytes, { headers: { 'content-length': String(bytes.length) } });
           };
-          const document = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap } });
+          const document = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap, nativeHistory: true } });
           return { ...editor, ...document, artifactId: id, channel: payload.channel, transport: 'mcp' };
         }
-        case 'editor.request': return await nativeComments.request(idOf(payload.id), payload.request);
+        case 'editor.request': {
+          const id = idOf(payload.id), request = payload.request ?? {};
+          const { method } = validateEditorRequest(request);
+          const editor = await editorFor(id);
+          const url = editorRequestUrl(editor.url, request.path);
+          const route = decodeURIComponent(url.pathname.slice(new URL(editor.url).pathname.length)).split('/').filter(Boolean).join('/');
+          if (method === 'POST' && /^__history\/(?:\d+\/restore|notice\/[^/]+\/recover)$/.test(route)) {
+            const record = await requireRecord(id);
+            return await withLock(path.join(record.path, WORKER_LOCK_FILE), async () => {
+              const worker = await getWorkerStatus(record.path);
+              const jobs = loadJobs(record.path);
+              let registry;
+              try {
+                const file = path.join(record.path, WORKER_FILE);
+                const info = await lstat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+                if (info) {
+                  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Unverified worker registry.');
+                  registry = JSON.parse(await readFile(file, 'utf8'));
+                  if (!registry || registry.version !== 1 || !samePath(registry.root, record.path)
+                    || !['waiting', 'paused'].includes(registry.status) || registry.activeJobId
+                    || !UUID.test(registry.nativeThreadId || '') || ['pid', 'url', 'token', 'command'].some(key => Object.hasOwn(registry, key))) throw new Error('Unverified worker ownership.');
+                }
+              } catch { throw failure('ARTIFACT_BUSY', 'Worker ownership could not be verified before restoring edit history.'); }
+              if (worker.counts.active || worker.counts.pending || Object.values(jobs.jobs).some(job => !job || !['completed', 'failed', 'superseded'].includes(job.status))) throw failure('ARTIFACT_BUSY', 'Finish or coordinate queued AI work before restoring edit history.');
+              await store.snapshot(id, { label: 'Before partial restore' });
+              return await nativeComments.request(id, request);
+            }, { timeoutMs: 10000, staleMs: 0 });
+          }
+          return await nativeComments.request(id, request);
+        }
         case 'editor.digest': {
           await requireRecord(payload.id);
           if (payload.algorithm !== 'SHA-256' || typeof payload.base64 !== 'string' || payload.base64.length > 44_739_244

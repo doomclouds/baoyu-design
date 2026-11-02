@@ -89,9 +89,26 @@ function definitionFor(source, property) {
   return { ...part, start, end: start + part.end, parameters, async: source.slice(start - 6, start) === 'async ' };
 }
 
+function isEditorResourceData(source) {
+  const prefix = 'globalThis.__CODEX_DESIGN_EDITOR_RESOURCES__=';
+  if (!source.startsWith(prefix)) return false;
+  const text = source.slice(prefix.length).trimEnd();
+  if (!text.endsWith(';')) return false;
+  try {
+    const value = JSON.parse(text.slice(0, -1));
+    const messages = value?.resources?.en?.editor;
+    return ['slides', 'design', 'design-system', 'dashboard'].includes(value?.kind) && value.language === 'en'
+      && messages !== null && typeof messages === 'object' && !Array.isArray(messages);
+  } catch { return false; }
+}
+
 /** Patch verified AI handoff helpers, not clipboard APIs or the user's Copy controls. */
 export function adaptAgentDrafts(source) {
   if (source.includes(marker)) return source;
+  // English resource catalogs now contain the same diagnostic phrases as
+  // real handoff modules. Only the complete generated JSON envelope is data;
+  // a changed module or extra executable code must retain the drift refusal.
+  if (isEditorResourceData(source)) return source;
   const updates = [];
   const insert = (property, make, expected) => {
     const part = definitionFor(source, property);
@@ -140,7 +157,8 @@ export function adaptAgentDrafts(source) {
     source = source.replace(pattern, (...values) => { count++; return replacement(...values); });
     if (count !== expected) throw new Error('The canonical artwork request label changed; native artwork drafting was refused.');
   };
-  if (kind === 'slides') label(/children:"Ask the agent to fix"/g, () => `children:${native}?"Add fix to chat":"Ask the agent to fix"`, 1);
+  if (kind === 'slides') label(/children:("Ask the agent to fix"|\(0,e\.formatMessage\)\(\{defaultMessage:"Ask the agent to fix",id:"[^"\\]+"\}\))/g,
+    (_, canonical) => `children:${native}?"Add fix to chat":${canonical}`, 1);
   if (kind === 'design') label(/children:([\w$]+)\.ask(?=[,}])/g, (_, value) => `children:${native}?"Add fix to chat":${value}.ask`, 2);
   if (kind === 'dashboard') {
     label(/([\w$]+)="Ask the agent to fix"/g, (_, value) => `${value}=${native}?"Add fix to chat":"Ask the agent to fix"`, 1);

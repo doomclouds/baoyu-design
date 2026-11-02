@@ -4,6 +4,7 @@ import { adaptCommentToolbar } from '../scripts/comment-toolbar-adapter.mjs';
 import { adaptCommentDrafts } from '../scripts/comment-draft-adapter.mjs';
 import { adaptCommentViewport } from '../scripts/comment-viewport-adapter.mjs';
 import { adaptAgentDrafts } from '../scripts/agent-draft-adapter.mjs';
+import { adaptNativeHistoryUi } from '../scripts/native-history-adapter.mjs';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
 const scriptText = value => value.replace(/<\/script/gi, '<\\/script');
@@ -22,6 +23,7 @@ async function replaceAsync(source, expression, transform) {
 
 /** Adapt only the editor's local-host selection, never authored artwork files. */
 export function adaptInlineEditorScript(source, scriptUrl) {
+  if (new URL(scriptUrl).pathname.endsWith('/__codex/history-ui.js')) return adaptNativeHistoryUi(source);
   source = repairEditorRuntime(source);
   source = adaptCommentToolbar(source);
   source = adaptCommentDrafts(source);
@@ -46,8 +48,13 @@ export function adaptInlineEditorScript(source, scriptUrl) {
     (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`);
   // Capture the original editor flush closure before its optional parent-link
   // branch. It dispatches the editor's dirty guard and awaits its publish queue.
-  source = source.replace(/return ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\),\5&&\(\5\.onMessage\(async ([\w$]+)=>\{if\(\6\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(\2,\4\);/g,
-    (match, listen, win, base, client, parent, request, saved, flush) => `return globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match.slice(7)}`);
+  let flushCaptures = 0;
+  source = source.replace(/([\w$]+)&&\(\1\.onMessage\(async ([\w$]+)=>\{if\(\2\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(([\w$]+),([\w$]+)\);/g,
+    (match, parent, request, saved, flush, win, client) => {
+      flushCaptures++;
+      return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match}`;
+    });
+  if (flushCaptures > 1 || /type:["']editor:flushed["']/.test(source) && flushCaptures !== 1) throw error('EDITOR_FLUSH_ADAPTER_UNSUPPORTED', 'The editor save barrier changed; review its native adapter before loading it.');
   source = source.replace(/new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,
     match => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.language??${match})`);
   return source;
@@ -123,6 +130,12 @@ export async function buildEditorDocument({ baseUrl, fetchLocal, config = {}, ma
   };
   let html = (await bytes(base.href)).toString('utf8');
   if (!/<head\b[^>]*>/i.test(html)) throw error('EDITOR_INVALID_DOCUMENT', 'The editor did not return an HTML document.');
+  if (config.nativeHistory === true) {
+    // Native chrome uses only authenticated, artwork-scoped boot metadata and
+    // the canonical History controller. Never load the network Share module.
+    html = html.replace(/<script\b[^>]*\bsrc\s*=\s*(["'])\/__share\/(?:boot|ui)\.js(?:\?[^"']*)?\1[^>]*>\s*<\/script>/gi, '');
+    html = html.replace(/<head\b[^>]*>/i, match => `${match}<script src="./__codex/boot.js"></script><script type="module" src="./__codex/history-ui.js"></script>`);
+  }
   html = html.replace('appifact_extra_export_formats:window.parent===window', 'appifact_extra_export_formats:true');
   html = html.replace(/<base\b[^>]*>/gi, '');
   // Resolve document tags before inserting JavaScript, whose string literals

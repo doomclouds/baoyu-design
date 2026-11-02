@@ -23675,6 +23675,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     restoreVersionTitle: "Restore this version?",
     restoreVersionBody: "This replaces the artwork content. A recovery point is saved first. Comments and conversations remain separate. Confirm that the editor has saved your changes before continuing.",
     versionRestored: "Artwork version restored",
+    editHistory: "Edit history",
+    openingEditHistory: "Opening edit history…",
+    editHistoryDescription: "View detailed edits, compare changes and restore selected content in this artwork’s editor.",
+    editHistoryUnavailable: "Detailed edit history is available only in a supported native artwork editor.",
     transferTooLarge: "This artwork package exceeds the 16 MB transfer limit.",
     invalidBundle: "Choose a valid Codex Design artwork package.",
     fileReadFailed: "The selected file could not be read.",
@@ -24177,7 +24181,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }
 
   // source/ui/native-editor.mjs
-  var ALLOWED = /* @__PURE__ */ new Set(["editor.request", "editor.digest", "editor.events.open", "editor.events.poll", "editor.events.close", "editor.download"]);
+  var ALLOWED = /* @__PURE__ */ new Set(["editor.request", "editor.digest", "editor.events.open", "editor.events.poll", "editor.events.close", "editor.download", "editor.previewDocument"]);
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var REQUEST_LIMIT = 128;
   var errorDetail = (error112) => ({ code: error112?.code || "EDITOR_REQUEST_FAILED", message: String(error112?.message || error112).slice(0, 2e3) });
@@ -24236,8 +24240,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   function loadEditorDocument(channel) {
     let accepted = false;
     let editor;
-    const outgoing = /* @__PURE__ */ new Set(["codex-design:editor-request", "codex-design:editor-transport-ready", "codex-design:editor-app-ready", "codex-design:editor-diagnostic", "codex-design:editor-flushed"]);
-    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed", "codex-design:editor-flush", "codex-design:ui-language-changed"]);
+    const outgoing = /* @__PURE__ */ new Set(["codex-design:editor-request", "codex-design:editor-transport-ready", "codex-design:editor-app-ready", "codex-design:editor-diagnostic", "codex-design:editor-flushed", "codex-design:editor-history-opened"]);
+    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed", "codex-design:editor-flush", "codex-design:ui-language-changed", "codex-design:editor-history-open", "codex-design:editor-history-close"]);
     const receive = (event) => {
       const message = event.data;
       if (message?.channel !== channel) return;
@@ -24258,7 +24262,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     window.addEventListener("message", receive);
     window.parent.postMessage({ type: "codex-design:editor-document-request", channel }, "*");
   }
-  function mountNativeEditor({ iframe, bridge, artifactId: artifactId2, channel, document: editorDocument, onError, onReady, startupTimeoutMs = 3e4 } = {}) {
+  function mountNativeEditor({ iframe, bridge, artifactId: artifactId2, channel, document: editorDocument, onError, onReady, startupTimeoutMs = 3e4, historyTimeoutMs = 1e4 } = {}) {
     if (typeof editorDocument?.html !== "string" || !editorDocument.html.trim()) throw new TypeError("The editor document is missing.");
     const ownerWindow = iframe.ownerDocument?.defaultView || window;
     const subscriptions = /* @__PURE__ */ new Set();
@@ -24266,9 +24270,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let disposed = false;
     let appReady = false;
     let flush;
+    let readyFailure, historyAction;
+    const readyWaiters = /* @__PURE__ */ new Set();
     let viewportObserver, lastViewportBottom;
     const startup = setTimeout(() => {
-      if (!disposed) onError?.({ code: "EDITOR_START_TIMEOUT", message: "The artwork editor did not finish opening. Retry this artwork tab." });
+      if (!disposed) {
+        readyFailure = Object.assign(new Error("The artwork editor did not finish opening. Retry this artwork tab."), { code: "EDITOR_START_TIMEOUT" });
+        for (const waiter of readyWaiters) waiter.reject(readyFailure);
+        readyWaiters.clear();
+        onError?.(errorDetail(readyFailure));
+      }
     }, startupTimeoutMs);
     startup.unref?.();
     const sendHostContext = () => {
@@ -24363,6 +24374,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       if (message.type === "codex-design:editor-app-ready") {
         appReady = true;
         clearTimeout(startup);
+        for (const waiter of readyWaiters) waiter.resolve();
+        readyWaiters.clear();
         onReady?.();
         return;
       }
@@ -24372,6 +24385,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         flush = void 0;
         clearTimeout(current.timer);
         message.saved === true ? current.resolve({ saved: true }) : current.reject(Object.assign(new Error(message.error?.message || "The editor still has unsaved changes."), { code: message.error?.code || "EDITOR_UNSAVED_CHANGES" }));
+        return;
+      }
+      if (message.type === "codex-design:editor-history-opened") {
+        const current = historyAction;
+        if (!current?.reply || message.requestId !== current.requestId) return;
+        clearTimeout(current.timer);
+        if (message.opened === true) current.reply.resolve({ opened: true });
+        else current.reply.reject(Object.assign(new Error(message.error?.message || "Detailed edit history is unavailable for this artwork."), { code: message.error?.code || "NATIVE_HISTORY_UNAVAILABLE" }));
+        current.reply = void 0;
         return;
       }
       if (message.type === "codex-design:editor-diagnostic") {
@@ -24415,30 +24437,76 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       unsubscribe?.();
       throw error112;
     }
+    const flushEditor = () => {
+      if (disposed) return Promise.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
+      if (!appReady) return Promise.resolve({ saved: true });
+      if (flush) return flush.promise;
+      const requestId = crypto.randomUUID();
+      let resolve, reject;
+      const promise3 = new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      const timer = setTimeout(() => {
+        if (flush?.requestId !== requestId) return;
+        flush = void 0;
+        reject(Object.assign(new Error("The editor did not confirm that changes were saved."), { code: "EDITOR_UNSAVED_CHANGES" }));
+      }, 1e4);
+      flush = { requestId, promise: promise3, resolve, reject, timer };
+      iframe.contentWindow?.postMessage({ type: "codex-design:editor-flush", channel, requestId }, "*");
+      return promise3;
+    };
+    const openHistory = ({ signal } = {}) => {
+      if (disposed) return Promise.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
+      if (signal?.aborted) return Promise.reject(signal.reason || Object.assign(new Error("Opening edit history was cancelled."), { code: "EDITOR_HISTORY_CANCELLED" }));
+      if (historyAction) return historyAction.promise;
+      const action = {};
+      let rejectCancelled;
+      const cancelled = new Promise((_resolve, reject) => {
+        rejectCancelled = reject;
+      });
+      void cancelled.catch(() => {
+      });
+      action.cancel = (error112) => {
+        if (action.requestId) iframe.contentWindow?.postMessage({ type: "codex-design:editor-history-close", channel, requestId: action.requestId }, "*");
+        rejectCancelled(error112);
+      };
+      const onAbort = () => action.cancel(signal.reason || Object.assign(new Error("Opening edit history was cancelled."), { code: "EDITOR_HISTORY_CANCELLED" }));
+      signal?.addEventListener("abort", onAbort, { once: true });
+      action.promise = (async () => {
+        if (!appReady) {
+          if (readyFailure) throw readyFailure;
+          const ready = new Promise((resolve, reject) => {
+            action.ready = { resolve, reject };
+            readyWaiters.add(action.ready);
+          });
+          await Promise.race([ready, cancelled]);
+        }
+        await Promise.race([flushEditor(), cancelled]);
+        if (disposed || signal?.aborted) throw signal?.reason || Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" });
+        action.requestId = crypto.randomUUID();
+        const reply2 = new Promise((resolve, reject) => {
+          action.reply = { resolve, reject };
+        });
+        action.timer = setTimeout(() => action.cancel(Object.assign(new Error("The editor did not confirm opening edit history."), { code: "EDITOR_HISTORY_TIMEOUT" })), historyTimeoutMs);
+        iframe.contentWindow?.postMessage({ type: "codex-design:editor-history-open", channel, requestId: action.requestId }, "*");
+        return await Promise.race([reply2, cancelled]);
+      })().finally(() => {
+        signal?.removeEventListener("abort", onAbort);
+        clearTimeout(action.timer);
+        if (action.ready) readyWaiters.delete(action.ready);
+        if (historyAction === action) historyAction = void 0;
+      });
+      historyAction = action;
+      return action.promise;
+    };
     return {
       url: url3,
       post(message) {
         if (!disposed) iframe.contentWindow?.postMessage({ ...message, channel }, "*");
       },
-      flush() {
-        if (disposed) return Promise.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
-        if (!appReady) return Promise.resolve({ saved: true });
-        if (flush) return flush.promise;
-        const requestId = crypto.randomUUID();
-        let resolve, reject;
-        const promise3 = new Promise((yes, no) => {
-          resolve = yes;
-          reject = no;
-        });
-        const timer = setTimeout(() => {
-          if (flush?.requestId !== requestId) return;
-          flush = void 0;
-          reject(Object.assign(new Error("The editor did not confirm that changes were saved."), { code: "EDITOR_UNSAVED_CHANGES" }));
-        }, 1e4);
-        flush = { requestId, promise: promise3, resolve, reject, timer };
-        iframe.contentWindow?.postMessage({ type: "codex-design:editor-flush", channel, requestId }, "*");
-        return promise3;
-      },
+      flush: flushEditor,
+      openHistory,
       dispose() {
         if (disposed) return;
         disposed = true;
@@ -24447,6 +24515,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         ownerWindow.removeEventListener("message", listener);
         iframe.removeEventListener?.("load", sendHostContext);
         unsubscribe?.();
+        const closed = Object.assign(new Error("The artwork editor closed before edit history opened."), { code: "EDITOR_CLOSED" });
+        historyAction?.cancel(closed);
+        for (const waiter of readyWaiters) waiter.reject(closed);
+        readyWaiters.clear();
         if (flush) {
           clearTimeout(flush.timer);
           flush.reject(Object.assign(new Error("The editor closed before saving was confirmed."), { code: "EDITOR_UNSAVED_CHANGES" }));
@@ -24547,6 +24619,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let currentSurface = null;
     let currentEditorUrl = null;
     let currentNativeEditor = null;
+    let currentEditorLoad = null;
+    let editHistoryAction = null;
     const renamingIds = /* @__PURE__ */ new Set();
     const recordLoads = /* @__PURE__ */ new Map();
     let editorRecordLoad = null;
@@ -24575,6 +24649,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const menuDismissal = createMenuDismissal({ document, window, onDismiss: closeMenu });
     const recordFor = (id) => state.records.find((record3) => record3.id === id);
     const activeRecord = () => recordFor(state.view.activeTabId);
+    function cancelEditHistory(closeDialog = false) {
+      const current = editHistoryAction;
+      if (!current) return;
+      editHistoryAction = null;
+      current.abort.abort(new BridgeError("Opening edit history was cancelled.", "EDITOR_HISTORY_CANCELLED"));
+      if (closeDialog && elements.dialog.querySelector("[data-history-id]") === current.form) elements.dialog.close();
+    }
     async function flushCurrentEditor() {
       const editor = currentNativeEditor;
       if (typeof editor?.flush !== "function") return;
@@ -24928,6 +25009,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const host = elements.panel.querySelector(".editor-frame-host");
       if (!host) return;
       host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape2(t2("loadingEditor")) + "</p></div>";
+      let finishLoading;
+      const loading = { id, sequence, promise: new Promise((resolve) => {
+        finishLoading = resolve;
+      }) };
+      currentEditorLoad = loading;
       try {
         const native = bridge.supportsInlineEditor === true;
         const channel = native ? crypto.randomUUID() : null;
@@ -24971,11 +25057,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
         host.replaceChildren(iframe);
         if (native) {
-          const loading = document.createElement("div");
-          loading.className = "editor-boot-overlay";
-          loading.setAttribute("role", "status");
-          loading.innerHTML = '<span class="spinner"></span><p>' + escape2(t2("loadingEditor")) + "</p>";
-          host.append(loading);
+          const loading2 = document.createElement("div");
+          loading2.className = "editor-boot-overlay";
+          loading2.setAttribute("role", "status");
+          loading2.innerHTML = '<span class="spinner"></span><p>' + escape2(t2("loadingEditor")) + "</p>";
+          host.append(loading2);
         }
         const external = elements.panel.querySelector(".editor-external");
         if (external) {
@@ -24984,6 +25070,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
       } catch (error112) {
         if (sequence === editorSequence && state.view.activeTabId === id) renderEditorFailure(errorMessage(error112), id);
+      } finally {
+        finishLoading();
+        if (currentEditorLoad === loading) currentEditorLoad = null;
       }
     }
     function renderEditorFailure(message, id) {
@@ -25117,6 +25206,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }
     function applyView(value) {
       state.view = normalizeViewState(value?.viewState || value);
+      if (editHistoryAction && state.view.activeTabId !== editHistoryAction.id) cancelEditHistory(true);
       renderTabs();
       renderSidebar();
       renderWorkspace();
@@ -25149,6 +25239,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         const records = Array.isArray(result) ? result : result?.artifacts;
         if (!Array.isArray(records)) throw new BridgeError("The library returned an invalid list.", "INVALID_RESPONSE");
         state.records = records.filter(isRecord);
+        if (editHistoryAction && (!recordFor(editHistoryAction.id) || isDeleted(recordFor(editHistoryAction.id)))) cancelEditHistory(true);
         state.error = null;
       } catch (error112) {
         if (sequence !== recordsSequence) return;
@@ -25239,24 +25330,74 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     async function openHistory(id) {
       const record3 = recordFor(id);
       if (!record3 || isDeleted(record3)) return;
+      cancelEditHistory();
       closeMenu();
       const dialog = elements.dialog;
-      dialog.innerHTML = '<section class="dialog-form history-dialog" data-history-id="' + escape2(id) + '"><header><h2 id="design-dialog-title">' + escape2(t2("versionHistory")) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape2(t2("closeDialog")) + '">' + icon("close") + '</button></header><p class="dialog-description">' + escape2(t2("historyDescription")) + '</p><button type="button" class="button secondary" data-action="snapshot-create" data-id="' + escape2(id) + '"' + disabled("library.snapshot") + ">" + icon("plus") + escape2(t2("createSnapshot")) + '</button><div class="snapshot-list" aria-live="polite"><p class="field-hint">' + escape2(t2("loadingHistory")) + '</p></div><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape2(t2("done")) + "</button></footer></section>";
+      const detailed = bridge.supportsInlineEditor === true && enabled("editor.document");
+      dialog.innerHTML = '<section class="dialog-form history-dialog" data-history-id="' + escape2(id) + '"><header><h2 id="design-dialog-title">' + escape2(t2("versionHistory")) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape2(t2("closeDialog")) + '">' + icon("close") + '</button></header><p class="dialog-description">' + escape2(t2("historyDescription")) + '</p><button type="button" class="button secondary" data-action="snapshot-create" data-id="' + escape2(id) + '"' + disabled("library.snapshot") + ">" + icon("plus") + escape2(t2("createSnapshot")) + '</button><button type="button" class="button secondary" data-action="edit-history" data-id="' + escape2(id) + '"' + (detailed ? "" : " disabled") + ">" + icon("clock") + escape2(t2("editHistory")) + '</button><p class="field-hint">' + escape2(t2(detailed ? "editHistoryDescription" : "editHistoryUnavailable")) + '</p><p class="dialog-error edit-history-error" role="alert" hidden></p><div class="snapshot-list" aria-live="polite"><p class="field-hint">' + escape2(t2("loadingHistory")) + '</p></div><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape2(t2("done")) + "</button></footer></section>";
+      const historyForm = dialog.querySelector("[data-history-id]");
       dialog.setAttribute("aria-labelledby", "design-dialog-title");
       if (!dialog.open) dialog.showModal();
       try {
         const snapshots = await transfer.listSnapshots(id);
-        if (state.destroyed || !dialog.open || dialog.querySelector("[data-history-id]")?.dataset.historyId !== id) return;
+        if (state.destroyed || !dialog.open || dialog.querySelector("[data-history-id]") !== historyForm) return;
         const automaticLabels = { Snapshot: "manualSnapshot", "Before restore": "beforeRestoreSnapshot", "Before AI edit": "beforeAiSnapshot", "Before resumed AI edit": "beforeResumedAiSnapshot" };
         dialog.querySelector(".snapshot-list").innerHTML = snapshots.length ? snapshots.map((snapshot) => '<article class="snapshot-row"><div><strong>' + escape2(Object.hasOwn(automaticLabels, snapshot.label) ? t2(automaticLabels[snapshot.label]) : snapshot.label || t2("manualSnapshot")) + '</strong><time datetime="' + escape2(snapshot.createdAt) + '">' + escape2(new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(snapshot.createdAt))) + '</time></div><button type="button" class="button secondary" data-action="snapshot-restore" data-id="' + escape2(id) + '" data-snapshot-id="' + escape2(snapshot.id) + '"' + disabled("library.restoreSnapshot") + ">" + escape2(t2("restoreVersion")) + "</button></article>").join("") : '<p class="field-hint">' + escape2(t2("historyEmpty")) + "</p>";
       } catch (error112) {
-        if (dialog.querySelector("[data-history-id]")?.dataset.historyId === id) dialog.querySelector(".snapshot-list").innerHTML = '<p class="dialog-error">' + escape2(errorMessage(error112)) + "</p>";
+        if (!state.destroyed && dialog.open && dialog.querySelector("[data-history-id]") === historyForm) dialog.querySelector(".snapshot-list").innerHTML = '<p class="dialog-error">' + escape2(errorMessage(error112)) + "</p>";
+      }
+    }
+    async function openEditHistory(id, button) {
+      const dialog = elements.dialog, form = dialog.querySelector("[data-history-id]");
+      if (!dialog.open || !form || form.dataset.historyId !== id || editHistoryAction) return;
+      const errorNode = dialog.querySelector(".edit-history-error");
+      const action = { id, form, abort: new AbortController() };
+      editHistoryAction = action;
+      const current = () => !state.destroyed && !action.abort.signal.aborted && editHistoryAction === action && dialog.open && dialog.querySelector("[data-history-id]") === form;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.innerHTML = icon("clock") + escape2(t2("openingEditHistory"));
+      if (errorNode) {
+        errorNode.hidden = true;
+        errorNode.textContent = "";
+      }
+      try {
+        if (bridge.supportsInlineEditor !== true || !enabled("editor.document")) throw new BridgeError(t2("editHistoryUnavailable"), "NATIVE_HISTORY_UNAVAILABLE");
+        const record3 = await invoke("library.get", { id });
+        if (!current()) return;
+        if (!isRecord(record3) || record3.id !== id) throw new BridgeError("The library returned an invalid artwork record.", "INVALID_RESPONSE");
+        if (isDeleted(record3)) throw new BridgeError(t2("artifactNotFound"), "ARTIFACT_UNAVAILABLE");
+        if (record3.contentStatus && record3.contentStatus !== "ok") throw new BridgeError(t2(record3.contentStatus === "missing" ? "missingBody" : "invalidBody"), "ARTIFACT_UNAVAILABLE");
+        if (state.view.activeTabId !== id && !await changeView("openTab", { id })) throw new BridgeError(t2("editorUnavailable"), "EDITOR_OPEN_FAILED");
+        if (!current() || state.view.activeTabId !== id) return;
+        if (currentEditorLoad?.id === id) await currentEditorLoad.promise;
+        if (!current() || state.view.activeTabId !== id) return;
+        const editor = currentNativeEditor;
+        if (typeof editor?.openHistory !== "function") throw new BridgeError(t2("editHistoryUnavailable"), "NATIVE_HISTORY_UNAVAILABLE");
+        const result = await editor.openHistory({ signal: action.abort.signal });
+        if (!current() || state.view.activeTabId !== id || currentNativeEditor !== editor) return;
+        if (result?.opened !== true) throw new BridgeError(t2("editHistoryUnavailable"), "NATIVE_HISTORY_UNAVAILABLE");
+        editHistoryAction = null;
+        dialog.close();
+      } catch (error112) {
+        if (current() && errorNode) {
+          errorNode.textContent = errorMessage(error112);
+          errorNode.hidden = false;
+        }
+      } finally {
+        if (editHistoryAction === action) editHistoryAction = null;
+        if (!state.destroyed && dialog.open && dialog.querySelector("[data-history-id]") === form) {
+          button.disabled = bridge.supportsInlineEditor !== true || !enabled("editor.document");
+          button.removeAttribute("aria-busy");
+          button.innerHTML = icon("clock") + escape2(t2("editHistory"));
+        }
       }
     }
     function openPurgeDialog(records) {
       if (busy("purge-trash") || !enabled("library.purge")) return;
       const eligible = records.filter((record3) => record3 && isDeleted(record3));
       if (!eligible.length) return;
+      cancelEditHistory();
       closeMenu();
       purgeConfirmation = eligible.map((record3) => ({ id: record3.id, title: record3.title }));
       elements.dialog.innerHTML = '<form class="dialog-form" data-dialog-type="purge"><header><h2 id="design-dialog-title">' + escape2(t2("purgeTitle", { count: eligible.length })) + '</h2><button type="button" class="icon-button" data-action="close-dialog" aria-label="' + escape2(t2("closeDialog")) + '">' + icon("close") + '</button></header><div class="dialog-fields"><p class="dialog-description">' + escape2(t2("purgeBody", { count: eligible.length })) + '</p><ul class="purge-title-list">' + eligible.map((record3) => "<li>" + escape2(record3.title) + "</li>").join("") + '</ul><p class="purge-warning">' + escape2(t2("purgeIrreversible")) + '</p></div><p class="dialog-error purge-error" role="alert" hidden></p><footer><button type="button" class="button secondary" data-action="close-dialog">' + escape2(t2("cancel")) + '</button><button type="submit" class="button destructive">' + escape2(t2("deletePermanently")) + "</button></footer></form>";
@@ -25318,6 +25459,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     }
     function openDialog(type, record3, details = {}) {
+      cancelEditHistory();
       closeMenu();
       const dialog = elements.dialog;
       let title, fields = "", submit;
@@ -25485,6 +25627,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         toast(saved?.path ? t2("exported") + ": " + saved.path : t2("exported"));
       });
       else if (action === "history") await openHistory(id);
+      else if (action === "edit-history") await openEditHistory(id, button);
       else if (action === "snapshot-create") await runAction("snapshot-" + id, async () => {
         if (state.view.activeTabId === id) await flushCurrentEditor();
         await transfer.createSnapshot(id, t2("manualSnapshot"));
@@ -25513,6 +25656,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       } else if (action === "close-dialog") {
         if (!busy("purge-trash")) {
           purgeConfirmation = null;
+          cancelEditHistory();
           elements.dialog.close();
         }
       } else if (action === "category") await setCategory(button.dataset.category);
@@ -25604,8 +25748,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }, { signal: abort.signal });
     elements.dialog.addEventListener("cancel", (event) => {
       if (busy("purge-trash")) event.preventDefault();
-      else purgeConfirmation = null;
+      else {
+        purgeConfirmation = null;
+        cancelEditHistory();
+      }
     }, { signal: abort.signal });
+    elements.dialog.addEventListener("close", () => cancelEditHistory(), { signal: abort.signal });
     root.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && state.mobileSidebar) {
         state.mobileSidebar = false;
@@ -25724,6 +25872,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       activateArtifact: (id) => changeView("openTab", { id }),
       destroy() {
         state.destroyed = true;
+        cancelEditHistory();
         if (bridge.beforeNavigate === navigationGuard) bridge.beforeNavigate = previousNavigationGuard;
         currentNativeEditor?.dispose();
         currentNativeEditor = null;
@@ -43567,7 +43716,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.5.3";
+  var PLUGIN_UI_VERSION = "0.6.0";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
@@ -43593,6 +43742,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "view.reorderTabs",
     "editor.open",
     "editor.document",
+    "editor.previewDocument",
     "editor.request",
     "editor.digest",
     "editor.events.open",

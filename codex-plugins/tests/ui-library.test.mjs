@@ -23,7 +23,7 @@ class Surface {
   emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler({ target: this, ...event }); }
 }
 
-async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument, onGet } = {}) {
+async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument, onGet, onHistory } = {}) {
   const document = new Surface(), window = new Surface(), nodes = [], storageReads = [], actions = [], editorCalls = [], editorInstances = [], posted = [], timeline = [];
   document.documentElement = {}; document.hidden = false; document.activeElement = null;
   class Element extends Surface {
@@ -34,6 +34,8 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
       this._html = value;
       for (const child of new Set([...this.children, ...this.slots.values()])) child.parent = null;
       this.children = []; this.slots.clear();
+      const historyId = /data-history-id="([^"]+)"/.exec(value)?.[1];
+      if (historyId) { const form = new Element('SECTION', this); form.dataset.historyId = historyId; this.slots.set('[data-history-id]', form); }
     }
     classList = { add() {}, remove() {}, toggle() {}, contains: name => this.className.split(' ').includes(name) };
     setAttribute(name, value) { this.attrs.set(name, value); }
@@ -62,7 +64,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     }
     select() {}
     showModal() { this.open = true; }
-    close() { this.open = false; }
+    close() { this.open = false; this.emit('close'); }
     reportValidity() { return true; }
   }
   const root = new Element();
@@ -124,6 +126,12 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
       editorCalls.push('mount'); timeline.push('mount');
       const instance = { iframe, artifactId, document: editorDocument, disposed: false, url: 'data:editor', post: message => posted.push(message),
         flush: async () => { editorCalls.push('flush'); timeline.push('flush'); if (onFlush) await onFlush(instance); if (failSave) throw Object.assign(new Error('Unsaved'), { code: 'EDITOR_UNSAVED_CHANGES' }); editorCalls.push('saved'); timeline.push('saved'); },
+        async openHistory({ signal } = {}) {
+          await instance.flush();
+          if (signal?.aborted) throw signal.reason;
+          editorCalls.push('history'); timeline.push('history.open');
+          return onHistory ? onHistory(instance, { signal }) : { opened: true };
+        },
         dispose() { instance.disposed = true; editorCalls.push('dispose'); timeline.push('dispose'); } };
       editorInstances.push(instance);
       return instance;
@@ -145,6 +153,96 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     frame: () => root.querySelector('iframe'),
   };
 }
+
+test('Version history reuses its recovery-point dialog and opens detailed history in the same artwork after save', async t => {
+  const f = await start(t);
+  f.click('history', { id }); await setImmediate();
+  const dialog = f.node('dialog');
+  assert.equal(dialog.open, true);
+  assert.match(dialog.innerHTML, /data-action="snapshot-create"/);
+  assert.match(dialog.innerHTML, /data-action="edit-history"/);
+  assert.match(dialog.innerHTML, /Saved recovery points contain artwork content only/);
+  assert.doesNotMatch(f.node('.workspace-panel').innerHTML, /data-action="edit-history"/);
+  f.click('edit-history', { id }); await setImmediate();
+  assert.equal(dialog.open, false);
+  assert.equal(f.actions.filter(item => item.action === 'view.openTab' && item.payload.id === id).length, 1);
+  assert.equal(f.editorInstances.length, 1);
+  assert.equal(f.editorInstances[0].artifactId, id);
+  assert.ok(f.timeline.indexOf('saved') < f.timeline.indexOf('history.open'));
+  assert.equal(f.actions.some(item => item.action === 'conversation.send'), false);
+});
+
+test('detailed history waits for an in-flight editor document and does not start it after the dialog was closed', async t => {
+  let release;
+  const f = await start(t, { onDocument: () => new Promise(resolve => { release = resolve; }) });
+  f.click('history', { id }); await setImmediate();
+  f.click('edit-history', { id }); await setImmediate();
+  assert.equal(typeof release, 'function');
+  assert.equal(f.editorCalls.includes('history'), false);
+  f.click('close-dialog');
+  release({ html: '<html><body>Ready after cancellation</body></html>' }); await setImmediate();
+  assert.equal(f.node('dialog').open, false);
+  assert.equal(f.editorCalls.includes('history'), false);
+});
+
+test('a deleted artwork or unsupported editor leaves a recoverable inline history error', async t => {
+  for (const patch of [{ onGet: async () => ({ id, kind: 'design-system', title: 'Deleted', deleted: true }) },
+    { onGet: async () => ({ id, kind: 'design-system', title: 'Missing', contentStatus: 'missing' }) }, { native: false },
+    { onHistory: async () => { throw Object.assign(new Error('This editor cannot show detailed History.'), { code: 'NATIVE_HISTORY_UNAVAILABLE' }); } }]) {
+    const f = await start(t, patch);
+    f.click('history', { id }); await setImmediate();
+    const button = f.click('edit-history', { id }); await setImmediate();
+    const dialog = f.node('dialog');
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.querySelector('.edit-history-error').hidden, false);
+    assert.ok(dialog.querySelector('.edit-history-error').textContent.length > 0);
+    assert.equal(button.disabled, patch.native === false);
+    assert.equal(button.getAttribute('aria-busy'), undefined);
+    if (patch.onGet || patch.native === false) assert.equal(f.editorCalls.includes('history'), false);
+  }
+});
+
+test('navigation cancels a pending canonical History open and a late result cannot target the next artwork', async t => {
+  let finishHistory, historySignal;
+  const secondId = '22222222-2222-4222-8222-222222222222';
+  const records = [id, secondId].map((value, index) => ({ id: value, kind: 'design', title: 'Artwork ' + index, contentStatus: 'ok' }));
+  const f = await start(t, { active: true, records, onHistory: (_instance, { signal }) => {
+    historySignal = signal; return new Promise(resolve => { finishHistory = resolve; });
+  } });
+  f.click('history', { id }); await setImmediate();
+  f.click('edit-history', { id }); await setImmediate();
+  assert.equal(historySignal.aborted, false);
+  await f.controller.activateArtifact(secondId); await setImmediate();
+  assert.equal(historySignal.aborted, true);
+  assert.equal(f.editorInstances[0].disposed, true);
+  assert.equal(f.node('dialog').open, false);
+  finishHistory({ opened: true }); await setImmediate();
+  assert.equal(f.node('dialog').open, false);
+  assert.equal(f.editorInstances.at(-1).artifactId, secondId);
+  assert.equal(f.timeline.filter(item => item === 'history.open').length, 1);
+});
+
+test('closing or replacing the history dialog aborts its pending operation without leaving controls busy', async t => {
+  for (const action of ['close', 'replace']) {
+    let finishHistory, historySignal;
+    const f = await start(t, { active: true, onHistory: (_instance, { signal }) => {
+      historySignal = signal; return new Promise(resolve => { finishHistory = resolve; });
+    } });
+    f.click('history', { id }); await setImmediate();
+    f.click('edit-history', { id }); await setImmediate();
+    const oldForm = f.node('dialog').querySelector('[data-history-id]');
+    if (action === 'close') f.click('close-dialog');
+    else { f.click('history', { id }); await setImmediate(); }
+    assert.equal(historySignal.aborted, true);
+    finishHistory({ opened: true }); await setImmediate();
+    assert.equal(f.node('dialog').open, action === 'replace');
+    if (action === 'replace') {
+      assert.notEqual(f.node('dialog').querySelector('[data-history-id]'), oldForm);
+      assert.match(f.node('dialog').innerHTML, /data-action="edit-history"/);
+      assert.equal(f.node('dialog').querySelector('.edit-history-error').hidden, undefined);
+    }
+  }
+});
 
 test('English library ignores old Chinese/system preferences and host/browser language changes without rewriting titles', async t => {
   for (const savedLanguage of ['zh', 'system']) {

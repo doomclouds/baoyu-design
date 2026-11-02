@@ -64,6 +64,22 @@ test('all four real editors have an exact English-only native message catalog', 
   assert.deepEqual([...discovered].sort(), inventory.messages.map(item => item.text).sort());
 });
 
+test('only the two reviewed upstream export-menu message variants can share an ID', () => {
+  const pairs = [
+    ['j5PBn2aWFZ', 'No artboard was chosen in time, so the export was cancelled. Open Export to export again.', 'No artboard was chosen in time, so the export was cancelled. Open Share to export again.'],
+    ['pYPDbUJ2RQ', 'Leaving that view cancelled the export. Open Export to export again.', 'Leaving that view cancelled the export. Open Share to export again.'],
+  ];
+  const record = (id, text) => '{defaultMessage:' + JSON.stringify(text) + ',id:' + JSON.stringify(id) + '}';
+  for (const [id, menu, share] of pairs) {
+    for (const texts of [[menu, share], [share, menu]]) {
+      assert.equal(extractNativeMessages(texts.map(text => record(id, text)).join(';')).get(id), menu);
+      assert.equal(createEditorCatalog('design', texts.map(text => record(id, text))).resources.en.editor[id], menu);
+    }
+    assert.throws(() => extractNativeMessages(record(id, menu) + ';' + record(id, 'Unknown export behavior')), /Conflicting native editor message/);
+    assert.throws(() => extractNativeMessages(record('unknown-' + id, menu) + ';' + record('unknown-' + id, share)), /Conflicting native editor message/);
+  }
+});
+
 test('old Chinese/system preferences, query parameters, host locale and navigator cannot select another UI language', () => {
   for (const saved of ['zh', 'system', 'en']) {
     const f = browser('zh-TW', { preference: 'zh', systemLocale: 'zh-CN' }, saved);
