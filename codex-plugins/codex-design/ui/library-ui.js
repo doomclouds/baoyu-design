@@ -78,6 +78,9 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let currentSurface = null;
   let currentEditorUrl = null;
   let currentNativeEditor = null;
+  const renamingIds = new Set();
+  const recordLoads = new Map();
+  let editorRecordLoad = null;
   const thumbnailCache = new Map();
   const thumbnailPending = new Set();
   let viewQueue = Promise.resolve();
@@ -353,8 +356,44 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     renderRecords();
   }
   async function openEditor(id, force = false) {
+    if (state.destroyed || state.view.activeTabId !== id || renamingIds.has(id)) return;
     const record = recordFor(id);
-    if (!record || isDeleted(record)) { renderEditorFailure(t('restoredTabMissing'), id); return; }
+    if (!record) {
+      if (editorRecordLoad?.id === id && editorRecordLoad.sequence === editorSequence) return editorRecordLoad.task;
+      // An external skill or CLI may create an artwork after this UI cached
+      // its list. Resolve that identity before declaring the artwork missing.
+      const load = { id, sequence: ++editorSequence };
+      editorRecordLoad = load;
+      const current = () => !state.destroyed && state.view.activeTabId === id
+        && editorRecordLoad === load && editorSequence === load.sequence && !renamingIds.has(id);
+      const host = elements.panel.querySelector('.editor-frame-host');
+      if (host) host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p></div>';
+      if (!recordLoads.has(id)) {
+        const lookup = invoke('library.get', { id }).then(value => {
+          if (!value || typeof value !== 'object' || Array.isArray(value) || !isRecord(value) || value.id !== id || !value.title.trim()) {
+            throw new BridgeError('The library returned an invalid artwork record.', 'INVALID_RESPONSE');
+          }
+          return value;
+        });
+        recordLoads.set(id, lookup);
+        void lookup.finally(() => { if (recordLoads.get(id) === lookup) recordLoads.delete(id); }).catch(() => {});
+      }
+      load.task = (async () => {
+        let resolved;
+        try { resolved = await recordLoads.get(id); }
+        catch (error) {
+          if (current()) renderEditorFailure(error?.code === 'NOT_FOUND' ? t('restoredTabMissing') : errorMessage(error), id);
+          return;
+        }
+        if (!current()) return;
+        // A concurrent refresh/rename may already have a newer record.
+        if (!recordFor(id)) upsertRecord(resolved);
+        renderSidebar(); renderTabs(); renderWorkspace();
+        return openEditor(id, force);
+      })().finally(() => { if (editorRecordLoad === load) editorRecordLoad = null; });
+      return load.task;
+    }
+    if (isDeleted(record)) { renderEditorFailure(t('restoredTabMissing'), id); return; }
     if (record.contentStatus && record.contentStatus !== 'ok') { renderEditorFailure(t(record.contentStatus === 'missing' ? 'missingBody' : 'invalidBody'), id); return; }
     if (currentNativeEditor && state.view.activeTabId === id) {
       try { await flushCurrentEditor(); }
@@ -371,7 +410,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       const native = bridge.supportsInlineEditor === true;
       const channel = native ? crypto.randomUUID() : null;
       const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: 'en', channel, canDraftComments: bridge.canDraftComments === true } : {}) });
-      if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
+      if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id || renamingIds.has(id)) return;
       const iframe = document.createElement('iframe');
       iframe.className = 'design-editor-frame';
       iframe.title = t('editorFrame', { title: record.title });
@@ -777,7 +816,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       } finally { form.removeAttribute('aria-busy'); }
       return;
     }
-    if (!form.reportValidity() || form.getAttribute('aria-busy') === 'true') return;
+    if (!form.reportValidity() || form.getAttribute('aria-busy') === 'true' || type === 'rename' && renamingIds.has(id)) return;
     const data = new FormData(form);
     const title = String(data.get('title') || '').trim();
     if (type !== 'trash' && !title) { form.elements.title.focus(); return; }
@@ -785,12 +824,29 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const payload = type === 'trash' ? { id } : { id, title };
     form.setAttribute('aria-busy', 'true');
     form.querySelector('button[type="submit"]').disabled = true;
+    const renaming = type === 'rename' && bridge.supportsInlineEditor === true;
+    if (renaming) renamingIds.add(id);
+    let renameAttempted = false;
     try {
-      if (state.view.activeTabId === id) await flushCurrentEditor();
+      if (state.view.activeTabId === id) {
+        const editor = currentNativeEditor;
+        await flushCurrentEditor();
+        if (renaming && state.view.activeTabId === id) {
+          if (currentNativeEditor && currentNativeEditor !== editor) throw new BridgeError('The active editor changed while preparing the rename. Try again from its current tab.', 'EDITOR_CHANGED');
+          // The native index title changes on disk. Retire this saved frame
+          // before that write so it cannot publish against its previous base.
+          ++editorSequence;
+          currentNativeEditor?.dispose();
+          currentNativeEditor = null;
+          currentEditorUrl = null;
+          elements.panel.querySelector('.design-editor-frame')?.remove();
+        }
+      }
+      renameAttempted = renaming;
       const result = await invoke(action, payload);
       const returnedRecord = result?.artifact || result;
       upsertRecord(returnedRecord);
-      elements.dialog.close();
+      if (!renaming || elements.dialog.querySelector('.dialog-form') === form) elements.dialog.close();
       toast(t({ rename: 'renamed', copy: 'copied', trash: 'trashed' }[type]));
       if (type === 'trash' && state.view.tabs.some((tab) => tab.id === id)) await changeView('closeTab', { id });
       if (type === 'copy') {
@@ -803,7 +859,14 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       errorNode.hidden = false;
       errorNode.textContent = errorMessage(error);
       form.querySelector('button[type="submit"]').disabled = false;
-    } finally { form.removeAttribute('aria-busy'); }
+      if (renameAttempted) await refreshRecords(true);
+    } finally {
+      if (renaming) {
+        renamingIds.delete(id);
+        if (renameAttempted && !state.destroyed && state.view.activeTabId === id) await openEditor(id, true);
+      }
+      form.removeAttribute('aria-busy');
+    }
   }
   async function favoriteRecord(id) {
     const record = recordFor(id);

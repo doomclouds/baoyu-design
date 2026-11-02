@@ -48,8 +48,35 @@ An initial review hypothesis about a detached B frame during A-to-B-to-A
 navigation was withdrawn after reading the existing pre-swap disposal. The
 explicit regression is retained and passes.
 
-This source change has not been built into a new package, installed, or tested
-in the actual host. It has not altered the published 0.5.1 bytes. Full package,
-portable and real Rename-to-edit-to-save/reopen verification still belongs to
-the next revision. Do not apply remounting to the already dirty live QA tab:
-its unsaved artboard must first be recovered or explicitly discarded.
+The first source-only review preceded packaging. The repair has since been
+built as a separate 0.5.2 candidate; its full test and portable results are in
+[ACCEPTANCE-0.5.2.md](../ACCEPTANCE-0.5.2.md). It is not installed or real-host
+repair-verified and has not altered the published 0.5.1 bytes. Do not apply
+remounting to an already dirty live QA tab: its unsaved artboard must first be
+recovered or explicitly discarded.
+
+## Post-restart control and external-opening case
+
+The current chat's real `design_read view.get` call succeeded after the user
+restarted Codex. A fresh canvas was created with its intended QA name through
+the installed skill CLI, so no active Rename preceded its first artboard.
+The actual host saved one artboard, its component and a text edit to disk.
+The text floating-toolbar Properties action opened the selected text controls.
+This control case separates the earlier active-Rename conflict from a general
+new-artboard save failure.
+
+A separate isolated protocol probe exercised the installed publisher, native
+transport, design service and actual data service. New-file/index publication
+succeeded; an existing component with `ifMatch:null` was refused. After an
+external Rename, old-index writes were refused until a new listing/index SHA
+was read. Publication with that refreshed SHA succeeded and kept the new name.
+The protocol carries `files[path].ifMatch` in JSON, not HTTP ETag headers.
+
+Opening the freshly CLI-created QA in an already open library also exposed a
+metadata-cache gap: the record existed and `library.get` succeeded, while the
+UI showed a missing-artwork error. Returning to Library refreshed the list;
+opening the same tab then loaded the canvas. The next source change resolves
+unknown IDs through a deduplicated, validated `library.get` before mounting.
+Late results cannot replace the current artwork, overwrite a newer record, or
+mount through the Rename/disposal barrier. Actual controller coverage grew to
+50 passing cases; that is still not an installed-host repair verification.

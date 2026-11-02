@@ -24501,6 +24501,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let currentSurface = null;
     let currentEditorUrl = null;
     let currentNativeEditor = null;
+    const renamingIds = /* @__PURE__ */ new Set();
+    const recordLoads = /* @__PURE__ */ new Map();
+    let editorRecordLoad = null;
     const thumbnailCache = /* @__PURE__ */ new Map();
     const thumbnailPending = /* @__PURE__ */ new Set();
     let viewQueue = Promise.resolve();
@@ -24815,8 +24818,48 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       renderRecords();
     }
     async function openEditor(id, force = false) {
+      if (state.destroyed || state.view.activeTabId !== id || renamingIds.has(id)) return;
       const record3 = recordFor(id);
-      if (!record3 || isDeleted(record3)) {
+      if (!record3) {
+        if (editorRecordLoad?.id === id && editorRecordLoad.sequence === editorSequence) return editorRecordLoad.task;
+        const load = { id, sequence: ++editorSequence };
+        editorRecordLoad = load;
+        const current = () => !state.destroyed && state.view.activeTabId === id && editorRecordLoad === load && editorSequence === load.sequence && !renamingIds.has(id);
+        const host2 = elements.panel.querySelector(".editor-frame-host");
+        if (host2) host2.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape2(t2("loadingEditor")) + "</p></div>";
+        if (!recordLoads.has(id)) {
+          const lookup = invoke("library.get", { id }).then((value) => {
+            if (!value || typeof value !== "object" || Array.isArray(value) || !isRecord(value) || value.id !== id || !value.title.trim()) {
+              throw new BridgeError("The library returned an invalid artwork record.", "INVALID_RESPONSE");
+            }
+            return value;
+          });
+          recordLoads.set(id, lookup);
+          void lookup.finally(() => {
+            if (recordLoads.get(id) === lookup) recordLoads.delete(id);
+          }).catch(() => {
+          });
+        }
+        load.task = (async () => {
+          let resolved;
+          try {
+            resolved = await recordLoads.get(id);
+          } catch (error112) {
+            if (current()) renderEditorFailure(error112?.code === "NOT_FOUND" ? t2("restoredTabMissing") : errorMessage(error112), id);
+            return;
+          }
+          if (!current()) return;
+          if (!recordFor(id)) upsertRecord(resolved);
+          renderSidebar();
+          renderTabs();
+          renderWorkspace();
+          return openEditor(id, force);
+        })().finally(() => {
+          if (editorRecordLoad === load) editorRecordLoad = null;
+        });
+        return load.task;
+      }
+      if (isDeleted(record3)) {
         renderEditorFailure(t2("restoredTabMissing"), id);
         return;
       }
@@ -24843,7 +24886,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         const native = bridge.supportsInlineEditor === true;
         const channel = native ? crypto.randomUUID() : null;
         const result = await invoke(native ? "editor.document" : "editor.open", { id, force, ...native ? { language: "en", channel, canDraftComments: bridge.canDraftComments === true } : {} });
-        if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id) return;
+        if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id || renamingIds.has(id)) return;
         const iframe = document.createElement("iframe");
         iframe.className = "design-editor-frame";
         iframe.title = t2("editorFrame", { title: record3.title });
@@ -25288,7 +25331,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
         return;
       }
-      if (!form.reportValidity() || form.getAttribute("aria-busy") === "true") return;
+      if (!form.reportValidity() || form.getAttribute("aria-busy") === "true" || type === "rename" && renamingIds.has(id)) return;
       const data = new FormData(form);
       const title = String(data.get("title") || "").trim();
       if (type !== "trash" && !title) {
@@ -25299,12 +25342,27 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const payload = type === "trash" ? { id } : { id, title };
       form.setAttribute("aria-busy", "true");
       form.querySelector('button[type="submit"]').disabled = true;
+      const renaming = type === "rename" && bridge.supportsInlineEditor === true;
+      if (renaming) renamingIds.add(id);
+      let renameAttempted = false;
       try {
-        if (state.view.activeTabId === id) await flushCurrentEditor();
+        if (state.view.activeTabId === id) {
+          const editor = currentNativeEditor;
+          await flushCurrentEditor();
+          if (renaming && state.view.activeTabId === id) {
+            if (currentNativeEditor && currentNativeEditor !== editor) throw new BridgeError("The active editor changed while preparing the rename. Try again from its current tab.", "EDITOR_CHANGED");
+            ++editorSequence;
+            currentNativeEditor?.dispose();
+            currentNativeEditor = null;
+            currentEditorUrl = null;
+            elements.panel.querySelector(".design-editor-frame")?.remove();
+          }
+        }
+        renameAttempted = renaming;
         const result = await invoke(action, payload);
         const returnedRecord = result?.artifact || result;
         upsertRecord(returnedRecord);
-        elements.dialog.close();
+        if (!renaming || elements.dialog.querySelector(".dialog-form") === form) elements.dialog.close();
         toast(t2({ rename: "renamed", copy: "copied", trash: "trashed" }[type]));
         if (type === "trash" && state.view.tabs.some((tab) => tab.id === id)) await changeView("closeTab", { id });
         if (type === "copy") {
@@ -25317,7 +25375,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         errorNode.hidden = false;
         errorNode.textContent = errorMessage(error112);
         form.querySelector('button[type="submit"]').disabled = false;
+        if (renameAttempted) await refreshRecords(true);
       } finally {
+        if (renaming) {
+          renamingIds.delete(id);
+          if (renameAttempted && !state.destroyed && state.view.activeTabId === id) await openEditor(id, true);
+        }
         form.removeAttribute("aria-busy");
       }
     }
@@ -43458,7 +43521,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.5.1";
+  var PLUGIN_UI_VERSION = "0.5.2";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
