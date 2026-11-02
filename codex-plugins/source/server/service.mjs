@@ -306,11 +306,12 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         }
         case 'editor.digest': {
           await requireRecord(payload.id);
-          if (payload.algorithm !== 'SHA-256' || typeof payload.base64 !== 'string' || payload.base64.length > 44_739_244
-            || !isValidBase64(payload.base64)) throw failure('INVALID_EDITOR_DIGEST', 'Only a bounded SHA-256 digest is supported.');
+          const algorithm = payload.algorithm === 'SHA-256' ? 'sha256' : payload.algorithm === 'SHA-384' ? 'sha384' : undefined;
+          if (!algorithm || typeof payload.base64 !== 'string' || payload.base64.length > 44_739_244
+            || !isValidBase64(payload.base64)) throw failure('INVALID_EDITOR_DIGEST', 'Only bounded SHA-256 and SHA-384 digests are supported.');
           const bytes = Buffer.from(payload.base64, 'base64');
           if (bytes.length > 32 * 1024 * 1024) throw failure('INVALID_EDITOR_DIGEST', 'The digest input exceeds the transfer limit.');
-          return { base64: createHash('sha256').update(bytes).digest('base64') };
+          return { base64: createHash(algorithm).update(bytes).digest('base64') };
         }
         case 'editor.events.open': return await nativeComments.openEvents(idOf(payload.id), payload.path);
         case 'editor.events.poll': return await nativeComments.pollEvents(idOf(payload.id), payload.subscriptionId, payload.cursor);

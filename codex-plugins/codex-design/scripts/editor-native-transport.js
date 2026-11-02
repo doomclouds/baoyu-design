@@ -121,10 +121,13 @@ export function installNativeEditorTransport(configuration, target, installPrevi
   if (target.crypto && !target.crypto.subtle) {
     Object.defineProperty(target.crypto, 'subtle', { configurable: true, value: {
       async digest(algorithm, data) {
-        if (String(typeof algorithm === 'object' ? algorithm?.name : algorithm).toUpperCase() !== 'SHA-256') throw new DOMException('Only SHA-256 is available in this isolated editor.', 'NotSupportedError');
+        const name = String(typeof algorithm === 'object' ? algorithm?.name : algorithm).toUpperCase();
+        // The canonical HTML export verifies its bundled React bytes with
+        // SHA-384 SRI; content-addressed native assets continue to use SHA-256.
+        if (name !== 'SHA-256' && name !== 'SHA-384') throw new DOMException('Only SHA-256 and SHA-384 are available in this isolated editor.', 'NotSupportedError');
         const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
         if (bytes.byteLength > 32 * 1024 * 1024) throw new DOMException('The digest input exceeds the transfer limit.', 'OperationError');
-        const result = await rpc('editor.digest', { algorithm: 'SHA-256', base64: bytesToBase64(bytes) });
+        const result = await rpc('editor.digest', { algorithm: name, base64: bytesToBase64(bytes) });
         return base64ToBytes(result.base64).buffer;
       },
     } });

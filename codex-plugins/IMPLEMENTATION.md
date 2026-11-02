@@ -1,5 +1,15 @@
 # Codex Design library implementation
 
+## 0.6.3 native HTML integrity follow-up
+
+Native opaque editors now support the SHA-384 digest required by the actual
+standalone HTML export's bundled React SRI checks. SHA-256 content identity,
+strict algorithm/base64/32 MiB checks and the read-only History broker remain
+intact. Actual generated vendor bytes and their original SRI constants are
+covered by the new integration test; the complete regression passed 662/662.
+Native HTML Save As remains a separate installed-host gate in
+[ACCEPTANCE-0.6.3.md](ACCEPTANCE-0.6.3.md).
+
 ## 0.6.2 Dashboard and floating-surface follow-up
 
 The Dashboard bootstrap now resolves its whitespace-formatted local base URL

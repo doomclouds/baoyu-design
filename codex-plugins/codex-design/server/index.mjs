@@ -55836,10 +55836,11 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
   if (target.crypto && !target.crypto.subtle) {
     Object.defineProperty(target.crypto, "subtle", { configurable: true, value: {
       async digest(algorithm, data) {
-        if (String(typeof algorithm === "object" ? algorithm?.name : algorithm).toUpperCase() !== "SHA-256") throw new DOMException("Only SHA-256 is available in this isolated editor.", "NotSupportedError");
+        const name = String(typeof algorithm === "object" ? algorithm?.name : algorithm).toUpperCase();
+        if (name !== "SHA-256" && name !== "SHA-384") throw new DOMException("Only SHA-256 and SHA-384 are available in this isolated editor.", "NotSupportedError");
         const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
         if (bytes.byteLength > 32 * 1024 * 1024) throw new DOMException("The digest input exceeds the transfer limit.", "OperationError");
-        const result = await rpc("editor.digest", { algorithm: "SHA-256", base64: bytesToBase64(bytes) });
+        const result = await rpc("editor.digest", { algorithm: name, base64: bytesToBase64(bytes) });
         return base64ToBytes(result.base64).buffer;
       }
     } });
@@ -56620,7 +56621,7 @@ async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeout
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.6.2";
+var PLUGIN_UI_VERSION = "0.6.3";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var UI_MIME_TYPE = "text/html;profile=mcp-app";
@@ -57047,10 +57048,11 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
         }
         case "editor.digest": {
           await requireRecord(payload.id);
-          if (payload.algorithm !== "SHA-256" || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase643(payload.base64)) throw failure3("INVALID_EDITOR_DIGEST", "Only a bounded SHA-256 digest is supported.");
+          const algorithm = payload.algorithm === "SHA-256" ? "sha256" : payload.algorithm === "SHA-384" ? "sha384" : void 0;
+          if (!algorithm || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase643(payload.base64)) throw failure3("INVALID_EDITOR_DIGEST", "Only bounded SHA-256 and SHA-384 digests are supported.");
           const bytes = Buffer.from(payload.base64, "base64");
           if (bytes.length > 32 * 1024 * 1024) throw failure3("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
-          return { base64: createHash9("sha256").update(bytes).digest("base64") };
+          return { base64: createHash9(algorithm).update(bytes).digest("base64") };
         }
         case "editor.events.open":
           return await nativeComments.openEvents(idOf(payload.id), payload.path);
