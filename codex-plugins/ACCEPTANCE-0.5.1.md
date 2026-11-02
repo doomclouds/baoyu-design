@@ -373,3 +373,73 @@ Screenshots retained in the local acceptance archive:
 These observations do not establish every export format, every editor control,
 or the 0.5.2 repairs as passed. The second native request still awaits the
 user's Send in its draft; it has not been accepted or counted as worker reuse.
+
+## Native import and Slides PDF/PPTX exports
+
+### Dashboard import, explicit Save and independent reopen
+
+The actual Windows file picker imported the previously exported 737-byte
+Dashboard QA content bundle. Its source artwork was
+`fc635147-09af-40e4-bad6-2a7948bac101`; import created a distinct artwork,
+`a2ceaca0-d159-4e49-a746-96f142ff448f`. At import, the exact three-file content
+set and each file's SHA-256 matched its decoded bundle bytes. The bundle's only
+top-level fields were `format`, `version`, `kind`, `title` and `files`; it
+contained no comments or worker queue.
+
+The new copy rendered its `Untitled dashboard` content. In Edit page (Beta),
+the selected heading was changed to `Native imported dashboard QA`. Merely
+blurring the field did not save it: **Save 1 change** remained available. The
+later explicit Save persisted `db/files/index.html.json` with SHA-256
+`36F23334E8367A203682900C2C3A6CE1A340A08FCC7538789F023BCF93226E02`.
+Closing its Tab and reopening from Recent showed the changed text under the
+same new UUID, with the same hash. The source artwork's page hash, beginning
+`2AA483`, remained unchanged. The blur-only attempt is not counted as a save.
+
+Evidence: `codex-design-0.5.1-native-import-result.json`,
+`codex-design-0.5.1-native-import-rendered.png` and
+`codex-design-0.5.1-native-import-reopened.png` in the local acceptance archive.
+
+### Slides PDF through the real Save As flow
+
+For the same Slides QA artwork
+`b6df303a-1e17-4e2a-8a49-5398b2e787e8`, the actual Download menu's PDF Best
+action opened Save As. Choosing the native-exports QA directory and
+`Native slides QA.pdf` saved **38,018 bytes**, SHA-256
+`5E38A4965ABB88BF9946F226D8EFF8B17F944515936DC53810019B4F85AD717D`.
+Independent `pdfinfo` inspection reported one page, 960 by 540 points and PDF
+1.7. A `pdftoppm` rendering visibly contained the QA text without clipping.
+
+Evidence: `codex-design-0.5.1-native-pdf-saved.png` and
+`codex-design-0.5.1-native-slides-pdf-render.png`.
+
+### Both observed Slides PPTX variants
+
+Both actual PPTX menu variants saved files through the native UI:
+
+| Recorded variant | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Basic | 15,539 | `F1B1A021E586AD002E883F5C2A305E9197DA8CB18B4938F23C708C78F5B22B95` |
+| Current | 15,540 | `1780D135544674A3D80A5A9261BAFC02BA88AE2FA47582D8F1258639CE6123EE` |
+
+Independent ZIP checks passed every entry's CRC; all 22 XML/relationship
+documents parsed and all 20 internal relationship targets existed. Each deck
+contained one 16:9 slide with the QA text. Both files were then opened in real
+Microsoft PowerPoint, where `Native slides QA` was visible without a Repair
+prompt. The basic variant initially had an ordinary OfficePLUS promotion in an
+auxiliary window; closing that window exposed the deck. It was not a document
+repair failure.
+
+These samples used only Arial. They do not establish custom-font embedding or
+other typography cases. The source `project/slides/cover.html` retained the
+`39A346...` SHA-256 recorded above throughout these exports.
+
+Evidence: `codex-design-0.5.1-native-pptx-basic-powerpoint.png`,
+`codex-design-0.5.1-native-pptx-current-powerpoint.png`,
+`codex-design-0.5.1-native-pptx-basic-structure.json` and
+`codex-design-0.5.1-native-pptx-current-structure.json`.
+
+HTML/PNG exports, the Canvas export variants, individual Design System file
+exports and data-backed Dashboard CSV export remain unverified here. These
+targeted successes do not close all formats, all UI, or the separate 0.5.2
+repair acceptance. The second native request is still only drafted, pending
+human Send; it is not counted as a completed receipt or worker-reuse case.
