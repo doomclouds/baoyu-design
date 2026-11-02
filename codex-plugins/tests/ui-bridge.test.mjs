@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
+import { EventEmitter } from 'node:events';
 import { App } from '@modelcontextprotocol/ext-apps';
 import { createMcpBridge, installMcpBridge } from '../source/server/ui-bridge.mjs';
 import { PLUGIN_UI_VERSION } from '../source/server/contract.mjs';
 import { createExportDialog } from '../source/ui/export-dialog.mjs';
+import { artworkAppUrl, requestAppNavigation } from '../source/scripts/artifact-delivery.mjs';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
 const secondId = '22222222-2222-4222-8222-222222222222';
@@ -244,6 +246,51 @@ test('deep link activations are serialized and can reopen a manually closed artw
   f.context({ 'openai/deepLink': { url: `/artifacts/${secondId}` } });
   await until(() => bridge.initialState.viewState.activeTabId === secondId);
   assert.equal(f.calls().filter(call => call.params.arguments.action === 'view.openTab').length, 3);
+});
+
+test('independent OS opens bypass host target deduplication and reopen the same closed artwork without duplicating an active tab', async t => {
+  const f = host(t);
+  const bridge = await createMcpBridge({ app: f.app });
+  t.after(() => bridge.dispose());
+  let lastHostTarget;
+  const sentUris = [];
+  const deliver = uri => {
+    const relative = new URL(new URL(uri).searchParams.get('path'), 'https://codex-design.invalid');
+    const target = { path: relative.pathname.slice(1).split('/'), query: [...relative.searchParams] };
+    // The real host compares the app-relative path/query, independently of our
+    // internal workspace. Repeating that target emits no context notification.
+    const identity = JSON.stringify([target.path, target.query]);
+    if (identity === lastHostTarget) return false;
+    lastHostTarget = identity;
+    f.context({ 'openai/deepLink': target });
+    return true;
+  };
+  const canonical = artworkAppUrl(firstId);
+  const open = () => requestAppNavigation(canonical, { platform: 'linux', spawnProcess(_command, args) {
+    sentUris.push(args[0]);
+    deliver(args[0]);
+    const child = new EventEmitter(); child.kill = () => {};
+    queueMicrotask(() => child.emit('close', 0)); return child;
+  } });
+  await open();
+  await until(() => bridge.initialState?.viewState?.activeTabId === firstId);
+  await bridge.invoke('view.closeTab', { id: firstId });
+  assert.equal(bridge.initialState.viewState.activeTabId, 'library');
+  assert.equal(deliver(sentUris[0]), false, 'A repeated old OS target reproduces the host deduplication.');
+  await delay(10);
+  assert.equal(bridge.initialState.viewState.activeTabId, 'library');
+  await open();
+  await until(() => bridge.initialState.viewState.activeTabId === firstId);
+  assert.notEqual(sentUris[0], sentUris[1]);
+  assert.equal(new URL(canonical).searchParams.get('path'), `/artifacts/${firstId}`);
+  assert.deepEqual(bridge.initialState.viewState.tabs.map(tab => tab.id), ['library', firstId]);
+  assert.deepEqual(f.calls().filter(call => call.params.arguments.action === 'view.openTab').map(call => call.params.arguments.payload), [{ id: firstId }, { id: firstId }]);
+  let guarded = 0;
+  bridge.beforeNavigate = async () => { guarded++; };
+  await open();
+  await delay(10);
+  assert.equal(guarded, 0, 'Reopening an already active artwork must not reload it or disturb live edits.');
+  assert.equal(f.calls().filter(call => call.params.arguments.action === 'view.openTab').length, 2);
 });
 
 test('only current-app artifact routes are accepted; URLs, fragments and traversal never dispatch', async t => {

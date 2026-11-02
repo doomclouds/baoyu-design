@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createLibraryStore } from '../library/index.mjs';
 import { UUID } from '../library/safety.mjs';
 import { BridgeError, readJson, samePath } from './bridge-core.mjs';
@@ -47,6 +48,10 @@ export function requestAppNavigation(appUrl, { platform = process.platform, env 
     || url.pathname !== '/codex-design@codex-design-marketplace/app/DesignLibrary'
     || url.username || url.password || url.port || url.hash || url.searchParams.size !== 1 || [...url.searchParams.keys()].some(key => key !== 'path')
     || !route || !UUID.test(route[1])) throw new BridgeError('INVALID_APP_URL', 'Only the official Codex Design artwork entrypoint can be opened.');
+  // The host deduplicates identical app-relative targets independently of our
+  // artwork tabs. Give each explicit open a fresh navigation target so a closed
+  // internal tab can reopen; the artwork identity and returned appUrl stay stable.
+  url.searchParams.set('path', `/artifacts/${route[1]}?openRequest=${randomUUID()}`);
   let command, args, environment = env;
   if (platform === 'win32') {
     command = env.SystemRoot ? path.win32.join(env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell.exe';

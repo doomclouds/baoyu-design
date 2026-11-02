@@ -105,6 +105,8 @@ test('public help and explicit preview cannot accidentally run the native opener
   assert.match(help, /request the native Codex Design/); assert.match(help, /preview <root>/);
   assert.equal(await fs.readFile(canonicalCalls, 'utf8').catch(() => ''), '');
   await assert.rejects(execute('open', legacy), error => JSON.parse(error.stderr).error === 'NATIVE_ARTIFACT_REQUIRED');
+  const libraryArtwork = await f.store.create({ kind: 'design', title: 'Native flags are explicit' });
+  await assert.rejects(execute('open', libraryArtwork.path, '--no-native'), error => JSON.parse(error.stderr).error === 'INVALID_NATIVE_OPEN_ARGUMENTS');
   assert.equal(await fs.readFile(canonicalCalls, 'utf8').catch(() => ''), '');
   assert.match(JSON.parse((await execute('preview', legacy, '--no-agent')).stdout).url, /^http:\/\/127\.0\.0\.1:/);
   assert.deepEqual(JSON.parse((await fs.readFile(canonicalCalls, 'utf8')).trim()), ['open', legacy]);
@@ -131,13 +133,69 @@ test('native OS launch is shell-free, portable and preserves the percent-encoded
     } });
     assert.equal(actual.options.shell, false); assert.equal(actual.options.windowsHide, true);
     assert.equal(result.navigationRequested, true); assert.equal(result.renderVerified, false);
+    const requestedUri = platform === 'win32' ? actual.options.env.CODEX_DESIGN_OPEN_URI : actual.args[0];
+    const requested = new URL(requestedUri), target = new URL(requested.searchParams.get('path'), 'https://codex-design.invalid');
+    for (const key of ['protocol', 'hostname', 'username', 'password', 'port']) assert.equal(requested[key], new URL(uri)[key]);
+    assert.equal(requested.pathname, new URL(uri).pathname);
+    assert.equal(requested.searchParams.size, 1);
+    assert.equal(target.pathname, '/artifacts/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+    assert.equal(target.searchParams.size, 1);
+    assert.match(target.searchParams.get('openRequest'), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(target.hash, '');
     if (platform === 'win32') {
       assert.match(actual.command, /^D:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/);
-      assert.equal(actual.options.env.CODEX_DESIGN_OPEN_URI, uri); assert.ok(!actual.args.includes(uri));
+      assert.ok(!actual.args.includes(requestedUri));
       assert.ok(!actual.args.some(arg => /cmd(?:\.exe)?/i.test(arg))); assert.ok(uri.includes('%2Fartifacts%2F'));
-    } else assert.equal(actual.args[0], uri);
+    } else assert.equal(actual.args.length, 1);
   }
   assert.throws(() => requestAppNavigation('https://example.com/'), { code: 'INVALID_APP_URL' });
+});
+
+test('independent native opens use distinct host targets while returning the same canonical artwork link and preserving files', async t => {
+  const f = await fixture(t), artwork = await f.store.create({ kind: 'design', title: 'Reopen the same artwork' });
+  const navigationUris = [];
+  const before = await Promise.all(['artifact.json', 'project/canvas.json'].map(name => fs.readFile(path.join(artwork.path, name), 'utf8')));
+  const navigate = uri => requestAppNavigation(uri, { platform: 'linux', spawnProcess(_command, args) {
+    navigationUris.push(args[0]);
+    const child = new EventEmitter(); child.kill = () => {};
+    queueMicrotask(() => child.emit('close', 0)); return child;
+  } });
+  const skillDir = path.join(packageRoot, 'skills/codex-design');
+  const first = await openArtworkInApp(skillDir, artwork.path, 'design', { libraryRoot: f.libraryRoot, navigate });
+  const second = await openArtworkInApp(skillDir, artwork.path, 'design', { libraryRoot: f.libraryRoot, navigate });
+  assert.equal(first.appUrl, artworkAppUrl(artwork.id));
+  assert.equal(second.appUrl, first.appUrl);
+  assert.equal(new URL(first.appUrl).searchParams.get('path'), `/artifacts/${artwork.id}`);
+  assert.equal(first.id, second.id);
+  assert.equal(first.navigationRequested, true); assert.equal(second.navigationRequested, true);
+  assert.equal(first.renderVerified, false); assert.equal(second.renderVerified, false);
+  // The host compares path/query pairs, not our internal tab's open/closed state.
+  const targets = navigationUris.map(uri => {
+    const relative = new URL(new URL(uri).searchParams.get('path'), 'https://codex-design.invalid');
+    return { path: relative.pathname.slice(1).split('/'), query: [...relative.searchParams] };
+  });
+  assert.deepEqual(targets.map(target => target.path), [['artifacts', artwork.id], ['artifacts', artwork.id]]);
+  assert.notEqual(JSON.stringify([targets[0].path, targets[0].query]), JSON.stringify([targets[1].path, targets[1].query]));
+  assert.deepEqual(await Promise.all(['artifact.json', 'project/canvas.json'].map(name => fs.readFile(path.join(artwork.path, name), 'utf8'))), before);
+  assert.deepEqual((await fs.readdir(artwork.path)).sort(), ['artifact.json', 'project']);
+});
+
+test('native navigation validates the canonical authority and exact artwork route before spawning an OS helper', () => {
+  const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const canonical = artworkAppUrl(id);
+  const invalid = [
+    'https://example.com/', canonical.replace('codex://plugins/', 'codex://other/'),
+    canonical.replace('codex-design@codex-design-marketplace', 'other@codex-design-marketplace'),
+    canonical.replace('/app/DesignLibrary', '/app/Other'), canonical + '&extra=value',
+    canonical + '#fragment', canonical.replace('codex://plugins/', 'codex://user:password@plugins/'),
+    canonical.replace('codex://plugins/', 'codex://plugins:1234/'),
+    canonical.replace(encodeURIComponent(`/artifacts/${id}`), encodeURIComponent(`/artifacts/${id}?openRequest=caller-controlled`)),
+    canonical.replace(id, 'not-a-uuid'),
+    canonical.replace(encodeURIComponent(`/artifacts/${id}`), encodeURIComponent(`/artifacts/${id}/extra`)),
+  ];
+  let spawned = false;
+  for (const uri of invalid) assert.throws(() => requestAppNavigation(uri, { spawnProcess() { spawned = true; throw new Error('Invalid URLs must not launch.'); } }), { code: 'INVALID_APP_URL' });
+  assert.equal(spawned, false);
 });
 
 test('failed OS navigation keeps the native appUrl and never falls back to an HTTP service', async t => {

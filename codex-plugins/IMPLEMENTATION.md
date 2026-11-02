@@ -1,5 +1,17 @@
 # Codex Design library implementation
 
+## 0.6.4 repeat native opening
+
+Each explicit OS navigation now carries a fresh request UUID inside the
+app-relative query. The returned artwork link and internal Tab UUID remain
+stable. This avoids the installed host's identical-target suppression after
+an internal Tab was closed, while the existing bridge keeps active editors
+mounted. Delivery and actual-SDK bridge checks passed 30/30 independently;
+the complete frozen-source run passed 665/665. A source opener also reopened
+the closed artwork in the installed 0.6.3 host and preserved its active editor
+loader/visible draft across repeated opens. Final installed-package evidence
+is recorded in [ACCEPTANCE-0.6.4.md](ACCEPTANCE-0.6.4.md).
+
 ## 0.6.3 native HTML integrity follow-up
 
 Native opaque editors now support the SHA-384 digest required by the actual
