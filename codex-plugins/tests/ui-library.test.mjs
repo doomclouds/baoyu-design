@@ -23,7 +23,7 @@ class Surface {
   emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler({ target: this, ...event }); }
 }
 
-async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument } = {}) {
+async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument, onGet } = {}) {
   const document = new Surface(), window = new Surface(), nodes = [], storageReads = [], actions = [], editorCalls = [], editorInstances = [], posted = [], timeline = [];
   document.documentElement = {}; document.hidden = false; document.activeElement = null;
   class Element extends Surface {
@@ -77,6 +77,12 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     async invoke(action, payload) {
       actions.push({ action, payload }); timeline.push(action);
       if (action === 'library.list') return libraryRecords;
+      if (action === 'library.get') {
+        if (onGet) return onGet(payload);
+        const found = libraryRecords.find(item => item.id === payload.id);
+        if (!found) throw Object.assign(new Error('No such artwork.'), { code: 'NOT_FOUND' });
+        return found;
+      }
       if (action === 'library.create') {
         const created = onCreate ? await onCreate(payload) : { ...record, id: '33333333-3333-4333-8333-333333333333', kind: payload.kind, title: payload.title };
         libraryRecords = [...libraryRecords, created];
@@ -129,6 +135,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
   t.after(() => controller.destroy());
   return { controller, root, bridge, document, window, actions, editorCalls, editorInstances, posted, storageReads, record, original, timeline,
     records: () => libraryRecords,
+    addExternalRecord(record) { libraryRecords = [...libraryRecords, record]; },
     notify: event => subscribe(event),
     node: selector => root.querySelector(selector),
     click(action, data = {}) { const button = new Element('BUTTON', root); button.dataset = { action, ...data }; button.focus(); root.emit('click', { target: button, detail: 1 }); return button; },
@@ -418,6 +425,148 @@ test('Rename completion after workspace disposal cannot mount another iframe', a
   finish(); await setImmediate();
   assert.equal(f.editorInstances.length, 1); assert.equal(f.editorInstances[0].disposed, true);
   assert.equal(f.actions.filter(call => call.action === 'editor.document').length, 1, 'only the initial document was requested');
+});
+
+const externalId = '22222222-2222-4222-8222-222222222222';
+const secondExternalId = '33333333-3333-4333-8333-333333333333';
+const externalView = activeTabId => ({ version: 1, tabs: [{ id: 'library', type: 'library' },
+  ...[id, externalId, secondExternalId].map(artifactId => ({ id: artifactId, type: 'artifact', artifactId }))], activeTabId });
+
+for (const kind of ['slides', 'design', 'design-system', 'dashboard']) test(`an external ${kind} absent from cached records resolves its exact identity before mounting`, async t => {
+  const f = await start(t);
+  const external = { id: externalId, kind, title: 'CLI-created artwork', contentStatus: 'ok' };
+  f.addExternalRecord(external); f.actions.length = 0;
+  f.notify({ type: 'view.changed', viewState: externalView(externalId) });
+  await setImmediate();
+  const reads = f.actions.filter(call => call.action === 'library.get');
+  assert.equal(reads.length, 1); assert.equal(reads[0].payload.id, externalId);
+  assert.equal(f.editorInstances.length, 1); assert.equal(f.editorInstances[0].artifactId, externalId);
+  assert.match(f.editorInstances[0].document.html, /CLI-created artwork/);
+  assert.match(f.node('.workspace-tabs').innerHTML, /CLI-created artwork/);
+  assert.equal(f.actions.some(call => call.action.startsWith('view.') || call.action === 'library.create'), false);
+});
+
+test('duplicate external views and Reopen share one metadata request and mount once without a false missing state', async t => {
+  let finish;
+  const external = { id: externalId, kind: 'design', title: 'New external', contentStatus: 'ok' };
+  const f = await start(t, { onGet: () => new Promise(resolve => { finish = resolve; }) });
+  f.addExternalRecord(external); f.actions.length = 0;
+  const event = { type: 'view.changed', viewState: externalView(externalId) };
+  f.notify(event); f.notify(event); f.click('retry-editor', { id: externalId }); f.click('retry-editor', { id: externalId });
+  await setImmediate();
+  assert.equal(f.actions.filter(call => call.action === 'library.get').length, 1);
+  assert.equal(f.editorInstances.length, 0);
+  const host = f.node('.workspace-panel').querySelector('.editor-frame-host');
+  assert.ok(host.innerHTML.includes(en.loadingEditor));
+  assert.equal(host.innerHTML.includes(en.restoredTabMissing), false);
+  finish(external); await setImmediate();
+  assert.equal(f.editorInstances.length, 1);
+  assert.equal(f.actions.filter(call => call.action === 'editor.document').length, 1);
+  assert.equal(f.actions.some(call => call.action.startsWith('view.') || call.action === 'library.create'), false);
+});
+
+test('initial external view and late initial-state metadata share the same pending identity lookup', async t => {
+  let finish;
+  const external = { id, kind: 'slides', title: 'Initial external artwork', contentStatus: 'ok' };
+  const f = await start(t, { records: [], active: true,
+    onGet: () => new Promise(resolve => { finish = resolve; }), onDocument: () => ({ html: 'Initial external artwork' }) });
+  f.notify({ type: 'initial-state', result: { artifacts: [], viewState: externalView(id) } });
+  f.click('retry-editor', { id }); await setImmediate();
+  assert.equal(f.actions.filter(call => call.action === 'library.get').length, 1);
+  finish(external); await setImmediate();
+  assert.equal(f.editorInstances.length, 1); assert.equal(f.editorInstances[0].artifactId, id);
+  assert.match(f.node('.workspace-tabs').innerHTML, /Initial external artwork/);
+});
+
+test('unknown identity loading distinguishes confirmed missing from transport and permission failures', async t => {
+  for (const [code, message] of [['NOT_FOUND', en.restoredTabMissing], ['EACCES', en.fileAccessFailed], ['BRIDGE_UNAVAILABLE', en.bridgeUnavailable]]) {
+    const f = await start(t, { onGet: () => { throw Object.assign(new Error('Read failed.'), { code }); } });
+    f.actions.length = 0;
+    f.notify({ type: 'view.changed', viewState: externalView(externalId) }); await setImmediate();
+    const html = f.node('.workspace-panel').querySelector('.editor-frame-host').innerHTML;
+    assert.ok(html.includes(message), code + ' retains its actual error meaning');
+    if (code !== 'NOT_FOUND') assert.equal(html.includes(en.restoredTabMissing), false);
+    assert.equal(f.editorInstances.length, 0);
+    assert.equal(f.actions.some(call => call.action === 'editor.document' || call.action === 'library.create'), false);
+  }
+});
+
+test('invalid metadata responses cannot replace an authored record or mount an arbitrary identity', async t => {
+  const valid = { id: externalId, kind: 'design', title: 'Rejected response', contentStatus: 'ok' };
+  for (const value of [null, [], { artifact: valid }, { ...valid, id }, { ...valid, kind: 'unknown' }, { ...valid, title: '' }]) {
+    const f = await start(t, { onGet: () => value });
+    f.notify({ type: 'view.changed', viewState: externalView(externalId) }); await setImmediate();
+    const html = f.node('.workspace-panel').querySelector('.editor-frame-host').innerHTML;
+    assert.ok(html.includes(en.actionFailed)); assert.equal(html.includes(en.restoredTabMissing), false);
+    assert.equal(f.editorInstances.length, 0);
+    assert.equal(JSON.stringify(f.record), f.original);
+    assert.equal(f.node('.workspace-tabs').innerHTML.includes('Rejected response'), false);
+  }
+});
+
+test('a late unknown-artwork lookup cannot overwrite the editor subsequently opened for B', async t => {
+  let finish;
+  const external = { id: externalId, kind: 'design', title: 'Late A', contentStatus: 'ok' };
+  const f = await start(t, { onGet: () => new Promise(resolve => { finish = resolve; }) });
+  f.addExternalRecord(external);
+  f.notify({ type: 'view.changed', viewState: externalView(externalId) }); await setImmediate();
+  await f.controller.activateArtifact(id); await setImmediate();
+  const editor = f.editorInstances.at(-1);
+  assert.equal(editor.artifactId, id);
+  const count = f.editorInstances.length;
+  finish(external); await setImmediate();
+  assert.equal(f.editorInstances.length, count); assert.equal(editor.disposed, false);
+  assert.equal(f.frame(), editor.iframe);
+});
+
+test('A to B to A identity loading reuses each lookup while only the newest active epoch mounts', async t => {
+  const callbacks = new Map();
+  const a = { id: externalId, kind: 'design', title: 'External A', contentStatus: 'ok' };
+  const b = { id: secondExternalId, kind: 'slides', title: 'External B', contentStatus: 'ok' };
+  const f = await start(t, { onGet: ({ id }) => new Promise(resolve => callbacks.set(id, resolve)) });
+  f.addExternalRecord(a); f.addExternalRecord(b); f.actions.length = 0;
+  f.notify({ type: 'view.changed', viewState: externalView(a.id) });
+  f.notify({ type: 'view.changed', viewState: externalView(b.id) });
+  f.notify({ type: 'view.changed', viewState: externalView(a.id) }); await setImmediate();
+  assert.deepEqual(f.actions.filter(call => call.action === 'library.get').map(call => call.payload.id), [a.id, b.id]);
+  callbacks.get(a.id)(a); await setImmediate();
+  callbacks.get(b.id)(b); await setImmediate();
+  assert.equal(f.editorInstances.length, 1); assert.equal(f.editorInstances[0].artifactId, a.id);
+  assert.equal(f.actions.filter(call => call.action === 'editor.document').length, 1);
+});
+
+test('workspace disposal invalidates an unfinished identity lookup without mounting or navigating', async t => {
+  let finish;
+  const external = { id: externalId, kind: 'design', title: 'Late record', contentStatus: 'ok' };
+  const f = await start(t, { onGet: () => new Promise(resolve => { finish = resolve; }) });
+  f.notify({ type: 'view.changed', viewState: externalView(externalId) }); await setImmediate();
+  f.controller.destroy(); f.actions.length = 0;
+  finish(external); await setImmediate();
+  assert.equal(f.editorInstances.length, 0); assert.deepEqual(f.actions, []);
+});
+
+test('an old identity lookup cannot replace a newly renamed artwork record or its mounted base', async t => {
+  let finish;
+  const external = { id: externalId, kind: 'design', title: 'Before rename', contentStatus: 'ok' };
+  const f = await start(t, { onGet: () => new Promise(resolve => { finish = resolve; }) });
+  f.addExternalRecord(external);
+  f.notify({ type: 'view.changed', viewState: externalView(externalId) }); await setImmediate();
+  f.submit('rename', { id: externalId, title: 'After rename' }); await setImmediate();
+  assert.equal(f.editorInstances.length, 1);
+  const editor = f.editorInstances[0];
+  assert.match(editor.document.html, /After rename/);
+  finish(external); await setImmediate();
+  assert.equal(f.editorInstances.length, 1); assert.equal(editor.disposed, false);
+  assert.equal(f.node('.workspace-panel').querySelector('.editor-title-button').textContent, 'After rename');
+});
+
+test('a refused dirty navigation guard prevents even metadata lookup for an external target', async t => {
+  const f = await start(t, { active: true, failSave: true });
+  f.addExternalRecord({ id: externalId, kind: 'design', title: 'External', contentStatus: 'ok' });
+  const frame = f.frame(); f.actions.length = 0;
+  assert.equal(await f.controller.activateArtifact(externalId), false);
+  assert.equal(f.frame(), frame); assert.equal(f.editorInstances[0].disposed, false);
+  assert.equal(f.actions.some(call => call.action === 'library.get' || call.action.startsWith('view.')), false);
 });
 
 const creationKinds = ['slides', 'design', 'design-system', 'dashboard'];

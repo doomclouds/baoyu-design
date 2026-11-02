@@ -79,6 +79,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let currentEditorUrl = null;
   let currentNativeEditor = null;
   const renamingIds = new Set();
+  const recordLoads = new Map();
+  let editorRecordLoad = null;
   const thumbnailCache = new Map();
   const thumbnailPending = new Set();
   let viewQueue = Promise.resolve();
@@ -354,9 +356,44 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     renderRecords();
   }
   async function openEditor(id, force = false) {
-    if (state.destroyed || renamingIds.has(id)) return;
+    if (state.destroyed || state.view.activeTabId !== id || renamingIds.has(id)) return;
     const record = recordFor(id);
-    if (!record || isDeleted(record)) { renderEditorFailure(t('restoredTabMissing'), id); return; }
+    if (!record) {
+      if (editorRecordLoad?.id === id && editorRecordLoad.sequence === editorSequence) return editorRecordLoad.task;
+      // An external skill or CLI may create an artwork after this UI cached
+      // its list. Resolve that identity before declaring the artwork missing.
+      const load = { id, sequence: ++editorSequence };
+      editorRecordLoad = load;
+      const current = () => !state.destroyed && state.view.activeTabId === id
+        && editorRecordLoad === load && editorSequence === load.sequence && !renamingIds.has(id);
+      const host = elements.panel.querySelector('.editor-frame-host');
+      if (host) host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p></div>';
+      if (!recordLoads.has(id)) {
+        const lookup = invoke('library.get', { id }).then(value => {
+          if (!value || typeof value !== 'object' || Array.isArray(value) || !isRecord(value) || value.id !== id || !value.title.trim()) {
+            throw new BridgeError('The library returned an invalid artwork record.', 'INVALID_RESPONSE');
+          }
+          return value;
+        });
+        recordLoads.set(id, lookup);
+        void lookup.finally(() => { if (recordLoads.get(id) === lookup) recordLoads.delete(id); }).catch(() => {});
+      }
+      load.task = (async () => {
+        let resolved;
+        try { resolved = await recordLoads.get(id); }
+        catch (error) {
+          if (current()) renderEditorFailure(error?.code === 'NOT_FOUND' ? t('restoredTabMissing') : errorMessage(error), id);
+          return;
+        }
+        if (!current()) return;
+        // A concurrent refresh/rename may already have a newer record.
+        if (!recordFor(id)) upsertRecord(resolved);
+        renderSidebar(); renderTabs(); renderWorkspace();
+        return openEditor(id, force);
+      })().finally(() => { if (editorRecordLoad === load) editorRecordLoad = null; });
+      return load.task;
+    }
+    if (isDeleted(record)) { renderEditorFailure(t('restoredTabMissing'), id); return; }
     if (record.contentStatus && record.contentStatus !== 'ok') { renderEditorFailure(t(record.contentStatus === 'missing' ? 'missingBody' : 'invalidBody'), id); return; }
     if (currentNativeEditor && state.view.activeTabId === id) {
       try { await flushCurrentEditor(); }
