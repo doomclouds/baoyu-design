@@ -1,5 +1,45 @@
 # Codex Design 0.5.2 candidate
 
+## Status correction — 2026-11-02
+
+The sections below retain the earlier candidate and 0.5.1 observation history;
+their statements that 0.5.2 was not installed, 0.5.1 remained installed, or the
+second request was still unsent are **historical, not the current status**.
+0.5.2 was subsequently installed and its actual runtime/package identity was
+checked. The second request was received in a real parent message at
+`2026-11-02T05:26:13Z` and eventually completed through the native request flow.
+
+That completion required **manual restoration of the authentic 0.5.1 cache**
+after dispatch failed against an empty old cache directory. It is not an
+automatic-upgrade pass. The retained operator report is
+`codex-design-0.5.2-native-operator-result.json` in the acceptance archive.
+
+Later actual 0.5.2 Canvas acceptance also exposed a Resize failure: the index
+saved `900 × 620`, while the generated component retained `$preview` at
+`800 × 600`; the unchanged checker returned one problem. The earlier targeted
+test results below do not erase that real-host failure.
+
+A separate self-created 0.5.2 QA request also completed its actual native
+Send/parent/child flow, checker 0 and exact `Upgrade QA first passed.` reply.
+Its idle cleanup retained zero active/pending jobs, unchanged checked control
+files, and a completed idle child turn. This separate success does not replace
+the empty-cache or Resize counterexamples.
+
+The old production Design System was subsequently reopened and rendered in
+the native UI with a verified HTTP-200 session at PID 52392; 44 project-file
+hashes were unchanged across that observation. The old PID 49932 had already
+exited. This was an **ordinary dead-PID fresh start**, not proof of the strict
+connection-refused recovery branch. Its evidence is
+`codex-design-0.5.2-old-ds-reopen.json` and
+`codex-design-0.5.2-old-ds-native.png` in the acceptance archive.
+
+These two operational gaps motivate the
+[0.5.3 candidate and its pending acceptance](ACCEPTANCE-0.5.3.md). Its first
+complete run is currently **513/514**, with an `EBUSY` temporary-editor cleanup
+failure whose cause is not established. It is not a green release gate.
+
+All earlier failures and evidence scopes below are preserved.
+
 ## Scope
 
 This candidate follows cases discovered during actual installed 0.5.1

@@ -54410,9 +54410,19 @@ function syncNativeBlankArtboardPreviews(state, indexFile, owner) {
   } catch {
     return state;
   }
-  if (!index?.boards || typeof index.boards !== "object" || Array.isArray(index.boards)) return state;
+  let boards;
+  if (index?.boards && typeof index.boards === "object" && !Array.isArray(index.boards)) boards = Object.entries(index.boards);
+  else if (Array.isArray(index?.artboards)) {
+    const seen = /* @__PURE__ */ new Set();
+    boards = [];
+    for (const size of index.artboards) {
+      if (!size || typeof size !== "object" || Array.isArray(size) || typeof size.file !== "string" || !size.file || seen.has(size.file) || ![size.w, size.h].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)) return state;
+      seen.add(size.file);
+      boards.push([size.file, size]);
+    }
+  } else return state;
   let next;
-  for (const [file3, size] of Object.entries(index.boards)) {
+  for (const [file3, size] of boards) {
     const html = files[file3];
     if (typeof html !== "string" || ![size?.w, size?.h].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)) continue;
     const scripts = [...html.matchAll(/<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script\s*>/gi)].filter((match) => /\bdata-dc-script\b/i.test(match[1]));
@@ -55832,7 +55842,7 @@ async function stopLocalEditor(record3, { pluginRoot, env = process.env, timeout
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.5.2";
+var PLUGIN_UI_VERSION = "0.5.3";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var UI_MIME_TYPE = "text/html;profile=mcp-app";

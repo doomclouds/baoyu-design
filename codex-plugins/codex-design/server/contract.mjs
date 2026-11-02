@@ -1,4 +1,4 @@
-export const PLUGIN_UI_VERSION = '0.5.2';
+export const PLUGIN_UI_VERSION = '0.5.3';
 export const LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 export const FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 export const UI_MIME_TYPE = 'text/html;profile=mcp-app';

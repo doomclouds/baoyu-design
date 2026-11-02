@@ -1,6 +1,34 @@
 # Codex Design library implementation
 
-## 0.5.2 candidate follow-ups
+## 0.5.3 candidate follow-ups
+
+This candidate addresses two failures observed after installing 0.5.2:
+
+- A verified older version directory in the same managed plugin-cache family
+  can contain no files while its empty directory tree remains. Native request
+  migration now treats that narrowly validated state as an unavailable old
+  package. Nonempty remnants, corrupt package records, links, wrong families and invalid
+  versions remain refused; the old directory is not deleted.
+- The real Canvas Resize writer serializes an in-memory `artboards` array,
+  which the files publisher later converts to the disk v3 `boards` map. Owned
+  generated-preview synchronization now accepts that validated live shape at
+  the existing local-state boundary. It retains the same-file marker, unchanged
+  generated logic and index-string cache guards; custom content and copies are
+  not claimed, and the original checker is unchanged.
+
+The installed 0.5.2 second request eventually completed only after manually
+restoring the authentic 0.5.1 cache. Its earlier automatic dispatch failures
+remain failures. An actual 0.5.2 Resize also left the generated preview at the
+old dimensions and failed the checker. These are the baseline defects, not
+successful acceptance of the 0.5.3 fixes.
+
+Targeted author/reviewer results are recorded in
+[ACCEPTANCE-0.5.3.md](ACCEPTANCE-0.5.3.md). The first complete candidate run is
+**513/514**, with an unresolved temporary-editor `EBUSY` cleanup failure;
+complete-suite acceptance and installed 0.5.3 native verification remain
+pending.
+
+## 0.5.2 candidate follow-ups (historical)
 
 The candidate keeps the global workspace and host-selected/default local
 environment. It repairs active Rename save bases, uncached externally created

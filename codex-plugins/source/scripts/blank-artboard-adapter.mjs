@@ -30,9 +30,21 @@ export function syncNativeBlankArtboardPreviews(state, indexFile, owner) {
   if (previous?.indexFile === indexFile && previous.indexText === indexText) return state;
   let index;
   try { index = JSON.parse(indexText); } catch { return state; }
-  if (!index?.boards || typeof index.boards !== 'object' || Array.isArray(index.boards)) return state;
+  let boards;
+  if (index?.boards && typeof index.boards === 'object' && !Array.isArray(index.boards)) boards = Object.entries(index.boards);
+  else if (Array.isArray(index?.artboards)) {
+    // The live document seam carries legacy artboards; its publisher converts
+    // that layout to the canonical v3 boards map only after local edits settle.
+    const seen = new Set();
+    boards = [];
+    for (const size of index.artboards) {
+      if (!size || typeof size !== 'object' || Array.isArray(size) || typeof size.file !== 'string' || !size.file
+        || seen.has(size.file) || ![size.w, size.h].every(value => typeof value === 'number' && Number.isFinite(value) && value > 0)) return state;
+      seen.add(size.file); boards.push([size.file, size]);
+    }
+  } else return state;
   let next;
-  for (const [file, size] of Object.entries(index.boards)) {
+  for (const [file, size] of boards) {
     const html = files[file];
     if (typeof html !== 'string' || ![size?.w, size?.h].every(value => typeof value === 'number' && Number.isFinite(value) && value > 0)) continue;
     const scripts = [...html.matchAll(/<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script\s*>/gi)]

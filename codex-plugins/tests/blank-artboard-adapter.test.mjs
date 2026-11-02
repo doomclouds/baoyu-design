@@ -6,6 +6,7 @@ import os from 'node:os';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { setImmediate } from 'node:timers/promises';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { readCommentComponent } from '../source/scripts/comment-toolbar-adapter.mjs';
 import { adaptBlankArtboardCreation, completeNativeBlankArtboard, syncNativeBlankArtboardPreviews } from '../source/scripts/blank-artboard-adapter.mjs';
@@ -17,6 +18,46 @@ const original = await fs.readFile(path.join(rawAssets, filename), 'utf8');
 const adapted = adaptBlankArtboardCreation(original);
 const prelude = adapted.slice(0, adapted.indexOf(original.slice(0, 80)));
 assert.ok(prelude.length > 0 && prelude.length < 12_000);
+
+// Load real, lazily linked vendor factories without mounting React or a UI.
+// The bounded parser fallback handles regex literals in the shared metadata
+// factory that the lightweight brace reader intentionally does not parse.
+function vendorRuntime() {
+  const exports = [...adapted.matchAll(/\b[at]\(e,"([^"\n]+)",\(\)=>([\w$]+)/g)];
+  const factories = [...adapted.matchAll(/function ([\w$]+)\(e\)\{var /g)];
+  const loaded = new Set(), target = { recordEdit() {} };
+  let context;
+  const load = property => {
+    const item = exports.find(match => match[1] === property);
+    if (!item) throw new Error('Missing vendor export: ' + String(property));
+    const factory = factories.filter(match => match.index < item.index).at(-1);
+    assert.ok(factory && !loaded.has(factory[1]), 'a missing export must have an uninitialized vendor factory');
+    loaded.add(factory[1]);
+    let text;
+    try {
+      const part = readCommentComponent(adapted.slice(factory.index), new RegExp(`^function ${factory[1]}\\(e\\)\\{`));
+      new vm.Script('(' + part.text + ')'); text = part.text;
+    } catch { /* Use the JS parser to find the actual factory boundary. */ }
+    if (!text) for (let end = adapted.indexOf('}', item.index); end > 0 && end < factory.index + 100_000; end = adapted.indexOf('}', end + 1)) {
+      const candidate = adapted.slice(factory.index, end + 1);
+      try { new vm.Script('(' + candidate + ')'); text = candidate; break; } catch { /* Not this closing brace. */ }
+    }
+    assert.ok(text, 'extract the complete actual vendor factory for ' + property);
+    vm.runInContext('(' + text + ')', context)(registry)();
+  };
+  const registry = new Proxy(target, { get(object, property) { if (!Reflect.has(object, property)) load(property); return Reflect.get(object, property); } });
+  context = vm.createContext({ e: registry, t: (object, name, get, set) => Object.defineProperty(object, name, { get, set, configurable: true }),
+    TextEncoder, TextDecoder, Uint8Array, Blob, URL, atob, btoa, setTimeout, clearTimeout, setInterval, clearInterval, performance, structuredClone, console,
+    PC: 0, Yo: {}, FC: 0, xm: {}, __CODEX_DESIGN_EDITOR_TRANSPORT__: { channel: 'actual-resize-test' } });
+  const react = readCommentComponent(original, /function kM\(\)\{/);
+  const jsx = readCommentComponent(original, /function LM\(\)\{/);
+  assert.ok(react && react.text.length < 10_000 && jsx && jsx.text.length < 1_000);
+  const reactRuntime = vm.runInContext('(' + react.text + ')()', context);
+  const jsxRuntime = vm.runInContext('(' + jsx.text + ')()', context);
+  target.load_react = () => reactRuntime; target.load_react_jsx_runtime = () => jsxRuntime;
+  vm.runInContext(prelude, context);
+  return { e: registry, context };
+}
 
 function exported(property) {
   const matches = [...original.matchAll(new RegExp(`\\b[at]\\(e,"${property}",\\(\\)=>([\\w$]+)`, 'g'))];
@@ -161,6 +202,126 @@ test('the actual local content-update owner keeps resized index and generated pr
   assert.equal(result.content.files['canvas.json'], state.content.files['canvas.json']);
   assert.equal((await originalCheck(t, changed, size)).status, 0);
   assert.equal(applyLocalState(state, false), state, 'legacy state updates remain untouched');
+});
+
+async function actualDocument(t, runtime = vendorRuntime()) {
+  const { e, context } = runtime;
+  const initialSpec = { file: 'Owned.dc.html', x: 0, y: 0, w: 800, h: 600 };
+  const initialHtml = completeNativeBlankArtboard(e.blankDcDocument(), initialSpec);
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-real-resize-'));
+  assert.equal(path.dirname(directory), path.resolve(os.tmpdir()));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await fs.mkdir(path.join(directory, 'project'));
+  const initialIndex = { v: 3, title: 'Actual Resize QA', createdOnFiles: { v: 1, at: '2026-11-02T00:00:00Z' },
+    boards: { [initialSpec.file]: { x: 0, y: 0, w: 800, h: 600 } }, order: [initialSpec.file], launch: { view: 'canvas' }, pages: [], notes: {}, designSystems: [] };
+  await fs.writeFile(path.join(directory, 'project/canvas.json'), JSON.stringify(initialIndex));
+  await fs.writeFile(path.join(directory, 'project', initialSpec.file), initialHtml);
+  const hash = text => createHash('sha256').update(text).digest('hex');
+  let version = 0;
+  const saved = new Map(), batches = [];
+  for (const file of ['canvas.json', initialSpec.file]) saved.set('project/' + file, await fs.readFile(path.join(directory, 'project', file), 'utf8'));
+  const port = { canWrite: true, version: () => ({ version: 'v' + version }),
+    list: async () => [...saved].map(([path, text]) => ({ path, sha256: hash(text), size: Buffer.byteLength(text), contentType: path.endsWith('.json') ? 'application/json' : 'text/html' })),
+    readText: async file => ({ text: saved.get(file), sha256: hash(saved.get(file)) }),
+    readBytes: async file => ({ bytes: new TextEncoder().encode(saved.get(file)), sha256: hash(saved.get(file)) }),
+    onRemoteChange: () => () => {}, liveSha: file => saved.has(file) ? hash(saved.get(file)) : null,
+    async publish(batch, options) {
+      // A filesystem port fixture is the persistence boundary, not a second
+      // implementation of metadata mutation, normalization or dirty selection.
+      for (const [file, expected] of Object.entries(options.ifMatch)) assert.equal(saved.has(file) ? hash(saved.get(file)) : null, expected);
+      const files = {};
+      for (const [file, entry] of Object.entries(batch)) {
+        assert.ok(file.startsWith('project/') && !file.includes('..'));
+        const text = typeof entry === 'string' ? entry : entry.content;
+        assert.equal(typeof text, 'string'); files[file] = text;
+      }
+      batches.push(files);
+      for (const [file, text] of Object.entries(files)) { await fs.writeFile(path.join(directory, file), text); saved.set(file, text); }
+      return { ok: true, version: 'v' + (++version), shas: Object.fromEntries(Object.keys(files).map(file => [file, hash(saved.get(file))])), preconditionsChecked: true };
+    },
+  };
+  const doc = e.createFilesDesignDocument({ port, canWrite: true, defaultTitle: 'Actual Resize QA' });
+  t.after(() => doc.dispose());
+  for (let attempt = 0; attempt < 100 && doc.loadState() === 'loading'; attempt++) await setImmediate();
+  assert.equal(doc.loadState(), 'live');
+  assert.ok(Array.isArray(JSON.parse(doc.content().files[e.canvasMetadataFile]).artboards), 'the real live seam is not the disk boards map');
+  const kv = e.createDocumentKvAdapter(doc);
+  const mutation = readCommentComponent(original, /\(([\w$]+),([\w$]+)\)=>\{(?=let [\w$]+=\(0,e\.mergeMissingCanvasManifestMetadata\))/);
+  assert.ok(mutation && mutation.text.length < 700);
+  const owner = vm.runInContext('(' + mutation.text + ')', context);
+  const manifest = () => e.parseCanvasMetadata(doc.content().files[e.canvasMetadataFile], doc.content().files);
+  return { doc, kv, batches, runtime, manifest,
+    async text(value) {
+      e.setKvClient(kv);
+      await kv.set(e.PlatformFileContentHandler_4(initialSpec.file), doc.content().files[initialSpec.file].replace('</section>', '<div>' + value + '</div></section>'));
+      await doc.settle();
+    },
+    async commit(value) {
+      e.setKvClient(kv);
+      Object.assign(context, { ga: { current: manifest() }, Ra: { current: null }, Ve: { current: 0 }, Ca() {}, Ct() {}, kr: value => value,
+        ge(message) { throw new Error(message); } });
+      owner(value); await doc.settle();
+    },
+    async disk() { return { index: JSON.parse(await fs.readFile(path.join(directory, 'project/canvas.json'), 'utf8')),
+      html: await fs.readFile(path.join(directory, 'project', initialSpec.file), 'utf8') }; },
+    check() {
+      const checker = fileURLToPath(new URL('../../skills/claude-design/scripts/artifact.mjs', import.meta.url));
+      const checked = spawnSync(process.execPath, [checker, 'check', directory], { encoding: 'utf8', windowsHide: true });
+      assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+    },
+  };
+}
+
+test('actual Resize metadata owner, KV adapter, files store and publisher persist matching dimensions after text editing', async t => {
+  const f = await actualDocument(t);
+  await f.text('Text before Resize'); f.batches.length = 0;
+  await f.commit({ artboards: [{ ...f.manifest().artboards[0], w: 900, h: 620 }] });
+  const { index: disk, html } = await f.disk();
+  const file = 'Owned.dc.html';
+  assert.equal(disk.boards[file].w, 900); assert.equal(disk.boards[file].h, 620);
+  assert.deepEqual(preview(html).$preview, { width: 900, height: 620 }); assert.match(html, /Text before Resize/);
+  assert.equal(f.batches.length, 1, 'the actual publisher sends the component and index together');
+  assert.deepEqual(Object.keys(f.batches[0]).sort(), ['project/Owned.dc.html', 'project/canvas.json']);
+  f.check();
+});
+
+test('actual mutable Resize payloads and two live stores keep their own matching persistent previews', async t => {
+  const runtime = vendorRuntime(), first = await actualDocument(t, runtime), second = await actualDocument(t, runtime);
+  const payload = first.manifest();
+  for (const [width, height] of [[900, 620], [800, 600], [900, 620]]) {
+    Object.assign(payload.artboards[0], { w: width, h: height });
+    first.batches.length = 0;
+    await first.commit(payload);
+    const disk = await first.disk();
+    assert.deepEqual(preview(disk.html).$preview, { width, height });
+    assert.equal(disk.index.boards['Owned.dc.html'].w, width);
+    assert.equal(first.batches.length, 1);
+    assert.deepEqual(Object.keys(first.batches[0]).sort(), ['project/Owned.dc.html', 'project/canvas.json']);
+    first.check();
+  }
+  await second.commit({ artboards: [{ ...second.manifest().artboards[0], w: 900, h: 620 }] });
+  assert.deepEqual(preview((await second.disk()).html).$preview, { width: 900, height: 620 });
+  second.check();
+});
+
+test('real legacy layout shape keeps typing fast, rejects malformed dimensions and retries failed calculations', () => {
+  const state = indexedState(), store = localStore();
+  const layout = (w, h) => JSON.stringify({ artboards: [{ file: 'Own.dc.html', x: 0, y: 0, w, h }, { file: 'Large.dc.html', w: 800, h: 600 }] });
+  const first = layout(400, 600);
+  state.content.files['canvas.json'] = first; store.apply(state);
+  const large = state.content.files['Large.dc.html'];
+  Object.defineProperty(state.content.files, 'Large.dc.html', { configurable: true, enumerable: true, get() { throw new Error('unchanged layout read'); } });
+  assert.equal(store.apply(state), state);
+  state.content.files['canvas.json'] = layout(900, 620);
+  assert.throws(() => store.apply(state), /unchanged layout read/);
+  Object.defineProperty(state.content.files, 'Large.dc.html', { configurable: true, enumerable: true, writable: true, value: large });
+  const result = store.apply(state);
+  assert.deepEqual(preview(result.content.files['Own.dc.html']).$preview, { width: 900, height: 620 });
+  for (const artboards of [[null], [{ file: 'Own.dc.html', w: '900', h: 620 }], [{ file: 'Own.dc.html', w: Infinity, h: 620 }],
+    [{ file: 'Own.dc.html', w: 900, h: 620 }, { file: 'Own.dc.html', w: 901, h: 621 }]]) {
+    const input = { content: { files: { ...state.content.files, 'canvas.json': JSON.stringify({ artboards }) } } };
+    assert.equal(syncNativeBlankArtboardPreviews(input, 'canvas.json'), input);
+  }
 });
 
 function indexedState(width = 400, height = 600) {

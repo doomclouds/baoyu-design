@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createLibraryStore } from '../source/library/index.mjs';
 import { createEditRequestStore } from '../source/library/edit-requests.mjs';
@@ -15,6 +17,7 @@ const CHILD = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const OTHER = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
 const source = fileURLToPath(new URL('../source/', import.meta.url));
 const hash = value => createHash('sha256').update(value).digest('hex');
+const execute = promisify(execFile);
 
 async function removeOwned(directory, selected) {
   const relative = path.relative(path.resolve(directory), path.resolve(selected));
@@ -101,6 +104,108 @@ async function fixture(t, { oldVersion = '1.2.0', newVersion = '1.3.0', portable
 async function controlBytes(f) {
   return Promise.all([NATIVE_BINDING_FILE, WORKER_FILE, WORKER_JOBS_FILE].map(name => fs.readFile(path.join(f.root, name), 'utf8')));
 }
+
+async function oldDirectoryShell(f, tree = false) {
+  await f.removeOld();
+  await fs.mkdir(tree ? path.join(f.old.root, 'skills/codex-design/scripts') : f.old.root, { recursive: true });
+  if (tree) await fs.mkdir(path.join(f.old.root, '.codex-plugin'));
+}
+
+async function directoryIdentities(root) {
+  const entries = [];
+  const visit = async directory => {
+    const info = await fs.lstat(directory);
+    assert.equal(info.isDirectory(), true); assert.equal(info.isSymbolicLink(), false);
+    entries.push({ path: path.relative(root, directory), dev: info.dev, ino: info.ino });
+    for (const entry of await fs.readdir(directory)) await visit(path.join(directory, entry));
+  };
+  await visit(root);
+  return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+test('actual current CLI dispatch upgrades flat and nested empty old 0.5.2 cache shells without deleting them', async t => {
+  for (const tree of [false, true]) {
+    const f = await fixture(t, { oldVersion: '0.5.2', newVersion: '0.5.3', marketplace: tree ? 'custom-design-market' : 'codex-design-marketplace' });
+    await oldDirectoryShell(f, tree); await f.accept();
+    const directories = await directoryIdentities(f.old.root), oldBinding = f.binding(), oldRegistry = f.registry();
+    const cli = path.join(f.current.skillDir, 'scripts/codex-artifact.mjs');
+    // Use the real packaged command entry/dispatcher. Only the fixture library
+    // root is injected, so this child process cannot initialize the user's library.
+    await fs.writeFile(cli, "import {runArtifactCommand} from '../../../scripts/artifact-command.mjs';\n"
+      + "import {createLibraryStore} from '../../../library/index.mjs';\nimport {fileURLToPath} from 'node:url';\n"
+      + `await runArtifactCommand(fileURLToPath(new URL('../',import.meta.url)),process.argv.slice(2),{libraryStore:createLibraryStore({root:${JSON.stringify(f.store.root)}})});\n`);
+    await refreshManifest(f.current.root);
+    const output = await execute(process.execPath, [cli, 'request-dispatch', f.root, f.request.id], {
+      env: { ...process.env, ...f.env }, windowsHide: true, timeout: 20_000, maxBuffer: 1024 * 1024,
+    });
+    const result = JSON.parse(output.stdout);
+    assert.equal(result.accepted, true); assert.equal(result.duplicate, false); assert.equal(result.skillPackageUpgraded, true);
+    assert.equal(result.previousPackageBytesVerified, false); assert.equal(result.requiresRegistration, true);
+    assert.equal(result.jobId, 'request:' + f.request.id); assert.equal(result.originThreadId, PARENT);
+    assert.equal(f.binding().skillDir, f.current.skillDir); assert.equal(f.binding().token, oldBinding.token);
+    assert.equal(f.binding().skillUpgrade.fromVersion, '0.5.2'); assert.deepEqual(f.registry(), oldRegistry);
+    assert.equal(f.jobs().jobs[f.queued.jobId].status, 'completed'); assert.equal(f.jobs().order.length, 2);
+    assert.deepEqual(await directoryIdentities(f.old.root), directories, 'the updater shell is neither deleted nor reconstructed');
+    assert.equal((await f.requests.read(f.request.id)).dispatch.jobId, result.jobId);
+  }
+});
+
+test('an unsent prepared request cannot migrate or remove an exactly empty cache shell', async t => {
+  const f = await fixture(t); await oldDirectoryShell(f, true);
+  const before = await controlBytes(f), directories = await directoryIdentities(f.old.root);
+  await assert.rejects(f.dispatch(), { code: 'REQUEST_NOT_ACCEPTED' });
+  assert.deepEqual(await controlBytes(f), before); assert.deepEqual(await directoryIdentities(f.old.root), directories);
+  assert.equal((await f.requests.read(f.request.id)).status, 'prepared');
+});
+
+test('dot files, zero-byte files, metadata remnants and hardlinked files are not empty updater shells', async t => {
+  for (const mode of ['dot-file', 'zero-byte', 'metadata', 'hardlink']) {
+    const f = await fixture(t); await oldDirectoryShell(f, true); await f.accept();
+    const selected = path.join(f.old.root, mode === 'dot-file' ? '.keep' : mode === 'metadata' ? '.generated-manifest.json' : 'skills/codex-design/scripts/residue.mjs');
+    if (mode === 'hardlink') {
+      const original = path.join(f.directory, 'outside-shell-sentinel'); await fs.writeFile(original, ''); await fs.link(original, selected);
+    } else await fs.writeFile(selected, '');
+    const before = await controlBytes(f), identity = await fs.lstat(selected);
+    await assert.rejects(f.dispatch(), { code: 'BINDING_CONFLICT' });
+    assert.deepEqual(await controlBytes(f), before); assert.equal((await fs.lstat(selected)).ino, identity.ino);
+    assert.equal((await fs.readFile(selected)).length, 0, 'no remnant file is deleted to make recovery pass');
+  }
+});
+
+test('a nonempty old package with changed owned bytes keeps its integrity refusal', async t => {
+  const f = await fixture(t); await f.accept();
+  await fs.appendFile(path.join(f.old.skillDir, 'SKILL.md'), '\nChanged old package bytes.');
+  const before = await controlBytes(f);
+  await assert.rejects(f.dispatch(), { code: 'BINDING_CONFLICT' });
+  assert.deepEqual(await controlBytes(f), before);
+});
+
+test('empty-looking old root and nested junctions cannot authorize the removed-cache fallback', async t => {
+  for (const nested of [false, true]) {
+    const f = await fixture(t); await oldDirectoryShell(f); await f.accept();
+    const target = path.join(f.directory, 'unrelated-empty-directory'); await fs.mkdir(target);
+    const link = nested ? path.join(f.old.root, 'skills') : f.old.root;
+    if (!nested) await fs.rmdir(f.old.root);
+    await fs.symlink(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+    const before = await controlBytes(f);
+    await assert.rejects(f.dispatch(), { code: 'BINDING_CONFLICT' });
+    assert.deepEqual(await controlBytes(f), before); assert.equal((await fs.lstat(link)).isSymbolicLink(), true);
+    assert.deepEqual(await fs.readdir(target), []);
+  }
+});
+
+test('empty portable, different-family and non-older cache shells still need their original package proof', async t => {
+  for (const mode of ['portable', 'different-family', 'not-older']) {
+    const f = await fixture(t, { portable: mode === 'portable' }); await oldDirectoryShell(f, true); await f.accept();
+    if (mode !== 'portable') {
+      const oldRoot = mode === 'different-family' ? path.join(f.home, 'plugins/cache/unrelated-market/codex-design/1.2.0') : path.join(f.family, '1.3.0+old');
+      await fs.mkdir(path.join(oldRoot, 'skills/codex-design/scripts'), { recursive: true });
+      atomicJson(path.join(f.root, NATIVE_BINDING_FILE), { ...f.binding(), skillDir: path.join(oldRoot, 'skills/codex-design') });
+    }
+    const before = await controlBytes(f);
+    await assert.rejects(f.dispatch(), { code: 'BINDING_CONFLICT' }); assert.deepEqual(await controlBytes(f), before);
+  }
+});
 
 test('a prepared request cannot migrate a removed-cache binding or reuse the earlier completed receipt', async t => {
   const f = await fixture(t); await f.removeOld();

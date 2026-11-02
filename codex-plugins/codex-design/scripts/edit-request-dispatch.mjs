@@ -92,6 +92,50 @@ function packagedSkill(skillDir, kind, { executing = false } = {}) {
     manifestSha256: createHash('sha256').update(fs.readFileSync(path.join(root, '.generated-manifest.json'))).digest('hex') };
 }
 
+function managedPreviousRelease(current, oldRoot, env) {
+  const codexHome = env.CODEX_HOME === undefined ? path.join(os.homedir(), '.codex') : env.CODEX_HOME;
+  if (typeof codexHome !== 'string' || !path.isAbsolute(codexHome)) return null;
+  const cacheRoot = path.join(path.resolve(codexHome), 'plugins/cache');
+  const relative = path.relative(cacheRoot, current.root), parts = relative.split(path.sep);
+  if (path.isAbsolute(relative) || parts.length !== 3 || parts.some(part => !part || part === '.' || part === '..')
+    || parts[1] !== packageName || parts[2] !== current.version) return null;
+  const family = path.dirname(current.root);
+  if (!identicalPath(path.dirname(oldRoot), family)) return null;
+  if (!identicalPath(fs.realpathSync(family), family) || fs.lstatSync(family).isSymbolicLink()) {
+    throw conflict('The managed plugin cache family is aliased.');
+  }
+  const version = path.basename(oldRoot);
+  return olderRelease(version, current.version) ? version : null;
+}
+
+// Updaters can leave directory shells after removing old package bytes. Only
+// a proven managed family may use this bounded, non-destructive empty-tree check.
+function emptyDirectoryTree(root) {
+  let entries = 0, empty = true;
+  const visit = (directory, depth) => {
+    if (depth > 32) throw conflict('The old cache directory shell is too deep to verify.');
+    const info = fs.lstatSync(directory);
+    if (!info.isDirectory() || info.isSymbolicLink() || !identicalPath(fs.realpathSync(directory), directory)) {
+      throw conflict('The old cache directory shell is aliased.');
+    }
+    const handle = fs.opendirSync(directory);
+    try {
+      for (let entry; (entry = handle.readSync()) !== null;) {
+        if (++entries > 4096) throw conflict('The old cache directory shell is too large to verify.');
+        const file = path.join(directory, entry.name), child = fs.lstatSync(file);
+        if (child.isSymbolicLink() || !identicalPath(fs.realpathSync(file), file)) throw conflict('The old cache contains an alias.');
+        if (child.isDirectory()) visit(file, depth + 1);
+        else {
+          if (!child.isFile()) throw conflict('The old cache contains an unsafe file.');
+          empty = false;
+        }
+      }
+    } finally { handle.closeSync(); }
+  };
+  visit(root, 0);
+  return empty;
+}
+
 function upgradedSkill(previousSkill, skillDir, kind, env) {
   try {
     const current = packagedSkill(skillDir, kind, { executing: true });
@@ -99,25 +143,22 @@ function upgradedSkill(previousSkill, skillDir, kind, env) {
     const oldRoot = path.resolve(previousSkill, '../..');
     if (!identicalPath(previousSkill, path.join(oldRoot, ...current.relativeSkill.split('/')))) throw conflict('The previous skill has a different artwork kind.');
     const oldInfo = fs.lstatSync(oldRoot, { throwIfNoEntry: false });
+    const managedVersion = managedPreviousRelease(current, oldRoot, env);
     let fromVersion, previousBytesVerified;
+    let old;
     if (oldInfo) {
-      const old = packagedSkill(previousSkill, kind);
+      try { old = packagedSkill(previousSkill, kind); }
+      catch (error) {
+        if (!managedVersion || !emptyDirectoryTree(oldRoot)) throw error;
+      }
+    }
+    if (old) {
       fromVersion = old.version; previousBytesVerified = true;
     } else {
-      // A removed legacy cache has no bytes left to verify. Its authoritative
-      // binding is accepted only inside this executing package's managed cache
-      // family, never from a loose clone or a similarly named sibling tree.
-      const codexHome = env.CODEX_HOME === undefined ? path.join(os.homedir(), '.codex') : env.CODEX_HOME;
-      if (typeof codexHome !== 'string' || !path.isAbsolute(codexHome)) throw conflict('The managed plugin cache root cannot be verified.');
-      const cacheRoot = path.join(path.resolve(codexHome), 'plugins/cache');
-      const relative = path.relative(cacheRoot, current.root), parts = relative.split(path.sep);
-      if (path.isAbsolute(relative) || parts.length !== 3 || parts.some(part => !part || part === '.' || part === '..')
-        || parts[1] !== packageName || parts[2] !== current.version) throw conflict('The executing package is outside the managed plugin cache layout.');
-      const family = path.dirname(current.root);
-      if (!identicalPath(fs.realpathSync(family), family) || fs.lstatSync(family).isSymbolicLink()
-        || !identicalPath(path.dirname(current.root), family) || !identicalPath(path.dirname(oldRoot), family)
-        || path.basename(current.root) !== current.version) throw conflict('The removed previous package is outside the verified managed cache family.');
-      fromVersion = path.basename(oldRoot); previousBytesVerified = false;
+      // Missing bytes, including a verified empty directory shell, cannot be
+      // authenticated as an old package. Keep that audit distinction explicit.
+      if (!managedVersion) throw conflict('The removed previous package is outside the verified older managed cache family.');
+      fromVersion = managedVersion; previousBytesVerified = false;
     }
     if (!olderRelease(fromVersion, current.version)) throw conflict('A skill binding may migrate only to a newer verified plugin release.');
     return { ...current, fromVersion, previousBytesVerified };
