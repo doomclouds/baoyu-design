@@ -1,6 +1,16 @@
 # Codex Design library implementation
 
-## 0.6.0 upstream migration candidate
+## 0.6.1 native acceptance follow-up
+
+0.6.0 was published at `b5cb0a9`, installed through the GitHub marketplace and
+verified against the generated package (191 identical files). Real native
+comment dispatch, registered-child reuse and a separate guarded 0.5.3 data
+service upgrade passed. Host testing then found historical-loader closure,
+History opacity, WOFF2 module-import and Canvas live-session flush issues.
+0.6.1 repairs those paths; its consuming-host checks remain in progress.
+See [ACCEPTANCE-0.6.1.md](ACCEPTANCE-0.6.1.md) for the current evidence and limits.
+
+## 0.6.0 upstream migration
 
 The development branch now targets upstream 2.7.1 (`6759e35`) while retaining
 the established 0.5.3 library, native comment/request and content-only transfer
@@ -14,17 +24,16 @@ The after-DOM-fix build reports 190 owned files. The first complete suite was
 640/642 and exposed head-before-body preview initialization plus an obsolete
 port-1 boot fixture. Those results remain in the acceptance record. The next
 complete run passed 643/643, with no failures, skips or cancellations. Generated
-consistency/portable checks and actual installed 0.6.0 host acceptance are still
-pending. The candidate is not yet published or installed; 0.5.3 remains the
-verified release. See [ACCEPTANCE-0.6.0.md](ACCEPTANCE-0.6.0.md) for overlapping
+consistency and portable checks passed; actual host acceptance found the
+follow-up issues above. See [ACCEPTANCE-0.6.0.md](ACCEPTANCE-0.6.0.md) for overlapping
 focused evidence, retained failures and the exact native gates.
 
 ## Upstream source synchronization
 
-`main` now includes upstream 2.7.1. The published Codex Design package remains
-the verified 0.5.3 on `codex/plugin`. The initial synchronization required an
-adapter migration before rebuilding; the 0.6.0 candidate above now contains
-that work but has not closed its release/native gates. See
+`main` includes upstream 2.7.1, and the configured marketplace still uses
+`codex/plugin`. The initial synchronization required an adapter migration
+before rebuilding; 0.6.0 contains that work and 0.6.1 addresses subsequent
+native acceptance findings. See
 [the synchronization and value assessment](UPSTREAM-2.7.1.md) for the original
 baseline and failed compatibility check.
 

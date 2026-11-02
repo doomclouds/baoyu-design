@@ -2833,23 +2833,37 @@ function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
     return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + PASSIVE_CSP + '"><meta name="referrer" content="no-referrer"></head><body>' + template.innerHTML + "</body></html>";
   };
   function loadSnapshotDocument(channel) {
-    let accepted = false, editor;
+    const document3 = window.document;
+    let accepted = false, editor, errors = 0;
     const outgoing = /* @__PURE__ */ new Set(["codex-design:editor-request", "codex-design:editor-transport-ready", "codex-design:editor-app-ready", "codex-design:editor-diagnostic", "codex-design:preview-close"]);
     const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed"]);
+    const diagnostic = (error3) => {
+      if (errors >= 4) return;
+      const message = typeof error3 === "string" ? error3 : typeof error3?.message === "string" ? error3.message : "";
+      if (!message) return;
+      errors++;
+      window.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: "Historical preview loader: " + message.slice(0, 1e3) }, "*");
+    };
+    window.addEventListener("error", (event) => diagnostic(event.message), true);
+    window.addEventListener("unhandledrejection", (event) => diagnostic(event.reason));
     window.addEventListener("message", (event) => {
       const message = event.data;
       if (message?.channel !== channel) return;
-      if (event.source === window.parent) {
-        if (!accepted && message.type === "codex-design:editor-document" && typeof message.html === "string" && message.html.length <= 24 * 1024 * 1024) {
-          accepted = true;
-          editor = document2.createElement("iframe");
-          editor.setAttribute("sandbox", "allow-scripts allow-same-origin");
-          editor.setAttribute("referrerpolicy", "no-referrer");
-          editor.title = "Read-only historical editor";
-          editor.srcdoc = message.html;
-          document2.body.append(editor);
-        } else if (editor && incoming.has(message.type)) editor.contentWindow?.postMessage(message, "*");
-      } else if (editor && event.source === editor.contentWindow && outgoing.has(message.type)) window.parent.postMessage(message, "*");
+      try {
+        if (event.source === window.parent) {
+          if (!accepted && message.type === "codex-design:editor-document" && typeof message.html === "string" && message.html.length <= 24 * 1024 * 1024) {
+            accepted = true;
+            editor = document3.createElement("iframe");
+            editor.setAttribute("sandbox", "allow-scripts allow-same-origin");
+            editor.setAttribute("referrerpolicy", "no-referrer");
+            editor.title = "Read-only historical editor";
+            editor.srcdoc = message.html;
+            document3.body.append(editor);
+          } else if (editor && incoming.has(message.type)) editor.contentWindow?.postMessage(message, "*");
+        } else if (editor && event.source === editor.contentWindow && outgoing.has(message.type)) window.parent.postMessage(message, "*");
+      } catch (error3) {
+        diagnostic(error3);
+      }
     });
     window.parent.postMessage({ type: "codex-design:editor-document-request", channel }, "*");
   }
@@ -4135,12 +4149,24 @@ function adaptInlineEditorScript(source, scriptUrl) {
     /([\w$]+)=([\w$]+)\(([\w$]+)\),([\w$]+)=\1\?null:([\w$]+)\.localComments\?\.\(([\w$]+)\)/g,
     (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`
   );
+  const settlers = [...source.matchAll(/\b[\w$]+\([\w$]+,["']setEmbedSettler["'],\(\)=>([\w$]+)\)/g)];
+  if (settlers.length > 1 || /["']setEmbedSettler["']/.test(source) && settlers.length !== 1) throw error("EDITOR_SETTLE_ADAPTER_UNSUPPORTED", "The editor session settler changed; review its native adapter before loading it.");
+  if (settlers.length === 1) {
+    const name = settlers[0][1].replaceAll("$", "\\$");
+    const setter = new RegExp(`function ${name}\\(([\\w$]+)\\)\\{([\\w$]+)=\\1\\}`, "g");
+    let captures = 0;
+    source = source.replace(setter, (match, callback, slot) => {
+      captures++;
+      return `function ${settlers[0][1]}(${callback}){${slot}=${callback};globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_SETTLE__=${callback})}`;
+    });
+    if (captures !== 1) throw error("EDITOR_SETTLE_ADAPTER_UNSUPPORTED", "The editor session settler changed; review its native adapter before loading it.");
+  }
   let flushCaptures = 0;
   source = source.replace(
     /([\w$]+)&&\(\1\.onMessage\(async ([\w$]+)=>\{if\(\2\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(([\w$]+),([\w$]+)\);/g,
     (match, parent, request, saved, flush, win, client) => {
       flushCaptures++;
-      return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match}`;
+      return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=async()=>{await globalThis.__CODEX_DESIGN_EDITOR_SETTLE__?.();return ${flush}(${win},${client})}),${match}`;
     }
   );
   if (flushCaptures > 1 || /type:["']editor:flushed["']/.test(source) && flushCaptures !== 1) throw error("EDITOR_FLUSH_ADAPTER_UNSUPPORTED", "The editor save barrier changed; review its native adapter before loading it.");
@@ -4455,7 +4481,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     const root = document2?.documentElement;
     const originalTheme = root?.getAttribute?.("data-theme");
     let variables = {}, fonts, mode, signature;
-    let tokens = {};
+    let tokens = {}, historyBackground;
     const owned = /* @__PURE__ */ new Map();
     const content = "[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]";
     const commentHosts = "[data-baoyu-comments], [data-baoyu-comments-seat], [data-baoyu-history-layer]";
@@ -4508,7 +4534,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
           "font-family": tokens["--cds-font-sans"],
           "font-size": tokens["--cds-font-size-body"],
           "line-height": tokens["--cds-leading-body"],
-          "--bg": tokens["--cds-surface-panel"],
+          "--bg": historyBackground,
           "--fg": tokens["--cds-text-primary"],
           "--muted": tokens["--cds-text-secondary"],
           "--faint": tokens["--cds-text-muted"],
@@ -4543,8 +4569,29 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
         }
       }
     };
+    const compositeHistoryBackground = (primary, panel) => {
+      if (primary === void 0 && panel === void 0) return;
+      const fallback = (mode || root?.getAttribute?.("data-theme")) === "light" ? "#ffffff" : "#262624";
+      try {
+        const canvas = document2.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext?.("2d", { alpha: false, willReadFrequently: true });
+        if (!context) return fallback;
+        context.globalCompositeOperation = "source-over";
+        for (const value of [fallback, primary, panel]) if (value !== void 0) {
+          context.fillStyle = value;
+          context.fillRect(0, 0, 1, 1);
+        }
+        const pixel = context.getImageData(0, 0, 1, 1).data;
+        if (pixel.length < 4 || pixel[3] !== 255) return fallback;
+        return `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+      } catch {
+        return fallback;
+      }
+    };
     const resolveTokens = () => {
       const result = {};
+      historyBackground = void 0;
       if (!root || !document2.createElement || !target.getComputedStyle) return result;
       const probe = document2.createElement("span");
       probe.setAttribute("aria-hidden", "true");
@@ -4604,6 +4651,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
           ["--color-border-primary", ["--cds-border-strong", "--cds-border-stronger", "--t-border-strong"]],
           ["--color-border-secondary", ["--cds-border", "--t-border"]]
         ]) map(source, "color", destinations);
+        historyBackground = compositeHistoryBackground(result["--cds-surface-0"], result["--cds-surface-panel"]);
         const focus = read("--color-ring-primary", "color");
         if (focus) for (const name of ["--cds-focus-shadow", "--cds-shadow-drop-ring"]) result[name] = "0 0 0 2px " + focus;
         const dangerFocus = read("--color-ring-danger", "color");
@@ -5179,7 +5227,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.6.0";
+var PLUGIN_UI_VERSION = "0.6.1";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);

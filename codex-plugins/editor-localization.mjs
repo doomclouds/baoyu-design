@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { repairEditorRuntime } from './source/scripts/editor-runtime-adapter.mjs';
+import { readCommentComponent } from './source/scripts/comment-toolbar-adapter.mjs';
 
 export const EDITOR_KINDS = ['slides', 'design', 'design-system', 'dashboard'];
 
@@ -146,6 +147,63 @@ export function createEditorCatalog(kind, sources) {
 // replace literal UI text, conditional icon identities, or authored strings.
 export const adaptStaticCommentChrome = source => source;
 
+const fontDecoderMarker = '/* codex-design:standalone-font-decoder-v1 */';
+const fontDecoderInterop = Object.freeze({
+  // Exact pure Rollup interop helpers exported by the reviewed 2.7.1 editor.
+  // Copy their actual bytes; a different implementation needs fresh review.
+  g: '72fdb259328cfca8d59ecef46cdfb3a2c777d1e0d2e22a4eba30961e13ec1b2f',
+  a: '2bca1e2d80cc6cdc51ed51364489f97bff8149646a2943ce798ca34d7bacd8d7',
+});
+
+/** Remove only the reviewed decoder's circular import of two pure helpers. */
+export function standaloneFontDecoder(editorSource, decoderSource, entryName) {
+  if (typeof decoderSource !== 'string') throw new Error('The packaged font decoder is not text.');
+  if (decoderSource.startsWith(fontDecoderMarker)) return decoderSource;
+  if (typeof editorSource !== 'string' || !/^index-[A-Za-z0-9_-]+\.js$/.test(entryName)) throw new Error('The font decoder editor entry changed.');
+  const decoder = decoderSource.replaceAll('\r\n', '\n');
+  const entry = editorSource.replaceAll('\r\n', '\n');
+  const imported = /^import\{g as ([\w$]+),a as ([\w$]+)\}from"(\.\/[^"\\]+)";/.exec(decoder);
+  const exports = /\bexport\{([^}]+)\};?\s*$/.exec(entry);
+  if (!imported || imported[3] !== './' + entryName || !exports) throw new Error('The canonical font decoder dependency changed; adaptation was refused.');
+  const bindings = new Map(exports[1].split(',').map(part => {
+    const match = /^([\w$]+) as ([\w$]+)$/.exec(part.trim());
+    if (!match) throw new Error('The font decoder interop export changed.');
+    return [match[2], match[1]];
+  }));
+  if (bindings.size !== 2 || [...bindings.keys()].some(name => !Object.hasOwn(fontDecoderInterop, name))) throw new Error('The font decoder interop exports changed.');
+  const helpers = ['g', 'a'].map((name, index) => {
+    const symbol = bindings.get(name)?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const definition = symbol && readCommentComponent(entry, new RegExp(`function (${symbol})\\([^)]*\\)\\{`));
+    if (!definition || createHash('sha256').update(definition.text).digest('hex') !== fontDecoderInterop[name]) throw new Error('The reviewed font decoder interop helper changed: ' + name);
+    return `const ${imported[index + 1]}=(${definition.text});`;
+  });
+  const body = decoder.slice(imported[0].length);
+  if (/\bimport\s*(?:[({"']|\.)/.test(body)) throw new Error('The font decoder acquired another module dependency.');
+  return fontDecoderMarker + '\n' + helpers.join('\n') + '\n' + body;
+}
+
+async function adaptFontDecoderAssets(assets, sourceFiles, sources) {
+  const decoders = (await fs.readdir(assets)).filter(name => /^woff2-decoder-[A-Za-z0-9_-]+\.js$/.test(name));
+  const replacements = [];
+  for (const name of decoders) {
+    const original = await fs.readFile(path.join(assets, name), 'utf8');
+    if (original.startsWith(fontDecoderMarker)) continue;
+    const imported = /^import\{g as [\w$]+,a as [\w$]+\}from"\.\/([^"\\]+)";/.exec(original);
+    const at = imported ? sourceFiles.findIndex(file => path.basename(file) === imported[1]) : -1;
+    if (at < 0) throw new Error('The packaged font decoder entry is missing or changed.');
+    const standalone = standaloneFontDecoder(sources[at], original, imported[1]);
+    const next = 'woff2-decoder-codex-' + createHash('sha256').update(standalone).digest('hex').slice(0, 16) + '.js';
+    const dependency = `import("./${name}")`;
+    if (sources[at].split(dependency).length !== 2) throw new Error('The canonical font decoder loader changed; adaptation was refused.');
+    sources[at] = sources[at].replace(dependency, `import("./${next}")`);
+    await fs.writeFile(path.join(assets, next), standalone);
+    if (next !== name) await fs.unlink(path.join(assets, name));
+    replacements.push([name, next]);
+  }
+  if (!decoders.length && sources.some(source => /import\(["']\.\/woff2-decoder-/.test(source))) throw new Error('The packaged font decoder file is missing.');
+  return replacements;
+}
+
 export async function adaptEditorLocalization(pluginRoot, { bundlePath } = {}) {
   if (!bundlePath) throw new Error('adaptEditorLocalization requires an already-bundled classic script bundlePath.');
   const bundle = await fs.readFile(bundlePath);
@@ -159,7 +217,9 @@ export async function adaptEditorLocalization(pluginRoot, { bundlePath } = {}) {
     const comments = path.join(editor, 'comments.js');
     if (await fs.stat(comments).catch(() => null)) sourceFiles.push(comments);
     if (sourceFiles.length === 0) throw new Error('No compiled editor module found for ' + kind);
-    const sources = await Promise.all(sourceFiles.map(file => fs.readFile(file, 'utf8')));
+    const originalSources = await Promise.all(sourceFiles.map(file => fs.readFile(file, 'utf8')));
+    const sources = [...originalSources];
+    const decoderReplacements = await adaptFontDecoderAssets(assets, sourceFiles, sources);
     const catalog = createEditorCatalog(kind, sources);
     if (catalog.coverage.native === 0) throw new Error('Native editor i18n pipeline changed for ' + kind);
     const resourceSource = Buffer.from('globalThis.__CODEX_DESIGN_EDITOR_RESOURCES__=' + JSON.stringify(catalog).replaceAll('<', '\\u003c') + ';\n');
@@ -171,13 +231,14 @@ export async function adaptEditorLocalization(pluginRoot, { bundlePath } = {}) {
     await fs.writeFile(path.join(assets, bundleName), bundle);
     const filename = path.join(editor, 'index.html');
     let html = await fs.readFile(filename, 'utf8');
+    for (const [previous, next] of decoderReplacements) html = html.replaceAll('./assets/' + previous, './assets/' + next);
     html = html.replace(/<script\b[^>]*\bdata-codex-editor-i18n(?:-resources)?\b[^>]*><\/script>\s*/g, '');
     const tags = `<script src="./assets/${resourceName}" integrity="${integrity(resourceSource)}" data-codex-editor-i18n-resources></script>\n<script src="./assets/${bundleName}" integrity="${integrity(bundle)}" data-codex-editor-i18n></script>\n`;
     if (!html.includes('<head>')) throw new Error('Missing editor head for ' + kind);
     html = html.replace(/<head>\s*/, '<head>\n' + tags);
     for (let i = 0; i < sourceFiles.length; i++) {
       const patched = repairEditorRuntime(sources[i]);
-      if (patched === sources[i]) continue;
+      if (patched === originalSources[i]) continue;
       if (path.dirname(sourceFiles[i]) === assets) {
         // Editor assets are served immutable. A new chrome callsite must get a
         // new URL as well as new bytes, especially Dashboard's grant-free URL.

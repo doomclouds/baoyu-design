@@ -15,14 +15,39 @@ class Style {
   removeProperty(name) { const value = this.getPropertyValue(name); this.values.delete(name); this.priorities.delete(name); this.writes++; return value; }
 }
 
-function themeFixture({ rem = 16, serialized = false } = {}) {
+function themeFixture({ rem = 16, serialized = false, canvas = true, computedColors = {} } = {}) {
   const listeners = new Map(), messages = [], observers = [], roots = [], elements = [], commentHosts = [];
+  const canvasPaints = [];
+  const color = input => {
+    const value = String(input).trim();
+    if (value === 'transparent') return [0, 0, 0, 0];
+    const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value)?.[1];
+    if (hex) { const full = hex.length === 3 ? [...hex].map(part => part + part).join('') : hex; return [0, 2, 4].map(at => parseInt(full.slice(at, at + 2), 16)).concat(1); }
+    const rgba = /^rgba?\(([^)]+)\)$/.exec(value)?.[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+    if (rgba?.length === 3 || rgba?.length === 4) return [...rgba.slice(0, 3), rgba[3] ?? 1];
+    throw new Error('Unexpected browser-resolved test color: ' + value);
+  };
   class Element {
     style = new Style();
     attributes = new Map();
     textContent = '';
     children = [];
-    constructor(tag = 'div', { ui = false, authored = false } = {}) { this.tagName = tag; this.ui = ui; this.authored = authored; elements.push(this); }
+    constructor(tag = 'div', { ui = false, authored = false } = {}) {
+      this.tagName = tag; this.ui = ui; this.authored = authored; elements.push(this);
+      if (tag === 'canvas' && canvas) this.getContext = (kind, options) => {
+        assert.equal(kind, '2d'); assert.equal(options.alpha, false);
+        const pixel = [0, 0, 0], owner = this;
+        return { fillStyle: '#000000', globalCompositeOperation: 'source-over',
+          fillRect(x, y, width, height) {
+            assert.deepEqual([x, y, width, height], [0, 0, 1, 1]);
+            const [r, g, b, alpha] = color(this.fillStyle);
+            canvasPaints.push({ canvas: owner, color: this.fillStyle, operation: this.globalCompositeOperation });
+            for (const [index, channel] of [r, g, b].entries()) pixel[index] = channel * alpha + pixel[index] * (1 - alpha);
+          },
+          getImageData() { return { data: Uint8ClampedArray.from([...pixel.map(value => Math.round(value)), 255]) }; },
+        };
+      };
+    }
     setAttribute(name, value) { this.attributes.set(name, String(value)); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     removeAttribute(name) { this.attributes.delete(name); }
@@ -82,6 +107,7 @@ function themeFixture({ rem = 16, serialized = false } = {}) {
       if (name.startsWith('--')) return raw;
       if (name === 'font-size') return Number.isFinite(length(raw)) ? length(raw) + 'px' : '';
       if (name === 'font-weight') return ({ normal: '400', bold: '700' })[raw] || raw;
+      if (name === 'color') return computedColors[raw] || raw;
       return raw;
     } }; },
     MutationObserver: class { constructor(callback) { this.callback = callback; observers.push(this); } observe() {} disconnect() { this.closed = true; } },
@@ -92,7 +118,7 @@ function themeFixture({ rem = 16, serialized = false } = {}) {
     configuration, target, URL, Map, Set, Uint8Array, EventTarget, Event, MessageEvent, AbortController, DOMException, Blob, Request, Response, TextEncoder, TextDecoder, setTimeout, clearTimeout,
   });
   else installNativeEditorTransport(configuration, target);
-  return { target, root: html, editor, authored, nestedArtworkRoot, preview, elements, observers, messages,
+  return { target, root: html, editor, authored, nestedArtworkRoot, preview, elements, observers, messages, canvasPaints,
     update(context, snapshot = false) { listeners.get('message')({ source: parent, data: { type: 'codex-design:host-context-changed', channel: 'theme-channel', context, hostContextIsSnapshot: snapshot } }); },
     portal() { const portal = new Element('div', { ui: true }); portal.setAttribute('data-density', 'comfortable'); roots.push(portal); return portal; },
     commentShadow(authored = false) {
@@ -133,7 +159,7 @@ test('the canonical History shadow layer follows host fonts and colors without t
   f.update({ theme: 'light', styles: { variables: hostVariables } }, true);
   assert.equal(history.popup.style.getPropertyValue('font-family'), hostVariables['--font-sans']);
   assert.equal(history.popup.style.getPropertyValue('font-size'), '14px');
-  assert.equal(history.popup.style.getPropertyValue('--bg'), '#202329');
+  assert.equal(history.popup.style.getPropertyValue('--bg'), 'rgb(32, 35, 41)');
   assert.equal(history.popup.style.getPropertyPriority('--bg'), 'important');
   assert.equal(history.popup.style.getPropertyValue('--fg'), '#f2f4f7');
   assert.equal(authored.popup.style.writes, 0);
@@ -141,6 +167,64 @@ test('the canonical History shadow layer follows host fonts and colors without t
   f.close();
   assert.equal(history.popup.style.getPropertyValue('--bg'), '');
   assert.equal(history.popup.style.getPropertyValue('font-family'), '');
+});
+
+test('History composites translucent host panels over the host base without exposing underlying controls or recoloring artwork', () => {
+  for (const [theme, primary, secondary, expected] of [
+    ['dark', '#121212', 'rgba(255, 255, 255, 0.08)', 'rgb(37, 37, 37)'],
+    ['light', '#f0f0f0', 'rgba(0, 0, 0, 0.05)', 'rgb(228, 228, 228)'],
+    ['dark', '#123456', 'transparent', 'rgb(18, 52, 86)'],
+  ]) {
+    const f = themeFixture({ serialized: true });
+    const history = f.historyShadow(), lookalike = f.historyShadow(true);
+    const authored = [...f.authored.style.values], sourcePreview = f.preview.srcdoc;
+    f.update({ theme, styles: { variables: { ...hostVariables, '--color-background-primary': primary, '--color-background-secondary': secondary } } }, true);
+    assert.equal(history.popup.style.getPropertyValue('--bg'), expected);
+    assert.equal(history.popup.style.getPropertyPriority('--bg'), 'important');
+    assert.equal(f.editor.style.getPropertyValue('--cds-surface-panel'), secondary, 'Other CDS roots retain their original host alpha semantics.');
+    assert.deepEqual(f.canvasPaints.map(paint => paint.color), [theme === 'light' ? '#ffffff' : '#262624', primary, secondary]);
+    for (const paint of f.canvasPaints) { assert.equal(paint.operation, 'source-over'); assert.equal(paint.canvas.parent, undefined); }
+    assert.equal(lookalike.popup.style.writes, 0);
+    assert.deepEqual([...f.authored.style.values], authored); assert.equal(f.preview.srcdoc, sourcePreview);
+    assert.equal(f.messages.some(message => message.action === 'editor.request'), false);
+    const paints = f.canvasPaints.length;
+    f.update({ theme });
+    assert.equal(f.canvasPaints.length, paints, 'Unchanged host colors do not redraw a compositing probe.');
+    f.close();
+  }
+});
+
+test('History uses browser-resolved CSS colors, recomposites palette changes and restores the exact prior value on clear', () => {
+  const mixed = 'color-mix(in srgb, white 8%, transparent)';
+  const f = themeFixture({ computedColors: { [mixed]: 'rgba(255, 255, 255, 0.08)' } });
+  const history = f.historyShadow();
+  history.popup.style.setProperty('--bg', 'original-history-background', 'important');
+  f.update({ theme: 'dark', styles: { variables: { '--color-background-primary': '#121212', '--color-background-secondary': mixed } } }, true);
+  assert.equal(history.popup.style.getPropertyValue('--bg'), 'rgb(37, 37, 37)');
+  assert.equal(f.canvasPaints.at(-1).color, 'rgba(255, 255, 255, 0.08)');
+  f.update({ styles: { variables: { '--color-background-secondary': 'rgba(0, 0, 0, 0.5)' } } });
+  assert.equal(history.popup.style.getPropertyValue('--bg'), 'rgb(9, 9, 9)');
+  const late = f.historyShadow(); f.mutations();
+  assert.equal(late.popup.style.getPropertyValue('--bg'), 'rgb(9, 9, 9)');
+  f.update({ styles: { variables: null } });
+  assert.equal(history.popup.style.getPropertyValue('--bg'), 'original-history-background');
+  assert.equal(history.popup.style.getPropertyPriority('--bg'), 'important');
+  assert.equal(late.popup.style.getPropertyValue('--bg'), '');
+  f.close();
+});
+
+test('History remains opaque with transparent host bases or an unavailable local compositor', () => {
+  const transparent = themeFixture();
+  const history = transparent.historyShadow();
+  transparent.update({ theme: 'dark', styles: { variables: { '--color-background-primary': 'transparent', '--color-background-secondary': 'transparent' } } }, true);
+  assert.equal(history.popup.style.getPropertyValue('--bg'), 'rgb(38, 38, 36)');
+  transparent.close();
+  for (const [theme, expected] of [['dark', '#262624'], ['light', '#ffffff']]) {
+    const f = themeFixture({ canvas: false }), history = f.historyShadow();
+    f.update({ theme, styles: { variables: { '--color-background-primary': 'transparent', '--color-background-secondary': 'rgba(255, 255, 255, 0.08)' } } }, true);
+    assert.equal(history.popup.style.getPropertyValue('--bg'), expected);
+    f.close(); assert.equal(history.popup.style.getPropertyValue('--bg'), '');
+  }
 });
 
 test('host semantic tokens override actual nested CDS declarations while preserving artwork boundaries', async () => {

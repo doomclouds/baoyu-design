@@ -159,7 +159,7 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     const root = document?.documentElement;
     const originalTheme = root?.getAttribute?.('data-theme');
     let variables = {}, fonts, mode, signature;
-    let tokens = {};
+    let tokens = {}, historyBackground;
     const owned = new Map();
     const content = '[data-appifact-content], [data-codex-artwork], [data-dc-preview], [data-slide-preview]';
     const commentHosts = '[data-baoyu-comments], [data-baoyu-comments-seat], [data-baoyu-history-layer]';
@@ -203,7 +203,7 @@ export function installNativeEditorTransport(configuration, target, installPrevi
         if (!element.style) continue;
         const elementTokens = historyRoots.has(element) ? { ...tokens,
           'font-family': tokens['--cds-font-sans'], 'font-size': tokens['--cds-font-size-body'], 'line-height': tokens['--cds-leading-body'],
-          '--bg': tokens['--cds-surface-panel'], '--fg': tokens['--cds-text-primary'], '--muted': tokens['--cds-text-secondary'],
+          '--bg': historyBackground, '--fg': tokens['--cds-text-primary'], '--muted': tokens['--cds-text-secondary'],
           '--faint': tokens['--cds-text-muted'], '--line': tokens['--cds-border'], '--soft': tokens['--cds-surface-2'],
           '--hover': tokens['--cds-fill-button-ghost-hover'], '--check': tokens['--cds-fill-accent'], '--danger': tokens['--cds-text-danger'],
           '--shadow': tokens['--cds-shadow-popover'],
@@ -228,8 +228,31 @@ export function installNativeEditorTransport(configuration, target, installPrevi
         }
       }
     };
+    const compositeHistoryBackground = (primary, panel) => {
+      if (primary === undefined && panel === undefined) return;
+      const fallback = (mode || root?.getAttribute?.('data-theme')) === 'light' ? '#ffffff' : '#262624';
+      try {
+        // Host secondary surfaces can be translucent overlays. Compositing
+        // them on the opaque host base keeps History's floating surfaces from
+        // revealing unrelated editor controls underneath. No artwork pixels
+        // or external resources are read, and the probe is never attached.
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext?.('2d', { alpha: false, willReadFrequently: true });
+        if (!context) return fallback;
+        context.globalCompositeOperation = 'source-over';
+        for (const value of [fallback, primary, panel]) if (value !== undefined) {
+          context.fillStyle = value;
+          context.fillRect(0, 0, 1, 1);
+        }
+        const pixel = context.getImageData(0, 0, 1, 1).data;
+        if (pixel.length < 4 || pixel[3] !== 255) return fallback;
+        return `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+      } catch { return fallback; }
+    };
     const resolveTokens = () => {
       const result = {};
+      historyBackground = undefined;
       if (!root || !document.createElement || !target.getComputedStyle) return result;
       const probe = document.createElement('span');
       probe.setAttribute('aria-hidden', 'true');
@@ -296,6 +319,7 @@ export function installNativeEditorTransport(configuration, target, installPrevi
           ['--color-border-primary', ['--cds-border-strong', '--cds-border-stronger', '--t-border-strong']],
           ['--color-border-secondary', ['--cds-border', '--t-border']],
         ]) map(source, 'color', destinations);
+        historyBackground = compositeHistoryBackground(result['--cds-surface-0'], result['--cds-surface-panel']);
         const focus = read('--color-ring-primary', 'color');
         if (focus) for (const name of ['--cds-focus-shadow', '--cds-shadow-drop-ring']) result[name] = '0 0 0 2px ' + focus;
         const dangerFocus = read('--color-ring-danger', 'color');

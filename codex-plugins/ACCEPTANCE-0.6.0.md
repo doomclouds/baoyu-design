@@ -1,11 +1,26 @@
-# Codex Design 0.6.0 candidate — acceptance record
+# Codex Design 0.6.0 — migration acceptance record
 
 Recorded on **2026-11-02**. The migration targets upstream 2.7.1 at
 `6759e358eb88d83986c753b0fc60c84e4aabdb3a`, starting from the verified Codex
 Design 0.5.3 behavior. The candidate builds **190 manifest-owned files**.
-It has **not yet been published or installed from the GitHub marketplace**.
-Consuming-host gates below are pending; source/controller evidence is not a
-claim that the new native interface or every export format has passed.
+It was published at `b5cb0a9` and installed from the configured GitHub
+marketplace without workflows. Generated, marketplace and installed packages
+matched for all **191 files**, including the 190 owned files and manifest.
+Fresh Desktop discovery found five enabled skills, six tools and no plugin
+errors; a current-session read succeeded after reloading only this plugin.
+These checks do not establish that every native interaction/export passed.
+
+## Subsequent native findings
+
+Real-host checks exposed defects after the complete code suite passed:
+the historical preview's reflected loader captured a renamed outer `document`
+binding; History's panel background retained a host alpha channel; and the
+WOFF2 decoder retained a circular static import of the old editor entry URL.
+Canvas closing also stalled after a text edit: the native flush did not call
+the canonical live-session settler before waiting for the file publisher.
+The follow-up fixes and their separate native gates are recorded in
+[0.6.1 acceptance](ACCEPTANCE-0.6.1.md). These failures are not retroactively
+counted as successful 0.6.0 UI tests.
 
 ## Scope and retained product rules
 
@@ -165,14 +180,14 @@ build or complete-suite pass.
 
 - [x] Record generated consistency and generic-node/Unicode-space portable
   verification for the exact final package.
-- [ ] Publish/install the final candidate through the configured GitHub
+- [x] Publish/install the final candidate through the configured GitHub
   marketplace, without GitHub workflows or a temporary marketplace; verify
   package hashes, five skills, six tools and current-session calls.
 - [ ] Exercise create, rename, Properties, menus, save and close/reopen in all
   four installed native editors.
-- [ ] Exercise actually sent comments and follow-up replies, per-request
+- [x] Exercise actually sent comments and follow-up replies, per-request
   dispatch, real-child reuse, canonical reply and safe idle cleanup.
-- [ ] Check the actual installed 0.5.3 runtime/cache upgrade cases without
+- [x] Check the actual installed 0.5.3 runtime/cache upgrade cases without
   replacing native identity or recovering a busy writer blindly.
 - [ ] Check Design System single-file export, a data-backed Dashboard CSV and
   the actual Canvas export menu formats, including destination/cancel/overwrite.
@@ -188,3 +203,14 @@ These pending rows must be filled from actual observations. Explicit browser
 or host-policy limits remain unverified scope; no alternative route is used
 to bypass a denied interaction. P2 LAN collaboration and presence remain outside
 this native migration release.
+
+The two actual native comment sends used the same registered child and
+retained its identity. The follow-up used its own read/accept/dispatch,
+modified the captured QA text, checked successfully and replied exactly once.
+An independent fresh-artwork check exercised genuine 0.5.3 service retirement,
+the archived original state and a v2 local-only replacement with content and
+identity preserved. The original comment fixture's old process exit was not
+observed, so that fixture alone is not claimed as guarded-retirement proof.
+The separate raw evidence files are `codex-design-0.6.0-upgrade-native-result.json`,
+`codex-design-0.6.0-upgrade-firstparty-final.json` and
+`codex-design-0.6.0-real-runtime-upgrade.json` in the recorded local archive.

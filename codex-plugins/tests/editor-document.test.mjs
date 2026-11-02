@@ -35,7 +35,7 @@ test('native document assembly inlines the four actual editors without HTTP scri
     if (kind === 'slides') assert.equal(/import\("data:text\/javascript;base64,/.test(result.html), true);
     if (kind !== 'dashboard') {
       assert.equal(/globalThis\.__CODEX_DESIGN_EDITOR_TRANSPORT__\?null:/.test(result.html), true);
-      assert.equal(/__CODEX_DESIGN_EDITOR_FLUSH__=\(\)=>[\w$]+\([\w$]+,[\w$]+\)/.test(result.html), true, kind + ' retains the original publish-idle flush closure');
+      assert.equal(/__CODEX_DESIGN_EDITOR_FLUSH__=async\(\)=>\{await globalThis\.__CODEX_DESIGN_EDITOR_SETTLE__\?\.\(\);return [\w$]+\([\w$]+,[\w$]+\)\}/.test(result.html), true, kind + ' settles its live session before the original publish-idle flush closure');
     }
   }
 });

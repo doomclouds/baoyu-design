@@ -15,7 +15,9 @@ const pluginRoot = path.resolve(process.env.CODEX_DESIGN_TEST_PLUGIN_ROOT || fil
 async function removeTemporary(root) {
   const relative = path.relative(os.tmpdir(), path.resolve(root));
   assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-  await rm(root, { recursive: true, force: true });
+  // A terminated Windows child can retain its working-directory handle briefly.
+  // Retry only Node's documented transient removal errors; retain final failures.
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 const queued = status => ({ version: 1, order: ['job'], jobs: { job: { id: 'job', status, event: { kind: 'comment', data: { id: 'comment' } } } } });
 

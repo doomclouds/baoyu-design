@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import fs from 'node:fs/promises';
 import { setImmediate } from 'node:timers/promises';
 import { installNativePreviews } from '../source/scripts/native-preview.mjs';
+import { buildEditorDocument } from '../source/server/editor-document.mjs';
 
 const baseUrl = 'https://codex-design.invalid/artifacts/11111111-2222-4333-8444-555555555555/';
 const subscription = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -92,7 +94,7 @@ function fixture(options = {}) {
   };
   let flushed = 0;
   const flush = async () => { flushed++; return options.flush ? await options.flush() : { saved: true }; };
-  const install = options.serialized ? vm.runInNewContext('(' + installNativePreviews.toString() + ')', { URL, Blob, TextEncoder, TextDecoder, Uint8Array, setTimeout, clearTimeout }) : installNativePreviews;
+  const install = options.install || (options.serialized ? vm.runInNewContext('(' + installNativePreviews.toString() + ')', { URL, Blob, TextEncoder, TextDecoder, Uint8Array, setTimeout, clearTimeout }) : installNativePreviews);
   const controller = install({ target, baseUrl, rpc, flush });
   const overlays = () => document.querySelectorAll('[data-codex-native-preview]');
   const frames = () => document.querySelectorAll('iframe');
@@ -130,11 +132,11 @@ test('serialized installer opens one isolated historical modal after flushing cu
 test('actual tiny loader accepts its parent once and relays only its exact child and documented messages', async t => {
   const f = fixture(); t.after(f.controller.dispose); await f.controller.open('v/1/');
   const outer = f.frames()[0], loaderWindow = outer.contentWindow, loaderDocument = new Document();
-  loaderWindow.parent = f.target;
+  loaderWindow.parent = f.target; loaderWindow.document = loaderDocument;
   const html = Buffer.from(outer.src.split(',')[1], 'base64').toString();
   const script = /<script>([\s\S]*)<\/script>/.exec(html)[1];
   vm.runInNewContext(script, { window: loaderWindow, document: loaderDocument });
-  assert.equal(f.target.messages[0].message.type, 'codex-design:editor-document-request');
+  assert.equal(f.target.messages.filter(item => item.message.type === 'codex-design:editor-document-request').length, 1);
   const incoming = (source, message) => loaderWindow.emit('message', { source, data: { channel: f.channel(), ...message } });
   await incoming({}, { type: 'codex-design:editor-document', html: '<p>foreign</p>' });
   assert.equal(loaderDocument.querySelectorAll('iframe').length, 0);
@@ -154,6 +156,76 @@ test('actual tiny loader accepts its parent once and relays only its exact child
   assert.equal(inner.contentWindow.messages.length, 0);
   await incoming(f.target, { type: 'codex-design:editor-response', requestId: 'x' });
   assert.equal(inner.contentWindow.messages[0].message.requestId, 'x');
+});
+
+test('published bundled installer survives actual editor-document HTML escaping and its loader starts a handshake', async t => {
+  const source = await fs.readFile(new URL('../codex-design/server/index.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('function installNativePreviews('), end = source.indexOf('\n}\n', start);
+  assert.ok(start > 0 && end > start);
+  const installer = source.slice(start, end + 2);
+  new vm.Script('(' + installer + ')');
+  const assembled = await buildEditorDocument({ baseUrl: 'http://127.0.0.1:12345/slides/grant/',
+    fetchLocal: async () => new Response('<html><head></head><body>Editor</body></html>'),
+    config: { virtualBase: baseUrl, bootstrap: 'globalThis.previewInstall=(' + installer + ');' } });
+  const bootstrap = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i.exec(assembled.html);
+  assert.ok(bootstrap);
+  const context = vm.createContext({ URL, Blob, TextEncoder, TextDecoder, Uint8Array, setTimeout, clearTimeout });
+  vm.runInContext(bootstrap[1], context);
+  const f = fixture({ install: context.previewInstall }); t.after(f.controller.dispose);
+  await f.controller.open('v/1/');
+  const frame = f.frames()[0]; assert.ok(frame, f.status().textContent);
+  const loader = Buffer.from(frame.src.split(',')[1], 'base64').toString();
+  const script = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i.exec(loader);
+  assert.ok(script, 'the computed tiny loader has a real script closing tag');
+  const loaderWindow = frame.contentWindow, loaderDocument = new Document(); loaderWindow.parent = f.target; loaderWindow.document = loaderDocument;
+  vm.runInNewContext(script[1], { window: loaderWindow, document: loaderDocument });
+  assert.equal(f.target.messages.at(-1).message.type, 'codex-design:editor-document-request');
+  const incoming = (source, message) => loaderWindow.emit('message', { source, data: { channel: f.channel(), ...message } });
+  await f.message({ type: 'codex-design:editor-document-request' });
+  const documentMessage = frame.contentWindow.messages.at(-1).message;
+  await incoming(f.target, documentMessage);
+  const inner = loaderDocument.querySelectorAll('iframe')[0];
+  assert.ok(inner, 'the genuine bundled loader applies the returned document without external helpers');
+  assert.equal(inner.srcdoc, documentMessage.html);
+  await incoming(inner.contentWindow, { type: 'codex-design:editor-transport-ready' });
+  assert.equal(f.target.messages.at(-1).message.type, 'codex-design:editor-transport-ready');
+  await f.message(f.target.messages.at(-1).message);
+  const hostContext = frame.contentWindow.messages.at(-1).message;
+  await incoming(f.target, hostContext);
+  assert.equal(inner.contentWindow.messages.at(-1).message.type, 'codex-design:host-context-changed');
+  await incoming(inner.contentWindow, { type: 'codex-design:editor-request', requestId: 'bundled-get', action: 'editor.request', payload: { request: { path: 'v/1/project/deck.json', method: 'GET' } } });
+  await f.message(f.target.messages.at(-1).message);
+  await incoming(f.target, frame.contentWindow.messages.at(-1).message);
+  assert.equal(inner.contentWindow.messages.at(-1).message.result.status, 200);
+  await incoming(inner.contentWindow, { type: 'codex-design:editor-app-ready' });
+  await f.message(f.target.messages.at(-1).message);
+  assert.equal(f.status().hidden, true);
+});
+
+test('actual tiny loader reports document-application failures and bounds runtime errors without forwarding unknown child messages', async t => {
+  const f = fixture(); t.after(f.controller.dispose); await f.controller.open('v/1/');
+  const outer = f.frames()[0], loaderWindow = outer.contentWindow, loaderDocument = new Document(); loaderWindow.parent = f.target; loaderWindow.document = loaderDocument;
+  const html = Buffer.from(outer.src.split(',')[1], 'base64').toString();
+  const script = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i.exec(html)[1];
+  vm.runInNewContext(script, { window: loaderWindow, document: loaderDocument });
+  assert.equal(f.target.messages[0].message.type, 'codex-design:editor-document-request');
+  const create = loaderDocument.createElement.bind(loaderDocument);
+  loaderDocument.createElement = () => { throw new Error('Cannot apply historical frame'); };
+  await loaderWindow.emit('message', { source: f.target, data: { type: 'codex-design:editor-document', channel: f.channel(), html: '<p>history</p>' } });
+  let diagnostics = f.target.messages.filter(item => item.message.type === 'codex-design:editor-diagnostic');
+  assert.equal(diagnostics.length, 1); assert.match(diagnostics[0].message.message, /Cannot apply historical frame/);
+  for (let i = 0; i < 8; i++) await loaderWindow.emit('error', { message: 'x'.repeat(3000) });
+  await loaderWindow.emit('unhandledrejection', { reason: new Error('late rejection') });
+  diagnostics = f.target.messages.filter(item => item.message.type === 'codex-design:editor-diagnostic');
+  assert.equal(diagnostics.length, 4); assert.ok(diagnostics.every(item => item.message.message.length <= 1027));
+  loaderDocument.createElement = create;
+  const fresh = new Window(), freshDocument = new Document(); fresh.parent = f.target; fresh.document = freshDocument;
+  vm.runInNewContext(script, { window: fresh, document: freshDocument });
+  await fresh.emit('message', { source: f.target, data: { type: 'codex-design:editor-document', channel: f.channel(), html: '<p>history</p>' } });
+  const inner = freshDocument.querySelectorAll('iframe')[0];
+  const before = f.target.messages.length;
+  await fresh.emit('message', { source: inner.contentWindow, data: { type: 'codex-design:preview-stage', channel: f.channel(), stage: 'app-ready' } });
+  assert.equal(f.target.messages.length, before);
 });
 
 test('historical broker permits only version-scoped GET/HEAD and strips attempted artwork authority', async t => {

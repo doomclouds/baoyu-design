@@ -46,13 +46,28 @@ export function adaptInlineEditorScript(source, scriptUrl) {
     match => `(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?.baseUrl??${match})`);
   source = source.replace(/([\w$]+)=([\w$]+)\(([\w$]+)\),([\w$]+)=\1\?null:([\w$]+)\.localComments\?\.\(([\w$]+)\)/g,
     (match, link, getParent, win, local, options, base) => `${link}=globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__?null:${getParent}(${win}),${local}=${link}?null:${options}.localComments?.(${base})`);
+  // Canvas sessions keep edits in their nested preview/model before publishing
+  // them. Reuse the canonical settler and its null-on-unmount lifecycle instead
+  // of treating a quiet file publisher as proof that those edits were saved.
+  const settlers = [...source.matchAll(/\b[\w$]+\([\w$]+,["']setEmbedSettler["'],\(\)=>([\w$]+)\)/g)];
+  if (settlers.length > 1 || /["']setEmbedSettler["']/.test(source) && settlers.length !== 1) throw error('EDITOR_SETTLE_ADAPTER_UNSUPPORTED', 'The editor session settler changed; review its native adapter before loading it.');
+  if (settlers.length === 1) {
+    const name = settlers[0][1].replaceAll('$', '\\$');
+    const setter = new RegExp(`function ${name}\\(([\\w$]+)\\)\\{([\\w$]+)=\\1\\}`, 'g');
+    let captures = 0;
+    source = source.replace(setter, (match, callback, slot) => {
+      captures++;
+      return `function ${settlers[0][1]}(${callback}){${slot}=${callback};globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_SETTLE__=${callback})}`;
+    });
+    if (captures !== 1) throw error('EDITOR_SETTLE_ADAPTER_UNSUPPORTED', 'The editor session settler changed; review its native adapter before loading it.');
+  }
   // Capture the original editor flush closure before its optional parent-link
   // branch. It dispatches the editor's dirty guard and awaits its publish queue.
   let flushCaptures = 0;
   source = source.replace(/([\w$]+)&&\(\1\.onMessage\(async ([\w$]+)=>\{if\(\2\.type!==["']editor:flush["']\)return;const ([\w$]+)=await ([\w$]+)\(([\w$]+),([\w$]+)\);/g,
     (match, parent, request, saved, flush, win, client) => {
       flushCaptures++;
-      return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=()=>${flush}(${win},${client})),${match}`;
+      return `globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&(globalThis.__CODEX_DESIGN_EDITOR_FLUSH__=async()=>{await globalThis.__CODEX_DESIGN_EDITOR_SETTLE__?.();return ${flush}(${win},${client})}),${match}`;
     });
   if (flushCaptures > 1 || /type:["']editor:flushed["']/.test(source) && flushCaptures !== 1) throw error('EDITOR_FLUSH_ADAPTER_UNSUPPORTED', 'The editor save barrier changed; review its native adapter before loading it.');
   source = source.replace(/new URL\(target\.location\.href\)\.searchParams\.get\(["']codexDesignLanguage["']\)/g,

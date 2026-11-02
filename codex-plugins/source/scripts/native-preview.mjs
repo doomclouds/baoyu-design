@@ -117,19 +117,34 @@ export function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
       + '"><meta name="referrer" content="no-referrer"></head><body>' + template.innerHTML + '</body></html>';
   };
   function loadSnapshotDocument(channel) {
-    let accepted = false, editor;
+    // This function is reflected and executed in a new opaque document. Bind
+    // its document here: capturing the installer's local document breaks when
+    // the bundler renames that outer binding (for example, to document2).
+    const document = window.document;
+    let accepted = false, editor, errors = 0;
     const outgoing = new Set(['codex-design:editor-request', 'codex-design:editor-transport-ready', 'codex-design:editor-app-ready', 'codex-design:editor-diagnostic', 'codex-design:preview-close']);
     const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:comment-viewport-changed']);
+    const diagnostic = error => {
+      if (errors >= 4) return;
+      const message = typeof error === 'string' ? error : typeof error?.message === 'string' ? error.message : '';
+      if (!message) return;
+      errors++;
+      window.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel, message: 'Historical preview loader: ' + message.slice(0, 1000) }, '*');
+    };
+    window.addEventListener('error', event => diagnostic(event.message), true);
+    window.addEventListener('unhandledrejection', event => diagnostic(event.reason));
     window.addEventListener('message', event => {
       const message = event.data;
       if (message?.channel !== channel) return;
-      if (event.source === window.parent) {
-        if (!accepted && message.type === 'codex-design:editor-document' && typeof message.html === 'string' && message.html.length <= 24 * 1024 * 1024) {
-          accepted = true; editor = document.createElement('iframe');
-          editor.setAttribute('sandbox', 'allow-scripts allow-same-origin'); editor.setAttribute('referrerpolicy', 'no-referrer');
-          editor.title = 'Read-only historical editor'; editor.srcdoc = message.html; document.body.append(editor);
-        } else if (editor && incoming.has(message.type)) editor.contentWindow?.postMessage(message, '*');
-      } else if (editor && event.source === editor.contentWindow && outgoing.has(message.type)) window.parent.postMessage(message, '*');
+      try {
+        if (event.source === window.parent) {
+          if (!accepted && message.type === 'codex-design:editor-document' && typeof message.html === 'string' && message.html.length <= 24 * 1024 * 1024) {
+            accepted = true; editor = document.createElement('iframe');
+            editor.setAttribute('sandbox', 'allow-scripts allow-same-origin'); editor.setAttribute('referrerpolicy', 'no-referrer');
+            editor.title = 'Read-only historical editor'; editor.srcdoc = message.html; document.body.append(editor);
+          } else if (editor && incoming.has(message.type)) editor.contentWindow?.postMessage(message, '*');
+        } else if (editor && event.source === editor.contentWindow && outgoing.has(message.type)) window.parent.postMessage(message, '*');
+      } catch (error) { diagnostic(error); }
     });
     window.parent.postMessage({ type: 'codex-design:editor-document-request', channel }, '*');
   }
