@@ -2,9 +2,10 @@
 
 Recorded on **2026-11-03**. This patch follows the upstream 2.7.1 migration
 and installed 0.6.4 native opening/concurrency checks in
-[ACCEPTANCE-0.6.4.md](ACCEPTANCE-0.6.4.md). Publication and final installed
-0.6.5 language verification are pending at this record's initial cutoff.
-No GitHub workflow is used.
+[ACCEPTANCE-0.6.4.md](ACCEPTANCE-0.6.4.md). Published on `main` and
+`codex/plugin` at `a7c54c58a58adf11f3cb4feffed1589960ca7323` and installed
+through the formal GitHub marketplace. All 192 files match the release tree,
+marketplace snapshot and installed cache. No GitHub workflow is used.
 
 ## Observed defect and scope
 
@@ -38,13 +39,27 @@ mismatch. Both production metadata fields were corrected and the package
 rebuilt before the complete final run. Those failures are retained, not
 classified as flakes or hidden by a focused retry.
 
-## Installed-host gate
+## Installed-host verification
 
-- Pending formal GitHub marketplace installation, release/snapshot/cache
-  comparison, fresh runtime discovery and current-session call.
-- Pending actual installed 0.6.5 conflict bar on the unchanged Chinese system:
-  English title/subtitle and Use theirs / Keep mine / Keep both; explicit
-  choice must save the selected value without changing unrelated files.
+- Formal marketplace upgrade completed without errors. All 192 files including
+  the generated manifest match in release, fetched snapshot and installed
+  package, with no missing/extra/different files or symlinks.
+- Fresh desktop runtime discovery reports five enabled skills, six tools,
+  global entrypoint and no errors. After toggling only Codex Design off/on,
+  current-session `view.get` succeeded. The running installed
+  `0.6.5/server/index.mjs` processes retain parent 32632; Codex was not
+  restarted and no installed cache was manually patched.
+- On the unchanged Chinese system, the actual native Slides race displayed
+  **Agent just changed slide 1**, the English unsaved-edits subtitle and
+  **Use theirs / Keep mine / Keep both**. Disk kept `Native 065 external
+  choice` while the UI showed `Native 065 local choice` until the choice.
+  Selecting Use theirs updated the visible editor to the external value and
+  dismissed the bar. The baseline was then restored through the editor;
+  all 24 project file hashes matched the pre-test baseline and the editor
+  visibly showed `Font QA original`. Pending/active worker jobs were zero.
+- This is an actual installed Slides language/Use theirs check. Design and
+  all three callbacks are covered by generated-bundle regression, not by an
+  additional native Design race.
 - This gate does not expand earlier HTML static checks into a browser
   rendering/navigation pass. Notice-based Bring back, real TUN networking,
   the complete four-editor interaction matrix and all format/error variants
@@ -64,3 +79,9 @@ This is a local evidence path, not distributable configuration.
 - `codex-design-0.6.4-native-conflict-language-leak.png` and
   `codex-design-0.6.4-native-concurrency-result.json` preserve the actual
   preceding UI/file test and its limits.
+- `codex-design-0.6.5-installed-hashes.json`,
+  `codex-design-0.6.5-installed-runtime.txt`,
+  `codex-design-0.6.5-marketplace-upgrade-no-proxy.txt`,
+  `codex-design-0.6.5-native-conflict-English.png`,
+  `codex-design-0.6.5-native-use-theirs.png` and
+  `codex-design-0.6.5-native-conflict-result.json`.

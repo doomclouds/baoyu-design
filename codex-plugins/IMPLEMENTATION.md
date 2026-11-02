@@ -2,13 +2,13 @@
 
 ## Current release and evidence boundaries
 
-0.6.4 is published on `main` and marketplace branch `codex/plugin` at
-`9ea2ad57b67da7e23c5b7985ccf7adb6d6da3f46`. The release tree, fetched GitHub
-marketplace snapshot and installed cache match all 191 files (190 owned files
-plus manifest). The complete regression passed 665/665; generated consistency
+0.6.5 is published on `main` and marketplace branch `codex/plugin` at
+`a7c54c58a58adf11f3cb4feffed1589960ca7323`. The release tree, fetched GitHub
+marketplace snapshot and installed cache match all 192 files (191 owned files
+plus manifest). The complete regression passed 671/671; generated consistency
 and generic-node/Unicode-path portable checks passed. A fresh runtime reports
 five skills, six tools and no errors. The current desktop session completed
-a live `view.get`; its running `server/index.mjs` is from installed 0.6.4,
+a live `view.get`; its running `server/index.mjs` is from installed 0.6.5,
 with parent process 32632. Only the plugin was hot-switched; Codex was not
 restarted. No GitHub workflow was used.
 
@@ -36,11 +36,11 @@ cleanup failure or the 0.6.2 657/659 identity failures; the latter's original
 causes remain unproven. Historical sections below describe their release
 cutoffs, while this section and the current acceptance record describe today.
 
-## 0.6.5 candidate: native conflict-bar language
+## 0.6.5 native conflict-bar language
 
 Actual 0.6.4 conflict testing exposed a separate shadow module selecting
 Chinese directly from the system language, bypassing the English-only i18n
-decision. The candidate adapter fixes only this native Slides/Design branch.
+decision. The adapter fixes only this native Slides/Design branch.
 The canonical conflict marker, language selector/table and labels guard the
 patch; unknown shapes fail closed. Authored content, ordinary standalone
 language selection, dictionaries, navigator/Intl and choice callbacks remain
@@ -55,8 +55,15 @@ run passed 671/671, zero failures/skips/cancellations, concurrency 4,
 73,774.9088 ms. The final build has 191 owned files; consistency and portable
 0.6.5 checks passed using generic node, a Unicode path, no node_modules, six
 tools and two resources. These results do not relabel the first failed run.
-Publication, installation and actual native conflict-bar language verification
-remain pending; installed 0.6.4 is still the published baseline at this cutoff.
+The formal GitHub marketplace installed 0.6.5; all 192 release/snapshot/cache
+files agree, fresh runtime discovery and current-session `view.get` pass.
+The actual native Slides conflict bar now displays its title, subtitle and
+all three choice labels in English on the unchanged Chinese system. Use
+theirs updated the visible editor to the retained external disk value and
+closed the conflict bar. Restoring the QA baseline through the editor left
+all 24 project hashes equal to the pre-test baseline. This native observation
+does not claim a second Design race or notice-based Bring back pass.
+See [ACCEPTANCE-0.6.5.md](ACCEPTANCE-0.6.5.md).
 
 ## 0.6.4 repeat native opening
 
