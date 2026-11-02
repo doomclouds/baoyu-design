@@ -12,6 +12,11 @@ The user superseded the earlier whole-row-removal request with this target.
 The plugin-owned seam may use a subtle separator; it cannot control the native
 row's height or visibility through CSS inside the resource.
 
+Release decision: the user later explicitly accepted retaining the current
+top-bar behavior for 0.5.1 and authorized GitHub publication and installation.
+The fixed-home target remains future work. Acceptance of that limitation does
+not turn the failed default-visibility/persistence checks below into passes.
+
 ## Version and evidence boundary
 
 - Installed desktop: `OpenAI.Codex 26.1027.3384.0`, rechecked for this report.

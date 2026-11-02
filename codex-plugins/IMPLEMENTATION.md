@@ -1,6 +1,6 @@
 # Codex Design library implementation
 
-## 0.5.1 request and category corrections (prepared)
+## 0.5.1 request and category corrections
 
 Native draft text includes the exact immutable request URI before the bounded
 comment summary, alongside its matching resource attachment. Every newly sent
@@ -33,7 +33,17 @@ operation, registered export requests complete without consuming a newer
 queued request, and missing-content warning cards wait for explicit Download.
 The earlier 340/392-test results remain baselines for prior prepared source;
 the intermediate 403/404 fixture failure is retained in the acceptance report.
-This prepared revision has not replaced installed 0.5.0. The current header
+The user accepted retaining the current top bar for this release. Code commit
+`40146a6` is published on the GitHub marketplace ref `codex/plugin`, and the
+Desktop CLI installed 0.5.1 from that Git snapshot. All 182 owned files plus
+the generation manifest matched the release and downloaded snapshot. Actual
+native Dashboard creation, Sources, menu dismissal and Save As passed their
+recorded cases. Native Canvas Properties opened, but Rename followed by adding
+an artboard exposed a save conflict that did not recover on a normal retry.
+That issue is tracked in a separate unpublished repair branch. Current-chat
+MCP reconnection and remaining native operator cases are still pending; see
+[ACCEPTANCE-0.5.1.md](ACCEPTANCE-0.5.1.md) for the exact evidence boundaries.
+The future header
 target is a named, nonclosable native home tab visible from first open, with a
 quiet separator below it. A real full-view command reveals the sole home tab,
 but rail reentry returned to the blank native row: automatic initialization and
