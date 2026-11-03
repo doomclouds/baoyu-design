@@ -1,13 +1,14 @@
 # The cover — components/Cover/preview.html
 
+This page preserves upstream format conventions. Its producer `make.ts` is not bundled: follow this skill's local file workflow and structural `check`, then inspect previews with available Codex tools. No local `--render-check` command or automatic producer is provided.
+
 Every system has one. A preview document exactly like a component's — the marker on
 line 1 (`<!-- @dsCard height=288 -->`; 240–360), the same preview frame,
 preload (tokens.css, the fonts, bundle.css, bundle.js), caps and theme
 hand-off — that Overview shows above the brand book, so a system has a face
 the moment it opens. Keep the folder BARE: a README.md or Cover.d.ts beside
 it, or `Cover` in the bundle header, makes it an ordinary component and the
-system has no cover. make.ts checks it like every preview; `--render-check`
-renders it. Write it LAST, from what you built.
+system has no cover. Run the local structural `check`, then inspect the cover in its native editor; structural validation does not render it. Write it LAST, from what you built.
 
 ## The direction: palette and pattern
 

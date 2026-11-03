@@ -1,5 +1,7 @@
 # Design-system content — every file and field, and the reader recipes
 
+This page preserves upstream format conventions. Its producer `make.ts` is not bundled: follow this skill's local file workflow and structural `check`, then inspect previews with available Codex tools. No local `--render-check` command or automatic producer is provided.
+
 ## The shape: a file table
 
 A system made from the type is KEPT IN FILES: each path below is a file at
@@ -132,8 +134,7 @@ script CDNs and Google Fonts load (make.ts warns); kept in files, live, also rel
 table (absent ⇒ ungrouped), `height` = row px (40–4000, else 120; grows to
 fit), `width` = layout px, scaled down to fit, `floor` = generated
 no-example card (`static`: no mount), `page` = showcase page, not a
-bundle export. A load error drops the row to static; `make.ts --render-check`
-renders previews headless, warns on blank/error/thin.
+bundle export. A load error drops the row to static; the local structural `check` does not render previews or detect blank/error/thin output. Open the native editor and inspect the actual previews.
 
 ## manifest.json (generated, v3)
 

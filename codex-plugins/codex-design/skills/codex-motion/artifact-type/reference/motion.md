@@ -138,7 +138,7 @@ rounds on real films enforced — every "don't" was shipped once and sent back.
 - **Getting there**: the last subject shrinks FIRST, then travels and
   lands exactly as the card appears (no giant shape crossing frame); ramp
   opacity over ~80 ms as things hand off so nothing prints through.
-- **Static comps first** for any new card: 3–4 stills from `frames.ts`,
+- **Static comps first** for any new card: 3–4 stills from `stills <root> --at <times>`,
   state your favorite, build that one.
 
 ## 5. Implementation notes

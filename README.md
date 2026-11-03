@@ -99,7 +99,7 @@ A dashboard or a film is written through the same script (`write-db`, `read-db`,
 
 ## Codex plugin: codex design
 
-`codex design` 0.7.0 bundles seven Codex-adapted skills (`codex-slides`, `codex-design`, `codex-design-system`, `codex-dashboard`, `codex-motion`, `codex-motion-director` and `codex-dataviz`), five local editors, and Codex annotation and editor-comment integration. It incorporates the applicable skill and editor updates from upstream 2.8.2.
+`codex design` 0.7.1 bundles seven Codex-adapted skills (`codex-slides`, `codex-design`, `codex-design-system`, `codex-dashboard`, `codex-motion`, `codex-motion-director` and `codex-dataviz`), five local editors, and Codex annotation and editor-comment integration. It incorporates the applicable skill and editor updates from upstream 2.8.2.
 
 Version 0.5.0 provides a local MCP-backed library with category navigation, a permanent library tab, reusable artwork tabs within a workspace, content-only import/export, recovery history, and English-only editor UI. Artwork is stored in `~/.codex/CodexDesignLibrary` and opens in the native Codex Design workspace by default. Comments use each editor's existing tools. The app consumes host typography/theme variables and uses an inline editor transport instead of blocked localhost frames. The current public host API does not expose Space's middle-sidebar slot, native-toolbar replacement, or per-artwork bound native chat. See [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md) for the distinction between protocol, browser, and actual-host evidence.
 

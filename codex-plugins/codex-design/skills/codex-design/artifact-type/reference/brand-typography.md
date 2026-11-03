@@ -1,8 +1,10 @@
 # Anthropic brand typography
 
+Optional supplied-brand example, not a default for Codex artwork. Use these values only when the user's brief calls for this brand; otherwise follow the actual supplied brand or choose a suitable type system.
+
 Source: the design team's anthropic-design skill `typography.css`
 (2025-12-11). Font FILES are deliberately not bundled here (see
-README.md); author the named family first with honest fallbacks —
+[NOTICE.md](../../../../NOTICE.md)); author the named family first with honest fallbacks —
 where Anthropic fonts aren't installed, the fallback stack renders.
 
 ## Stacks (use verbatim in inline styles)

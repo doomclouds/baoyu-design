@@ -9,6 +9,8 @@ faster-than-real-time export free. The runner enforces it (§5).
 
 ## 1. The film folder you write
 
+The layout below describes upstream authoring inputs. In Codex, retain the saved root from `create`: film documents live under `db/film/`, modules under `db/modules/`, and uploads under `_blobs/`. Write them through the local wrapper as SKILL.md specifies; do not create a second film folder or run an upstream producer.
+
 ```
 film/
   film.json        {"title": "Harbor — notes that stay put"}  (what people see; never "Video")
@@ -25,20 +27,17 @@ film/
 
 Names match `[A-Za-z0-9][A-Za-z0-9_.-]{0,63}` and keep their extension:
 `kit.module('app.css')`, `kit.assets.url('board-a.webp')`.
-`make.ts` turns the folder into store records (`film/meta`, one
-`assets/<file>` per image → an uploaded blob, one `modules/<file>`
-per module, `film/script` last); the frames and check scripts read
-the folder directly. Budgets make enforces: `cut.js` ≤200 KiB; each
+Use the local `write-db <root>` and `upload <root>` commands for store records (`film/meta`, assets, modules and `film/script`), then `check <root>` for structural validation. Local content budgets: `cut.js` ≤200 KiB; each
 module ≤200 KiB — split a bigger one into `big.css~1`, `big.css~2`…
 and `kit.module('big.css')` returns them joined; all modules ≤2 MiB,
 ≤48 of them; ≤96 assets, rasters small (a 1440-wide webp screenshot is
 60–120 KB; prefer lifted DOM anyway); an `.svg` is inlined as a
-`data:` ref by make (never uploaded). **Fonts are assets**:
+`data:` ref in its asset record (never uploaded). **Fonts are assets**:
 each woff2/woff/ttf/otf (uploaded as `font/woff2` etc.) is registered as
 a face named by its file stem
 (`assets/BrandSans-700.woff2` → `font-family: "BrandSans-700"`). Text in
 a family named in CSS that is no asset renders
-in whatever the machine has (`check.ts` warns): bring the user's brand
+in whatever the machine has (inspect actual rendered output and font warnings from `stills` or `export`): bring the user's brand
 face as files. In a film of scenes with no `look.json` a Google family is named in `scenes.json`'s `fonts` (rough-cut.md) and fetched
 by the player; a film in the store with no `scenes.json` takes their files alone; until then the system stacks
 stand: make the film, and ask as the one sentence more.
@@ -229,10 +228,11 @@ for the whole film; frames never reload assets. `kit.plateStats()`.
   at the midpoint with opacity `|p-.5|*2`; numbers that count up start
   near half their value and fade in, or stills read "0 signups".
 - Live smoothness depends on your `render()` alone (aim ≤8 ms);
-  `check.ts`'s ms/frame is the export raster cost (~100 ms at 1× is
-  normal) with an estimate for a full 2× export.
+  the local structural check does not measure rendering cost or estimate export speed. Observe the actual stills/export run when performance matters.
 
 ## 5. What the runner enforces
+
+These are player/rendering constraints, not checks run by the local structural `check` command. Inspect actual rendering errors and output; the upstream determinism, live-diff and raster-check scripts are not bundled.
 
 The live view is your DOM; exported frames and the scripts rasterize
 that DOM (an SVG-foreignObject snapshot — the "html2canvas" trick) and
@@ -241,7 +241,7 @@ kills CSS transitions/animations in the stage (lifted product CSS is
 full of them; they just don't run); freezes `Date.now`
 and `performance.now` to t and reseeds `Math.random` per frame (use
 `kit.rng` so you control it); reaches nothing but the film's own
-assets; and logs `raster-safety:` errors — which fail `check.ts` — for
+assets; and logs `raster-safety:` errors for
 `<img>` or CSS `url()` that is not `data:`, `<iframe>`, external
 stylesheets, and scrolled elements (animate `translateY` instead). A
 `render` that returns a promise draws a warning and live playback

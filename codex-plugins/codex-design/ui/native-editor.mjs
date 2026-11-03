@@ -62,7 +62,7 @@ function loadEditorDocument(channel) {
   let accepted = false;
   let editor;
   const outgoing = new Set(['codex-design:editor-request', 'codex-design:editor-transport-ready', 'codex-design:editor-app-ready', 'codex-design:editor-diagnostic', 'codex-design:editor-flushed', 'codex-design:editor-history-opened']);
-  const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:comment-viewport-changed', 'codex-design:editor-flush', 'codex-design:ui-language-changed', 'codex-design:editor-history-open', 'codex-design:editor-history-close']);
+  const incoming = new Set(['codex-design:editor-response', 'codex-design:host-context-changed', 'codex-design:comment-viewport-changed', 'codex-design:editor-flush', 'codex-design:editor-cancel-close', 'codex-design:editor-dispose', 'codex-design:ui-language-changed', 'codex-design:editor-history-open', 'codex-design:editor-history-close']);
   const receive = event => {
     const message = event.data;
     if (message?.channel !== channel) return;
@@ -201,6 +201,7 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     }
     if (message.type === 'codex-design:editor-flushed') {
       if (!flush || message.requestId !== flush.requestId) return;
+      if (flush.closing && message.closing !== true) return;
       const current = flush; flush = undefined; clearTimeout(current.timer);
       message.saved === true ? current.resolve({ saved: true }) : current.reject(Object.assign(new Error(message.error?.message || 'The editor still has unsaved changes.'), { code: message.error?.code || 'EDITOR_UNSAVED_CHANGES' }));
       return;
@@ -252,11 +253,44 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     disposed = true; clearTimeout(startup); stopViewport(); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
     throw error;
   }
-  const flushEditor = () => {
+  const cancelClose = () => {
+    if (disposed) return;
+    if (flush?.closing) flush.closingCancelled = true;
+    iframe.removeAttribute('inert');
+    iframe.removeAttribute('aria-busy');
+    iframe.contentWindow?.postMessage({ type: 'codex-design:editor-cancel-close', channel }, '*');
+  };
+  const waitForFlush = (promise, signal, closing) => {
+    if (!signal) return promise.catch(error => { if (closing) cancelClose(); throw error; });
+    let onAbort;
+    const cancelled = new Promise((_resolve, reject) => {
+      onAbort = () => reject(signal.reason || Object.assign(new Error('Leaving this artwork was cancelled.'), { code: 'EDITOR_NAVIGATION_CANCELLED' }));
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    });
+    return Promise.race([promise, cancelled]).catch(error => { if (closing) cancelClose(); throw error; })
+      .finally(() => signal.removeEventListener('abort', onAbort));
+  };
+  const flushEditor = ({ closing = false, signal } = {}) => {
     if (disposed) return Promise.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
+    if (signal?.aborted) return Promise.reject(signal.reason || Object.assign(new Error('Leaving this artwork was cancelled.'), { code: 'EDITOR_NAVIGATION_CANCELLED' }));
     // Before the actual controls mount the user cannot have made an edit.
     if (!appReady) return Promise.resolve({ saved: true });
-    if (flush) return flush.promise;
+    if (closing) { iframe.setAttribute('inert', ''); iframe.setAttribute('aria-busy', 'true'); }
+    if (flush) {
+      if (flush.closingCancelled) {
+        // An acknowledgement already in flight belongs to the cancelled
+        // gesture. Finish that writer, then obtain a fresh save confirmation.
+        return waitForFlush(flush.promise.then(() => flushEditor({ closing, signal })), signal, closing);
+      }
+      // Promote an already pending save so playback stops even while its first
+      // caller is waiting. The writer itself remains single-flight.
+      if (closing) {
+        flush.closing = true;
+        iframe.contentWindow?.postMessage({ type: 'codex-design:editor-flush', channel, requestId: flush.requestId, closing: true }, '*');
+      }
+      return waitForFlush(flush.promise, signal, closing);
+    }
     const requestId = crypto.randomUUID();
     let resolve, reject;
     const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -265,9 +299,9 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
       flush = undefined;
       reject(Object.assign(new Error('The editor did not confirm that changes were saved.'), { code: 'EDITOR_UNSAVED_CHANGES' }));
     }, 10_000);
-    flush = { requestId, promise, resolve, reject, timer };
-    iframe.contentWindow?.postMessage({ type: 'codex-design:editor-flush', channel, requestId }, '*');
-    return promise;
+    flush = { requestId, promise, resolve, reject, timer, closing };
+    iframe.contentWindow?.postMessage({ type: 'codex-design:editor-flush', channel, requestId, ...(closing ? { closing: true } : {}) }, '*');
+    return waitForFlush(promise, signal, closing);
   };
   const openHistory = ({ signal } = {}) => {
     if (disposed) return Promise.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
@@ -309,9 +343,11 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     url,
     post(message) { if (!disposed) iframe.contentWindow?.postMessage({ ...message, channel }, '*'); },
     flush: flushEditor,
+    cancelClose,
     openHistory,
     dispose() {
       if (disposed) return;
+      iframe.contentWindow?.postMessage({ type: 'codex-design:editor-dispose', channel }, '*');
       bridge.cancelSystemSync?.(artifactId);
       for (const jobId of motionJobs) void bridge.invoke('editor.motionExport', { id: artifactId, operation: 'cancel', jobId }).catch(() => {});
       motionJobs.clear();

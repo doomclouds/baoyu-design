@@ -166,7 +166,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     mountNativeEditor: ({ iframe, artifactId, document: editorDocument, onError, onReady }) => {
       editorCalls.push('mount'); timeline.push('mount');
       const instance = { iframe, artifactId, document: editorDocument, onError, onReady, disposed: false, url: 'data:editor', post: message => posted.push(message),
-        flush: async () => { editorCalls.push('flush'); timeline.push('flush'); if (onFlush) await onFlush(instance); if (failSave) throw Object.assign(new Error('Unsaved'), { code: 'EDITOR_UNSAVED_CHANGES' }); editorCalls.push('saved'); timeline.push('saved'); },
+        flush: async options => { editorCalls.push('flush'); timeline.push('flush'); if (onFlush) await onFlush(instance, options); if (failSave) throw Object.assign(new Error('Unsaved'), { code: 'EDITOR_UNSAVED_CHANGES' }); editorCalls.push('saved'); timeline.push('saved'); },
         async openHistory({ signal } = {}) {
           await instance.flush();
           if (signal?.aborted) throw signal.reason;
@@ -1311,4 +1311,189 @@ test('native comment draft capability is forwarded only from the host boolean', 
     const f = await start(t, { active: true, canDraftComments });
     assert.equal(f.actions.find(call => call.action === 'editor.document').payload.canDraftComments, canDraftComments);
   }
+});
+
+function motionSaveGate() {
+  let release, confirmed = false;
+  const writer = new Promise(resolve => { release = resolve; }).then(() => { confirmed = true; });
+  return { release, confirmed: () => confirmed,
+    wait(signal) {
+      if (signal?.aborted) return Promise.reject(signal.reason);
+      return new Promise((resolve, reject) => {
+        const aborted = () => { signal?.removeEventListener('abort', aborted); reject(signal.reason); };
+        signal?.addEventListener('abort', aborted, { once: true });
+        writer.then(() => { signal?.removeEventListener('abort', aborted); resolve(); });
+      });
+    } };
+}
+const motionOtherId = '22222222-2222-4222-8222-222222222222';
+const motionRecord = { id, kind: 'motion', title: '已有内容的影片 A', createdAt: '2026-11-03T00:00:00.000Z', updatedAt: '2026-11-03T00:00:00.000Z', contentStatus: 'ok' };
+const motionOther = { ...motionRecord, id: motionOtherId, title: '影片 B' };
+const motionDocument = payload => ({ html: '<html><body><main data-playing="true"><h1>Authored Motion content: ' + payload.id + '</h1></main></body></html>' });
+const settleMotionUi = async () => { for (let index = 0; index < 6; index++) await setImmediate(); };
+
+// These exercise the actual parent controller at its existing inert DOM/save
+// boundary. Actual playing/pausing and persisted film bytes have player tests.
+test('Motion close with slow saving keeps only the latest B then Library intent and never claims an unconfirmed save', async t => {
+  const gate = motionSaveGate(), flushOptions = [];
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument,
+    onFlush: (_editor, options) => { flushOptions.push(options); return gate.wait(options?.signal); } });
+  const original = f.editorInstances[0]; original.onReady();
+  assert.match(original.document.html, /Authored Motion content/);
+  f.actions.length = 0; f.editorCalls.length = 0;
+  try {
+    f.click('close-tab', { id }); await setImmediate();
+    const intermediate = f.controller.activateArtifact(motionOtherId);
+    f.click('activate-tab', { id: 'library' }); await settleMotionUi();
+    assert.equal(gate.confirmed(), false);
+    assert.equal(original.disposed, false);
+    assert.equal(f.actions.some(call => call.action.startsWith('view.')), false);
+    assert.equal(f.editorCalls.includes('saved'), false);
+    gate.release(); await intermediate; await settleMotionUi();
+    assert.deepEqual(f.actions.filter(call => call.action.startsWith('view.')).map(call => ({ action: call.action, id: call.payload.id })), [
+      { action: 'view.activateTab', id: 'library' },
+    ]);
+    assert.equal(f.view().activeTabId, 'library');
+    assert.equal(f.view().tabs.some(tab => tab.id === id), true, 'The superseded close cannot remove artwork A.');
+    assert.equal(f.editorInstances.some(editor => editor.artifactId === motionOtherId), false, 'The superseded B intent cannot briefly mount an unwanted editor.');
+    assert.ok(flushOptions.length > 0 && flushOptions.every(options => options?.closing === true && options.signal));
+    assert.equal(original.disposed, true);
+    assert.equal(f.editorCalls.filter(call => call === 'dispose').length, 1);
+  } finally { gate.release(); }
+});
+
+test('Motion close cancellation retains its exact frame and a late save cannot replay the cancelled close', async t => {
+  const gate = motionSaveGate();
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument,
+    onFlush: (_editor, options) => gate.wait(options?.signal) });
+  const original = f.editorInstances[0]; original.onReady(); f.actions.length = 0;
+  try {
+    f.click('close-tab', { id }); await setImmediate();
+    f.controller.cancelNavigation(); await settleMotionUi();
+    assert.equal(f.frame(), original.iframe); assert.equal(original.disposed, false);
+    assert.equal(f.view().activeTabId, id);
+    assert.equal(f.actions.some(call => call.action.startsWith('view.')), false);
+    gate.release(); await settleMotionUi();
+    assert.equal(gate.confirmed(), true);
+    assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+    assert.equal(f.frame(), original.iframe);
+    assert.equal(await f.controller.activateArtifact(motionOtherId), true); await settleMotionUi();
+    assert.equal(f.view().activeTabId, motionOtherId);
+    assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+  } finally { gate.release(); }
+});
+
+test('a failed Motion close preserves authored content and permits a later successful switch without replaying close', async t => {
+  let refuse = true;
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument,
+    onFlush: () => { if (refuse) throw Object.assign(new Error('The film save failed.'), { code: 'EDITOR_UNSAVED_CHANGES' }); } });
+  const original = f.editorInstances[0]; original.onReady(); f.actions.length = 0;
+  f.click('close-tab', { id }); await settleMotionUi();
+  assert.equal(f.view().activeTabId, id); assert.equal(f.frame(), original.iframe); assert.equal(original.disposed, false);
+  assert.match(original.document.html, /Authored Motion content/);
+  assert.equal(f.actions.some(call => call.action.startsWith('view.')), false);
+  refuse = false;
+  assert.equal(await f.controller.activateArtifact(motionOtherId), true); await settleMotionUi();
+  assert.equal(f.view().activeTabId, motionOtherId);
+  assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+});
+
+test('destroy during a Motion save cancels the navigation owner so its late acknowledgement cannot invoke a view mutation', async t => {
+  const gate = motionSaveGate();
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument,
+    onFlush: (_editor, options) => gate.wait(options?.signal) });
+  const original = f.editorInstances[0]; original.onReady(); f.actions.length = 0;
+  try {
+    const navigation = f.controller.activateArtifact(motionOtherId); await setImmediate();
+    f.controller.destroy(); gate.release();
+    assert.equal(await navigation, false); await settleMotionUi();
+    assert.equal(f.actions.some(call => call.action.startsWith('view.')), false);
+    assert.equal(original.disposed, true);
+    assert.equal(f.editorInstances.length, 1);
+    assert.equal(await f.controller.activateArtifact(motionOtherId), false);
+    assert.equal(f.actions.some(call => call.action.startsWith('view.')), false);
+  } finally { gate.release(); }
+});
+
+test('a delayed Motion reopen save cannot dispose the newer active editor or replace its surface', async t => {
+  const gate = motionSaveGate(); let first = true;
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument,
+    onFlush: () => first ? (first = false, gate.wait()) : undefined });
+  f.editorInstances[0].onReady();
+  try {
+    f.click('retry-editor', { id }); await setImmediate();
+    assert.equal(await f.controller.activateArtifact(motionOtherId), true); await settleMotionUi();
+    const current = f.editorInstances.at(-1);
+    assert.equal(current.artifactId, motionOtherId);
+    gate.release(); await settleMotionUi();
+    assert.equal(current.disposed, false);
+    assert.equal(f.frame(), current.iframe);
+    assert.equal(f.view().activeTabId, motionOtherId);
+    assert.equal(f.actions.filter(call => call.action === 'editor.document' && call.payload.id === motionOtherId).length, 1);
+  } finally { gate.release(); }
+});
+
+test('the enabled Motion close spinner invokes the actual cancel-navigation action and keeps the frame editable', async t => {
+  const gate = motionSaveGate();
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument,
+    onFlush: (_editor, options) => gate.wait(options?.signal) });
+  const original = f.editorInstances[0]; original.onReady(); f.actions.length = 0;
+  const authored = original.document.html;
+  try {
+    f.click('close-tab', { id }); await setImmediate();
+    const buttons = [...f.node('.workspace-tabs').innerHTML.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+    const cancel = buttons.find(([, attributes]) => attributes.includes('data-action="cancel-navigation"') && attributes.includes(`data-id="${id}"`));
+    assert.ok(cancel, 'The pending tab close must expose a real cancel action in its rendered markup.');
+    assert.doesNotMatch(cancel[1], /(?:^|\s)disabled(?:[\s=]|$)/);
+    assert.match(cancel[1], /aria-label="Cancel closing /);
+    assert.match(cancel[2], /class="spinner"/);
+    const libraryTab = buttons.find(([, attributes]) => attributes.includes('data-action="activate-tab"') && attributes.includes('data-id="library"'));
+    assert.ok(libraryTab); assert.doesNotMatch(libraryTab[1], /(?:^|\s)disabled(?:[\s=]|$)/);
+    assert.notEqual(f.root.getAttribute('inert'), '');
+    assert.notEqual(f.root.getAttribute('aria-busy'), 'true');
+    f.click('cancel-navigation', { id }); await settleMotionUi();
+    assert.equal(f.view().activeTabId, id);
+    assert.equal(f.frame(), original.iframe); assert.equal(original.disposed, false);
+    assert.equal(original.document.html, authored);
+    assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+    assert.doesNotMatch(f.node('.workspace-tabs').innerHTML, /data-action="cancel-navigation"/);
+    f.click('rename', { id }); await setImmediate();
+    assert.equal(f.node('dialog').open, true, 'Cancelling a slow close must leave parent edit controls available.');
+    f.click('close-dialog');
+    gate.release(); await settleMotionUi();
+    assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+    assert.equal(await f.controller.activateArtifact(motionOtherId), true); await settleMotionUi();
+    assert.equal(f.view().activeTabId, motionOtherId);
+  } finally { gate.release(); }
+});
+
+test('retired Motion frames release their load listener on reopen, failure, close and destroy without posting into the newer artwork', async t => {
+  const f = await start(t, { active: true, records: [motionRecord, motionOther], onDocument: motionDocument });
+  const count = frame => frame.listeners.get('load')?.size || 0;
+  const first = f.frame();
+  assert.equal(count(first), 1);
+  f.click('retry-editor', { id }); await settleMotionUi();
+  const reopened = f.frame();
+  assert.notEqual(reopened, first); assert.equal(count(first), 0); assert.equal(count(reopened), 1);
+  assert.equal(await f.controller.activateArtifact(motionOtherId), true); await settleMotionUi();
+  const next = f.frame();
+  assert.equal(count(reopened), 0); assert.equal(count(next), 1);
+  f.posted.length = 0;
+  first.emit('load'); reopened.emit('load');
+  assert.equal(f.posted.length, 0, 'Late load events from artwork A cannot post language or other state into B.');
+  next.emit('load');
+  assert.equal(f.posted.length, 1); assert.equal(f.posted[0].type, 'codex-design:ui-language-changed');
+  f.editorInstances.at(-1).onError({ code: 'EDITOR_START_FAILED', message: 'Controlled startup failure.' });
+  assert.equal(count(next), 0);
+  f.click('retry-editor', { id: motionOtherId }); await settleMotionUi();
+  const recovered = f.frame(); assert.equal(count(recovered), 1);
+  f.click('close-tab', { id: motionOtherId }); await settleMotionUi();
+  assert.equal(count(recovered), 0);
+  assert.equal(await f.controller.activateArtifact(id), true); await settleMotionUi();
+  const final = f.frame(); assert.equal(count(final), 1);
+  f.controller.destroy();
+  assert.equal(count(final), 0);
+  f.posted.length = 0;
+  for (const retired of [first, reopened, next, recovered, final]) retired.emit('load');
+  assert.equal(f.posted.length, 0);
 });

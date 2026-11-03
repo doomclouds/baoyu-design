@@ -95,12 +95,10 @@ score(S, kit) {
 `pattern`/`drums` with `repeat` happily overrun the beat you meant to
 stop at — compute the repeat count (or the step string) to fit
 [t0, t1). Unknown drum or foley names are SILENT (an unknown pitched
-patch falls back to marimba); `check.ts` lists them with the event
-count, tempo and sounding span. An event timed 0.1 s or more before 0
+patch falls back to marimba); `score <root>` lists them with the event count, tempo and sounding span. An event timed 0.1 s or more before 0
 is dropped without a word (one closer is moved to 0), so the sound for
-an entrance that starts early goes at 0. Listen by numbers: `export.ts --no-video --levels`
+an entrance that starts early goes at 0. Listen by numbers: `score <root> --levels`
 prints loudness per second (RMS dBFS: −60 silent, −30 quiet bed, −20
 groove, −12 hit) — no second between the title and the sign-off should
-sit below about −30; `--mid score.mid` added to them writes a Standard
-MIDI File on your grid for a composer.
+sit below about −30; the upstream MIDI-file export flag is not exposed by this local wrapper. For requested listening output, use `export <root> --audio-only`.
 Keep it small — a 35 s score is a few hundred events.

@@ -82,7 +82,7 @@ from your `list` or your last write of it.
    call per message, the scene inline in the call, written once and sent at once: they
    are watching. **No scene by way of a file or shell script, and render nothing of the
    film unasked**, even with a browser at hand: what other pages say of stills,
-   `frames.ts`, `check.ts` and `export.ts` does not hold here. The list is the plan: lay
+   `stills <root> --at <times>`, `check.ts` and `export.ts` does not hold here. The list is the plan: lay
    out no scenes ahead. Think of one, write it, send it, read the reply, go to the next;
    whatever motion.md or recreate-ui.md says of asking, no question now except the one that
    decides a refusal (ask, end the turn; their answer takes it up: a film still rough, by "Cut short"). Compose it from its `desc` and

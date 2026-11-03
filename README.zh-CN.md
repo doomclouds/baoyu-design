@@ -98,7 +98,7 @@ node skills/claude-slides/scripts/artifact.mjs share designs/q3-review          
 
 ## Codex 插件：codex design
 
-`codex design` 0.7.0 将七个经过 Codex 适配的技能（`codex-slides`、`codex-design`、`codex-design-system`、`codex-dashboard`、`codex-motion`、`codex-motion-director` 和 `codex-dataviz`）、五个本地编辑器，以及 Codex 批注和编辑器评论联动打包在一起，并同步上游 2.8.2 中适用于这些类型的技能与编辑器更新。
+`codex design` 0.7.1 将七个经过 Codex 适配的技能（`codex-slides`、`codex-design`、`codex-design-system`、`codex-dashboard`、`codex-motion`、`codex-motion-director` 和 `codex-dataviz`）、五个本地编辑器，以及 Codex 批注和编辑器评论联动打包在一起，并同步上游 2.8.2 中适用于这些类型的技能与编辑器更新。
 
 0.5.0 提供本地 MCP 作品库、可收缩分类栏、固定作品库 Tab、同一工作区内复用的作品 Tab、作品导入导出、版本恢复及英文编辑器界面。作品统一保存在 `~/.codex/CodexDesignLibrary`，默认进入原生 Codex Design 工作区；批注使用各编辑器已有工具位置。界面使用宿主字体和主题变量，原生视图通过内联编辑器及作品范围内的 MCP 读写运行。公开宿主接口尚未开放资料空间的中间侧栏插槽、顶部原生栏替换或每件作品独立绑定原生聊天，不能把内部分类栏视作已经接管宿主侧栏。验收方法见 [`codex-plugins/NATIVE-TESTING.md`](codex-plugins/NATIVE-TESTING.md)。
 

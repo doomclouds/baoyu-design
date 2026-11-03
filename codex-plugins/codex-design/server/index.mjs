@@ -55346,7 +55346,22 @@ function adaptBlankArtboardCreation(source) {
 }
 
 // source/scripts/editor-runtime-adapter.mjs
+var missingDashboardFont = "url(/_runtime/AnthropicSerif-Roman-Variable-26-179-2.ac9c19c70558c515.woff2)";
+var fontMarker = "/* codex-design:native-dashboard-font-fallback */";
+function adaptDashboardFontRequest(source) {
+  if (source.includes(fontMarker) || !source.includes('"loadAnthropicSerifFont"')) return source;
+  const exports = [...source.matchAll(/\b[at]\(e,"loadAnthropicSerifFont",\(\)=>([\w$]+)\)/g)];
+  if (exports.length !== 1) throw new Error("The canonical Dashboard font loader export changed; native font adaptation was refused.");
+  const name = exports[0][1], start = source.lastIndexOf("function " + name + "(", exports[0].index);
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const part = start < 0 ? null : readCommentComponent(source.slice(start), new RegExp(`^function ${escaped}\\([^)]*\\)\\{`));
+  if (!part) throw new Error("The canonical Dashboard font loader changed; native font adaptation was refused.");
+  if (!part.text.includes(missingDashboardFont)) return source;
+  const guarded = part.text.replace(part.match[0], part.match[0] + "if(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__)return;");
+  return fontMarker + "\n" + source.slice(0, start) + guarded + source.slice(start + part.end);
+}
 function repairEditorRuntime(source) {
+  source = adaptDashboardFontRequest(source);
   source = adaptEditorExportFallbacks(source);
   source = adaptBlankArtboardCreation(source);
   const hookName = /\([\w$]+,"useSheetTreeDialogAnnouncement",\(\)=>([\w$]+)/.exec(source)?.[1];
@@ -55923,33 +55938,297 @@ var native8 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
 var marker9 = "/* codex-design:native-motion-player */";
 var escape11 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 var refused = (message) => Object.assign(new Error(message), { code: "MOTION_PLAYER_ADAPTER_UNSUPPORTED" });
+function motionLifecycleFor(target) {
+  if (target.__CODEX_DESIGN_MOTION_LIFECYCLE__) return target.__CODEX_DESIGN_MOTION_LIFECYCLE__;
+  let document2, host, root, commit, closing = false, previewsHeld = false, disposed = target.__CODEX_DESIGN_EDITOR_TRANSPORT__?.disposed === true;
+  const editStates = /* @__PURE__ */ new Map();
+  const roots = /* @__PURE__ */ new WeakSet();
+  const audioRenders = /* @__PURE__ */ new Map();
+  let audioGeneration = 0;
+  const pauseAudio = (record3, starting = false) => {
+    if (record3.pending) return record3.pending;
+    const context = record3.context;
+    if (context.state !== "running" && !(context.state === "suspended" && !record3.paused && (starting || record3.rendering))) return Promise.resolve();
+    const at2 = context.currentTime + 0.02;
+    const pause = at2 < context.length / context.sampleRate ? context.suspend(at2) : record3.rendering;
+    record3.pending = Promise.resolve(pause).then(async () => {
+      record3.paused = context.state === "suspended";
+      if (record3.paused && !closing && !disposed) {
+        record3.paused = false;
+        await context.resume();
+      }
+    }).finally(() => {
+      record3.pending = void 0;
+    });
+    return record3.pending;
+  };
+  const release = [];
+  const quiesce = () => {
+    host?.pause?.();
+    host?.holdPreview?.(true);
+  };
+  const once2 = (value) => {
+    if (typeof value?.dispose !== "function") return;
+    const dispose = value.dispose.bind(value);
+    let released = false;
+    value.dispose = () => {
+      if (released) return;
+      released = true;
+      return dispose();
+    };
+  };
+  const lifecycle = {
+    get disposed() {
+      return disposed;
+    },
+    get closing() {
+      return closing;
+    },
+    bindDocument(value) {
+      if (disposed) {
+        value.dispose();
+        return false;
+      }
+      document2 = value;
+      return true;
+    },
+    bindPlayer(value) {
+      if (host === value) return;
+      once2(value);
+      for (const name of ["play", "prime"]) if (typeof value[name] === "function") {
+        const original = value[name].bind(value);
+        value[name] = (...args) => {
+          if (!closing && !disposed) return original(...args);
+        };
+      }
+      if (typeof value.load === "function") {
+        const load = value.load.bind(value);
+        value.load = (...args) => disposed ? Promise.resolve(null) : load(...args);
+      }
+      if (typeof value.holdPreview === "function") {
+        const hold = value.holdPreview.bind(value);
+        value.holdPreview = (held) => hold(previewsHeld || disposed || held);
+      }
+      if (disposed) {
+        value.dispose?.();
+        return;
+      }
+      host = value;
+      if (closing) host.pause?.();
+    },
+    bindRoot(value) {
+      if (!roots.has(value)) {
+        roots.add(value);
+        const unmount = value.unmount.bind(value);
+        let released = false;
+        value.unmount = () => {
+          if (released) return;
+          released = true;
+          return unmount();
+        };
+        if (typeof value.render === "function") {
+          const render = value.render.bind(value);
+          value.render = (...args) => {
+            if (!disposed && !released) return render(...args);
+          };
+        }
+      }
+      if (disposed) {
+        value.unmount();
+        return false;
+      }
+      root = value;
+      return true;
+    },
+    bindEdits(name, state) {
+      if (!disposed) editStates.set(name, state);
+    },
+    bindCommit(value) {
+      if (!disposed) commit = value;
+    },
+    bindAudioRender(context) {
+      if (disposed) {
+        context.startRendering = () => Promise.reject(new Error("The film editor has closed."));
+        return context;
+      }
+      if (audioRenders.has(context)) return context;
+      const record3 = { context, pending: void 0, rendering: void 0, paused: false, queued: void 0 };
+      audioRenders.set(context, record3);
+      audioGeneration++;
+      const start = context.startRendering.bind(context);
+      const run = () => {
+        if (disposed) return Promise.reject(new Error("The film editor has closed."));
+        if (closing) pauseAudio(record3, true).catch((error113) => {
+          record3.error = error113;
+        });
+        record3.rendering = start();
+        record3.rendering.then(() => audioRenders.delete(context), () => audioRenders.delete(context));
+        return record3.rendering;
+      };
+      context.startRendering = () => {
+        if (disposed) return Promise.reject(new Error("The film editor has closed."));
+        if (previewsHeld) return new Promise((resolve, reject) => {
+          record3.queued = { start: () => run().then(resolve, reject), reject };
+        });
+        return run();
+      };
+      return context;
+    },
+    editsReady() {
+      const states = [...editStates.values()].map((read) => read());
+      const failed = states.find((state) => state.error);
+      if (failed) throw new Error("The film edit could not be saved. " + failed.error);
+      return !states.some((state) => state.pending);
+    },
+    async settle() {
+      await commit?.();
+      const deadline = Date.now() + 8e3;
+      for (; ; ) {
+        if (disposed) throw new Error("The film editor has closed.");
+        if (lifecycle.editsReady()) return true;
+        if (Date.now() >= deadline) throw new Error("The film still has pending edits. Keep this tab open until they can be saved.");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    },
+    prepareClose() {
+      if (disposed) return;
+      if (!closing) {
+        closing = true;
+        host?.pause?.();
+      }
+      for (const record3 of audioRenders.values()) pauseAudio(record3).catch((error113) => {
+        record3.error = error113;
+      });
+      document2?.flushNow?.();
+    },
+    async saved() {
+      if (disposed) throw new Error("The film editor has closed.");
+      if (!closing) return true;
+      let generation;
+      do {
+        generation = audioGeneration;
+        await Promise.all([...audioRenders.values()].map((record3) => pauseAudio(record3)));
+        if (disposed) throw new Error("The film editor has closed.");
+        if (!closing) return true;
+      } while (generation !== audioGeneration);
+      const detail = document2?.syncDetail?.();
+      if (!lifecycle.editsReady() || document2?.dirty?.() || detail?.pending || detail?.flights) return false;
+      previewsHeld = true;
+      host?.holdPreview?.(true);
+      return true;
+    },
+    cancelClose() {
+      if (disposed || !closing) return;
+      closing = false;
+      previewsHeld = false;
+      host?.holdPreview?.(false);
+      for (const record3 of audioRenders.values()) {
+        record3.error = void 0;
+        if (record3.queued) {
+          const queued = record3.queued;
+          record3.queued = void 0;
+          queued.start();
+        } else if (record3.paused && !record3.pending) {
+          record3.paused = false;
+          record3.context.resume().catch(() => {
+          });
+        }
+      }
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      closing = true;
+      for (const record3 of audioRenders.values()) pauseAudio(record3).catch(() => {
+      });
+      for (const dispose of [quiesce, () => root?.unmount(), () => host?.dispose?.(), () => document2?.dispose?.()]) {
+        try {
+          dispose();
+        } catch (error113) {
+          release.push(error113);
+        }
+      }
+      root = host = document2 = commit = void 0;
+      editStates.clear();
+      for (const record3 of audioRenders.values()) record3.queued?.reject(new Error("The film editor has closed."));
+      audioRenders.clear();
+      delete target.__CODEX_DESIGN_MOTION_PLAYER__;
+      if (release.length) throw new AggregateError(release, "The Motion player could not release every resource.");
+    }
+  };
+  target.__CODEX_DESIGN_MOTION_LIFECYCLE__ = lifecycle;
+  target.__CODEX_DESIGN_EDITOR_PREPARE_CLOSE__ = lifecycle.prepareClose;
+  target.__CODEX_DESIGN_EDITOR_CANCEL_CLOSE__ = lifecycle.cancelClose;
+  target.__CODEX_DESIGN_EDITOR_DISPOSE__ = lifecycle.dispose;
+  target.__CODEX_DESIGN_EDITOR_SETTLE__ = lifecycle.settle;
+  return lifecycle;
+}
 function bindNativeMotionDocument(document2, target = globalThis) {
-  const flush = async () => {
+  const lifecycle = motionLifecycleFor(target);
+  let pending;
+  const save = async () => {
+    if (lifecycle.disposed) throw new Error("The film editor has closed.");
+    await lifecycle.settle();
     await document2.save();
+    if (lifecycle.disposed) throw new Error("The film editor has closed.");
     document2.flushNow();
     const deadline = Date.now() + 8e3;
     while (true) {
+      if (lifecycle.disposed) throw new Error("The film editor has closed.");
       const detail = document2.syncDetail();
       if (document2.saveState().status === "error") throw new Error("The film still has unsaved changes.");
-      if (!document2.dirty() && detail.pending === 0 && detail.flights === 0) return true;
+      if (!document2.dirty() && detail.pending === 0 && detail.flights === 0) {
+        await lifecycle.settle();
+        const latest = document2.syncDetail();
+        if (!lifecycle.disposed && lifecycle.editsReady() && !document2.dirty() && latest.pending === 0 && latest.flights === 0) {
+          if (await lifecycle.saved()) return true;
+        }
+      }
       if (Date.now() >= deadline) throw new Error("The film still has unsaved changes.");
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   };
-  target.__CODEX_DESIGN_EDITOR_FLUSH__ = flush;
+  const flush = () => {
+    if (pending) return pending;
+    const saved = save();
+    const current = saved.finally(() => {
+      if (pending === current) pending = void 0;
+    });
+    pending = current;
+    return current;
+  };
   const dispose = document2.dispose.bind(document2);
+  let released = false;
   document2.dispose = () => {
+    if (released) return;
+    released = true;
     if (target.__CODEX_DESIGN_EDITOR_FLUSH__ === flush) delete target.__CODEX_DESIGN_EDITOR_FLUSH__;
     return dispose();
   };
+  if (lifecycle.bindDocument(document2)) target.__CODEX_DESIGN_EDITOR_FLUSH__ = flush;
   return document2;
 }
 function bindNativeMotionPlayer(host, authoredTime, target = globalThis) {
+  const lifecycle = motionLifecycleFor(target);
+  lifecycle.bindPlayer(host);
+  if (lifecycle.disposed) return;
   target.__CODEX_DESIGN_MOTION_PLAYER__ = {
     state: () => host.state,
     authoredTime: () => authoredTime(host.state.meta?.parts, host.state.t),
     seek: (seconds) => host.seek(seconds)
   };
+}
+function bindNativeMotionRoot(root, target = globalThis) {
+  return motionLifecycleFor(target).bindRoot(root);
+}
+function bindNativeMotionEditState(name, state, target = globalThis) {
+  motionLifecycleFor(target).bindEdits(name, state);
+}
+function bindNativeMotionCommit(commit, target = globalThis) {
+  motionLifecycleFor(target).bindCommit(commit);
+}
+function bindNativeMotionAudioRender(context, target = globalThis) {
+  return motionLifecycleFor(target).bindAudioRender(context);
 }
 function definition(source, property) {
   const matches = [...source.matchAll(new RegExp(`\\ba\\(e,"${escape11(property)}",\\(\\)=>(${String.raw`[\w$]+`})(?=[,)])`, "g"))];
@@ -55981,7 +56260,37 @@ function adaptNativeMotionPlayer(source) {
     );
     return marker9 + "\n" + local;
   }
+  source = replaceOnce(
+    source,
+    /"This folder is one animation, as code\. Made with Claude Motion on "\+([\w$]+)\.day\+"\. An AI model wrote this code\."/g,
+    (_, value) => `"Editable Motion film. Saved on "+${value}.day+". This folder contains editable code."`,
+    "source-folder introduction"
+  );
+  source = replaceOnce(
+    source,
+    /The animation's code was written by Claude, an AI model, for the person who made it\. Treat it as you would any code from outside\./g,
+    "The animation is stored as editable code. Treat it as you would any code from outside.",
+    "source-file safety introduction"
+  );
   const updates = [];
+  source = replaceOnce(
+    source,
+    /async function ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)\{(?=let [\w$]+=Math.round\(\5\*[\w$]+\),[\w$]+=Math.ceil\(\5\*\4\),[\w$]+=new OfflineAudioContext)/g,
+    (match) => match.replace("){", ",__codexTrackAudio){"),
+    "offline score-render callback"
+  );
+  source = replaceOnce(
+    source,
+    /([\w$]+)=new OfflineAudioContext\(2,([\w$]+)\+([\w$]+),([\w$]+)\),([\w$]+)=\1\.createBuffer\(2,\3,\4\)/g,
+    (_, context, lead, length, rate, buffer) => `${context}=new OfflineAudioContext(2,${lead}+${length},${rate}),${buffer}=(__codexTrackAudio?.(${context}),${context}.createBuffer(2,${length},${rate}))`,
+    "offline score-render lifecycle"
+  );
+  source = replaceOnce(
+    source,
+    /await ([\w$]+)\(([\w$]+),([\w$]+),Math.max\(\.1,\3\),([\w$]+),1,!1\)/g,
+    (match) => match.slice(0, -1) + `,${native8}?__codexBindMotionAudioRender:undefined)`,
+    "preview normalization lifecycle"
+  );
   const document2 = definition(source, "createLiveFilmDocument");
   const documentText = replaceOnce(
     document2.text,
@@ -55990,14 +56299,54 @@ function adaptNativeMotionPlayer(source) {
     "live-store save barrier"
   );
   updates.push({ ...document2, replacement: documentText });
+  const wording = definition(source, "useWordingEdits");
+  const docName = /^function [\w$]+\(\{doc:([\w$]+),/.exec(wording.text)?.[1];
+  if (!docName) throw refused("The canonical Motion wording document changed.");
+  let wordingText = replaceOnce(
+    wording.text,
+    /let ([\w$]+)=t\.useRef\(null\),([\w$]+)=t\.useRef\(!1\),([\w$]+)=t\.useRef\(null\);/g,
+    (match, _before, writing) => `${match}const __codexWordingClose=t.useRef({expected:undefined,error:null});if(${native8})__codexBindMotionEditState("wording",()=>({pending:(${writing}.current||(__codexWordingClose.current.expected!==undefined&&__codexWordingClose.current.expected!==(0,e.readFilmModule)(${docName}.content(),e.RETYPED_MODULE))),error:__codexWordingClose.current.error}));`,
+    "wording settlement state"
+  );
+  wordingText = replaceOnce(
+    wordingText,
+    /([\w$]+)=t\.useCallback\(\(([\w$]+),([\w$]+)\)=>\{if\(!([\w$]+)\.current\.active\|\|([\w$]+)\.readOnly\(\)\)return;/g,
+    (match, _setter, id, value, state) => `${match}if(${native8}&&${value}===""){__codexWordingClose.current.error=null;__codexWordingClose.current.expected=(0,e.serializeRetypedLines)((0,e.setRetypedLine)(${state}.current.lines,${id},""));}`,
+    "explicit wording reset"
+  );
+  wordingText = replaceOnce(
+    wordingText,
+    /([\w$]+)\.current\.lines=\(0,e\.setRetypedLine\)\(\1\.current\.lines,([\w$]+),([\w$]+)\),([\w$]+)\(([\w$]+)=>\[\.\.\.\5,\{was:\2,v:\3\}\]\)/g,
+    (match, state) => match.replace("),", `),${native8}&&(__codexWordingClose.current.expected=(0,e.serializeRetypedLines)(${state}.current.lines),__codexWordingClose.current.error=null),`),
+    "accepted wording edit"
+  );
+  wordingText = replaceOnce(
+    wordingText,
+    /let ([\w$]+)=([\w$]+)=>\{([\w$]+)\(\[\]\),([\w$]+)\.clear\(\),\(0,e\.showEditorToast\)\(\2\)\}/g,
+    (match, _reset, reason) => match.replace("=>{", `=>{if(${native8})__codexWordingClose.current.error=String(${reason});`),
+    "rejected wording edit"
+  );
+  updates.push({ ...wording, replacement: wordingText });
   const app = definition(source, "MotionApp");
-  const appText = replaceOnce(
+  let appText = replaceOnce(
     app.text,
     /([\w$]+)=e\.ReactReactRuntime\.useSyncExternalStore\(([\w$]+)\.subscribe,\(\)=>\2\.state\)/g,
     (_, state, host) => `${state}=(${native8}&&__codexBindMotionPlayer(${host},e.playedTimeToAuthoredTime),e.ReactReactRuntime.useSyncExternalStore(${host}.subscribe,()=>${host}.state))`,
     "player state binding"
   );
+  appText = replaceOnce(
+    appText,
+    /(\(0,e\.useExportPress\)\(\{film:[\s\S]*?,live:[\w$]+,save:)([\w$]+)(,dialogOpen:)/g,
+    (_, prefix, commit, suffix) => `${prefix}(${native8}&&__codexBindMotionCommit(${commit}),${commit})${suffix}`,
+    "canonical UI commit barrier"
+  );
   updates.push({ ...app, replacement: appText });
+  source = replaceOnce(
+    source,
+    /([\w$]+)=e\.ReactDOMClientReactRuntime\.createRoot\(([\w$]+)\),\1\.render\(/g,
+    (_, root, node2) => `${root}=e.ReactDOMClientReactRuntime.createRoot(${node2}),(!${native8}||__codexBindMotionRoot(${root}))&&${root}.render(`,
+    "React root lifecycle"
+  );
   const engine = definition(source, "createVideoExportEngine");
   let engineText = replaceOnce(
     engine.text,
@@ -56034,7 +56383,7 @@ function adaptNativeMotionPlayer(source) {
   const exports = definition(source, "createHostExportEntries");
   updates.push({ ...exports, replacement: exports.text.replace(exports.match[0], exports.match[0] + `if(${native8})return null;`) });
   for (const part of updates.sort((a, b) => b.start - a.start)) source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
-  return marker9 + "\nconst __codexBindMotionDocument=" + bindNativeMotionDocument.toString() + ";\nconst __codexBindMotionPlayer=" + bindNativeMotionPlayer.toString() + ";\n" + source;
+  return marker9 + "\nconst motionLifecycleFor=" + motionLifecycleFor.toString() + ";\nconst __codexBindMotionDocument=" + bindNativeMotionDocument.toString() + ";\nconst __codexBindMotionPlayer=" + bindNativeMotionPlayer.toString() + ";\nconst __codexBindMotionRoot=" + bindNativeMotionRoot.toString() + ";\nconst __codexBindMotionEditState=" + bindNativeMotionEditState.toString() + ";\nconst __codexBindMotionCommit=" + bindNativeMotionCommit.toString() + ";\nconst __codexBindMotionAudioRender=" + bindNativeMotionAudioRender.toString() + ";\n" + source;
 }
 
 // source/server/editor-document.mjs
@@ -56284,7 +56633,10 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
   }
   const pending = /* @__PURE__ */ new Map();
   let disposed = false;
+  let appReadyObserver;
   const pendingWrites = /* @__PURE__ */ new Set();
+  const flushRequests = /* @__PURE__ */ new Map();
+  let flushing;
   let historyOpenId;
   let previews;
   const sources = /* @__PURE__ */ new Set();
@@ -56687,7 +57039,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       }
     };
   })();
-  const flushEditor = async () => {
+  const saveEditor = async () => {
     if (readOnly) return true;
     target.document?.activeElement?.blur?.();
     if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === "function") {
@@ -56702,6 +57054,15 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     }
     await Promise.all([...pendingWrites]);
     return true;
+  };
+  const flushEditor = () => {
+    if (flushing) return flushing;
+    const saved = saveEditor();
+    const current = saved.finally(() => {
+      if (flushing === current) flushing = void 0;
+    });
+    flushing = current;
+    return current;
   };
   if (configuration.kind === "motion" && !readOnly) {
     target.__CODEX_DESIGN_MOTION_EXPORT__ = async (request, progress, signal) => {
@@ -56745,20 +57106,65 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       return;
     }
     if (message.type === "codex-design:editor-flush") {
-      void (async () => {
+      if (message.closing === true) {
         try {
-          await flushEditor();
-          target.parent.postMessage({ type: "codex-design:editor-flushed", channel, requestId: message.requestId, saved: true }, "*");
+          target.document?.activeElement?.blur?.();
+          target.__CODEX_DESIGN_EDITOR_PREPARE_CLOSE__?.();
         } catch (error113) {
           target.parent.postMessage({
             type: "codex-design:editor-flushed",
             channel,
             requestId: message.requestId,
             saved: false,
+            closing: true,
             error: { code: "EDITOR_UNSAVED_CHANGES", message: String(error113.message || error113) }
           }, "*");
+          return;
+        }
+      }
+      const previous = flushRequests.get(message.requestId);
+      if (previous) {
+        if (message.closing === true && !previous.closing) {
+          previous.closing = true;
+          if (!previous.result) return;
+          flushRequests.delete(message.requestId);
+        } else {
+          if (previous.result) target.parent.postMessage(previous.result, "*");
+          return;
+        }
+      }
+      const entry2 = { closing: message.closing === true };
+      flushRequests.set(message.requestId, entry2);
+      void (async () => {
+        try {
+          await flushEditor();
+          entry2.result = { type: "codex-design:editor-flushed", channel, requestId: message.requestId, saved: true, ...entry2.closing ? { closing: true } : {} };
+        } catch (error113) {
+          entry2.result = {
+            type: "codex-design:editor-flushed",
+            channel,
+            requestId: message.requestId,
+            saved: false,
+            ...entry2.closing ? { closing: true } : {},
+            error: { code: "EDITOR_UNSAVED_CHANGES", message: String(error113.message || error113) }
+          };
+        }
+        if (!disposed) target.parent.postMessage(entry2.result, "*");
+        if (flushRequests.size > 64) for (const [id, item] of flushRequests) {
+          if (item.result && id !== message.requestId) {
+            flushRequests.delete(id);
+            break;
+          }
         }
       })();
+      return;
+    }
+    if (message.type === "codex-design:editor-cancel-close") {
+      target.__CODEX_DESIGN_EDITOR_CANCEL_CLOSE__?.();
+      return;
+    }
+    if (message.type === "codex-design:editor-dispose") {
+      disposeEditor();
       return;
     }
     if (message.type === "codex-design:editor-history-open") {
@@ -56909,6 +57315,10 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     return result;
   };
   target.__CODEX_DESIGN_EDITOR_RESOLVE_ASSET__ = async (reference) => {
+    const closed = () => {
+      if (disposed) throw Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" });
+    };
+    closed();
     const id = /(?:^|\/)\_blob\/([0-9a-f]{32})(?:[?#].*)?$/.exec(String(reference))?.[1];
     if (!id) throw new TypeError("Only artwork upload references can be embedded.");
     const key = "_blob/" + id;
@@ -56916,8 +57326,10 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       const entry2 = { size: 0 };
       entry2.promise = (async () => {
         const response = await target.fetch(key);
+        closed();
         if (!response.ok) throw new Error("The artwork image or font could not be loaded.");
         const bytes2 = new Uint8Array(await response.arrayBuffer());
+        closed();
         if (bytes2.byteLength > maxAssetBytes) throw new Error("The artwork asset exceeds its transfer limit.");
         const url3 = "data:" + (response.headers.get("content-type")?.split(";")[0] || "application/octet-stream") + ";base64," + bytesToBase64(bytes2);
         entry2.size = bytes2.byteLength;
@@ -56974,6 +57386,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       try {
         let next = value;
         for (const match of new Set(value.match(reference) || [])) next = next.split(match).join(await resolveAsset(match));
+        if (window.parent.__CODEX_DESIGN_EDITOR_TRANSPORT__?.disposed === true) return;
         if (!element.isConnected || state.get(attribute2) !== value) return;
         if (attribute2 === "textContent") {
           if (element.textContent === value) element.textContent = next;
@@ -57132,20 +57545,37 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       })().catch((error113) => target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(error113.message || error113).slice(0, 500) }, "*"));
     };
   }
-  target.addEventListener("unload", () => {
+  const disposeEditor = () => {
+    if (disposed) return;
+    try {
+      target.__CODEX_DESIGN_EDITOR_DISPOSE__?.();
+    } catch (error113) {
+      target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(error113.message || error113).slice(0, 500) }, "*");
+    }
     for (const source of sources) source.close();
     for (const jobId of motionJobs) void rpc("editor.motionExport", { operation: "cancel", jobId }).catch(() => {
     });
     motionJobs.clear();
     disposed = true;
+    target.__CODEX_DESIGN_EDITOR_TRANSPORT__.disposed = true;
+    appReadyObserver?.disconnect();
+    appReadyObserver = void 0;
     target.document?.removeEventListener?.("DOMContentLoaded", startPreviews);
     hostTheme.dispose();
     previews?.dispose?.();
     target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
     if (readOnly) delete target.__CODEX_DESIGN_PREVIEW_CLOSE__;
     if (configuration.kind === "motion") delete target.__CODEX_DESIGN_MOTION_EXPORT__;
+    flushRequests.clear();
     for (const call of [...pending.values()]) call.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
-  });
+    pending.clear();
+    pendingWrites.clear();
+    assetCache.clear();
+    assetAliases.clear();
+    assetIds.clear();
+    assetBytes = 0;
+  };
+  target.addEventListener("unload", disposeEditor);
   target.addEventListener("error", (event) => {
     if (!event.message) return;
     target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(event.message).slice(0, 500) }, "*");
@@ -57154,13 +57584,14 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
   if (target.document && target.MutationObserver) {
     let ready = false;
     const observe = () => {
-      if (ready || !target.document.querySelector("[data-cds],#root button,.dash-page")) return;
+      if (disposed || ready || !target.document.querySelector("[data-cds],#root button,.dash-page")) return;
       ready = true;
-      observer.disconnect();
+      appReadyObserver?.disconnect();
+      appReadyObserver = void 0;
       target.parent.postMessage({ type: "codex-design:editor-app-ready", channel }, "*");
     };
-    const observer = new target.MutationObserver(observe);
-    observer.observe(target.document.documentElement, { childList: true, subtree: true });
+    appReadyObserver = new target.MutationObserver(observe);
+    appReadyObserver.observe(target.document.documentElement, { childList: true, subtree: true });
     observe();
   }
 }
@@ -57597,7 +58028,7 @@ function createArtifactTransfers({ store } = {}) {
 }
 
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.7.0";
+var PLUGIN_UI_VERSION = "0.7.1";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
 var UI_MIME_TYPE = "text/html;profile=mcp-app";

@@ -53,7 +53,10 @@ export function installNativeEditorTransport(configuration, target, installPrevi
   }
   const pending = new Map();
   let disposed = false;
+  let appReadyObserver;
   const pendingWrites = new Set();
+  const flushRequests = new Map();
+  let flushing;
   let historyOpenId;
   let previews;
   const sources = new Set();
@@ -412,7 +415,7 @@ export function installNativeEditorTransport(configuration, target, installPrevi
       },
     };
   })();
-  const flushEditor = async () => {
+  const saveEditor = async () => {
     if (readOnly) return true;
     target.document?.activeElement?.blur?.();
     if (typeof target.__CODEX_DESIGN_EDITOR_FLUSH__ === 'function') {
@@ -427,6 +430,12 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     }
     await Promise.all([...pendingWrites]);
     return true;
+  };
+  const flushEditor = () => {
+    if (flushing) return flushing;
+    const saved = saveEditor();
+    const current = saved.finally(() => { if (flushing === current) flushing = undefined; });
+    flushing = current; return current;
   };
   if (configuration.kind === 'motion' && !readOnly) {
     target.__CODEX_DESIGN_MOTION_EXPORT__ = async (request, progress, signal) => {
@@ -472,17 +481,44 @@ export function installNativeEditorTransport(configuration, target, installPrevi
       return;
     }
     if (message.type === 'codex-design:editor-flush') {
+      if (message.closing === true) {
+        try { target.document?.activeElement?.blur?.(); target.__CODEX_DESIGN_EDITOR_PREPARE_CLOSE__?.(); }
+        catch (error) {
+          target.parent.postMessage({ type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: false,
+            closing: true, error: { code: 'EDITOR_UNSAVED_CHANGES', message: String(error.message || error) } }, '*');
+          return;
+        }
+      }
+      const previous = flushRequests.get(message.requestId);
+      if (previous) {
+        if (message.closing === true && !previous.closing) {
+          previous.closing = true;
+          if (!previous.result) return;
+          flushRequests.delete(message.requestId);
+        } else {
+          if (previous.result) target.parent.postMessage(previous.result, '*');
+          return;
+        }
+      }
+      const entry = { closing: message.closing === true };
+      flushRequests.set(message.requestId, entry);
       void (async () => {
         try {
           await flushEditor();
-          target.parent.postMessage({ type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: true }, '*');
+          entry.result = { type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: true, ...(entry.closing ? { closing: true } : {}) };
         } catch (error) {
-          target.parent.postMessage({ type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: false,
-            error: { code: 'EDITOR_UNSAVED_CHANGES', message: String(error.message || error) } }, '*');
+          entry.result = { type: 'codex-design:editor-flushed', channel, requestId: message.requestId, saved: false, ...(entry.closing ? { closing: true } : {}),
+            error: { code: 'EDITOR_UNSAVED_CHANGES', message: String(error.message || error) } };
+        }
+        if (!disposed) target.parent.postMessage(entry.result, '*');
+        if (flushRequests.size > 64) for (const [id, item] of flushRequests) {
+          if (item.result && id !== message.requestId) { flushRequests.delete(id); break; }
         }
       })();
       return;
     }
+    if (message.type === 'codex-design:editor-cancel-close') { target.__CODEX_DESIGN_EDITOR_CANCEL_CLOSE__?.(); return; }
+    if (message.type === 'codex-design:editor-dispose') { disposeEditor(); return; }
     if (message.type === 'codex-design:editor-history-open') {
       if (typeof message.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.requestId)) return;
       historyOpenId = message.requestId;
@@ -618,6 +654,8 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     return result;
   };
   target.__CODEX_DESIGN_EDITOR_RESOLVE_ASSET__ = async reference => {
+    const closed = () => { if (disposed) throw Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }); };
+    closed();
     const id = /(?:^|\/)\_blob\/([0-9a-f]{32})(?:[?#].*)?$/.exec(String(reference))?.[1];
     if (!id) throw new TypeError('Only artwork upload references can be embedded.');
     const key = '_blob/' + id;
@@ -625,8 +663,10 @@ export function installNativeEditorTransport(configuration, target, installPrevi
       const entry = { size: 0 };
       entry.promise = (async () => {
         const response = await target.fetch(key);
+        closed();
         if (!response.ok) throw new Error('The artwork image or font could not be loaded.');
         const bytes = new Uint8Array(await response.arrayBuffer());
+        closed();
         if (bytes.byteLength > maxAssetBytes) throw new Error('The artwork asset exceeds its transfer limit.');
         const url = 'data:' + (response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream') + ';base64,' + bytesToBase64(bytes);
         entry.size = bytes.byteLength; entry.ready = true; entry.url = url; assetBytes += entry.size;
@@ -670,6 +710,7 @@ export function installNativeEditorTransport(configuration, target, installPrevi
       try {
         let next = value;
         for (const match of new Set(value.match(reference) || [])) next = next.split(match).join(await resolveAsset(match));
+        if (window.parent.__CODEX_DESIGN_EDITOR_TRANSPORT__?.disposed === true) return;
         if (!element.isConnected || state.get(attribute) !== value) return;
         if (attribute === 'textContent') { if (element.textContent === value) element.textContent = next; }
         else if (element.getAttribute(attribute) === value) element.setAttribute(attribute, next);
@@ -791,19 +832,28 @@ export function installNativeEditorTransport(configuration, target, installPrevi
       })().catch(error => target.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel, message: String(error.message || error).slice(0, 500) }, '*'));
     };
   }
-  target.addEventListener('unload', () => {
+  const disposeEditor = () => {
+    if (disposed) return;
+    try { target.__CODEX_DESIGN_EDITOR_DISPOSE__?.(); }
+    catch (error) { target.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel, message: String(error.message || error).slice(0, 500) }, '*'); }
     for (const source of sources) source.close();
     for (const jobId of motionJobs) void rpc('editor.motionExport', { operation: 'cancel', jobId }).catch(() => {});
     motionJobs.clear();
     disposed = true;
+    target.__CODEX_DESIGN_EDITOR_TRANSPORT__.disposed = true;
+    appReadyObserver?.disconnect(); appReadyObserver = undefined;
     target.document?.removeEventListener?.('DOMContentLoaded', startPreviews);
     hostTheme.dispose();
     previews?.dispose?.();
     target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
     if (readOnly) delete target.__CODEX_DESIGN_PREVIEW_CLOSE__;
     if (configuration.kind === 'motion') delete target.__CODEX_DESIGN_MOTION_EXPORT__;
+    flushRequests.clear();
     for (const call of [...pending.values()]) call.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
-  });
+    pending.clear(); pendingWrites.clear();
+    assetCache.clear(); assetAliases.clear(); assetIds.clear(); assetBytes = 0;
+  };
+  target.addEventListener('unload', disposeEditor);
   target.addEventListener('error', event => {
     if (!event.message) return;
     target.parent.postMessage({ type: 'codex-design:editor-diagnostic', channel, message: String(event.message).slice(0, 500) }, '*');
@@ -812,12 +862,12 @@ export function installNativeEditorTransport(configuration, target, installPrevi
   if (target.document && target.MutationObserver) {
     let ready = false;
     const observe = () => {
-      if (ready || !target.document.querySelector('[data-cds],#root button,.dash-page')) return;
-      ready = true; observer.disconnect();
+      if (disposed || ready || !target.document.querySelector('[data-cds],#root button,.dash-page')) return;
+      ready = true; appReadyObserver?.disconnect(); appReadyObserver = undefined;
       target.parent.postMessage({ type: 'codex-design:editor-app-ready', channel }, '*');
     };
-    const observer = new target.MutationObserver(observe);
-    observer.observe(target.document.documentElement, { childList: true, subtree: true });
+    appReadyObserver = new target.MutationObserver(observe);
+    appReadyObserver.observe(target.document.documentElement, { childList: true, subtree: true });
     observe();
   }
 }

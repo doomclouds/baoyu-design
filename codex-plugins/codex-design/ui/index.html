@@ -121,6 +121,7 @@ a { color: inherit; }
 .tab-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 30px; height: 30px; padding: 0; border-radius: 6px; background: transparent; color: var(--muted); }
 .tab-close:hover { color: var(--text); background: var(--surface-hover); }
 .tab-close .icon { width: 16px; height: 16px; }
+.tab-close .spinner { width: 14px; height: 14px; }
 .workspace-panel { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .workspace-panel.library-panel { overflow-y: auto; }
 .library-content { max-width: 1760px; min-height: 100%; margin: 0 auto; padding: 34px 34px 60px; }
@@ -23718,6 +23719,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     editorErrorDetails: "Error details",
     savingChanges: "Saving changes…",
     changesSaved: "Changes saved",
+    cancelClosing: "Cancel closing {{title}}",
+    savingCanCancel: "Saving changes… Click to cancel closing.",
+    closingCancelled: "Closing cancelled. Your artwork stays open.",
     kindColumn: "Type",
     invalidTitle: "Enter a name between 1 and 200 characters.",
     artifactBusy: "This artwork has an active editing task. Try again after it finishes.",
@@ -24364,7 +24368,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let accepted = false;
     let editor;
     const outgoing = /* @__PURE__ */ new Set(["codex-design:editor-request", "codex-design:editor-transport-ready", "codex-design:editor-app-ready", "codex-design:editor-diagnostic", "codex-design:editor-flushed", "codex-design:editor-history-opened"]);
-    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed", "codex-design:editor-flush", "codex-design:ui-language-changed", "codex-design:editor-history-open", "codex-design:editor-history-close"]);
+    const incoming = /* @__PURE__ */ new Set(["codex-design:editor-response", "codex-design:host-context-changed", "codex-design:comment-viewport-changed", "codex-design:editor-flush", "codex-design:editor-cancel-close", "codex-design:editor-dispose", "codex-design:ui-language-changed", "codex-design:editor-history-open", "codex-design:editor-history-close"]);
     const receive = (event) => {
       const message = event.data;
       if (message?.channel !== channel) return;
@@ -24515,6 +24519,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
       if (message.type === "codex-design:editor-flushed") {
         if (!flush || message.requestId !== flush.requestId) return;
+        if (flush.closing && message.closing !== true) return;
         const current = flush;
         flush = void 0;
         clearTimeout(current.timer);
@@ -24571,10 +24576,47 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       unsubscribe?.();
       throw error112;
     }
-    const flushEditor = () => {
+    const cancelClose = () => {
+      if (disposed) return;
+      if (flush?.closing) flush.closingCancelled = true;
+      iframe.removeAttribute("inert");
+      iframe.removeAttribute("aria-busy");
+      iframe.contentWindow?.postMessage({ type: "codex-design:editor-cancel-close", channel }, "*");
+    };
+    const waitForFlush = (promise3, signal, closing) => {
+      if (!signal) return promise3.catch((error112) => {
+        if (closing) cancelClose();
+        throw error112;
+      });
+      let onAbort;
+      const cancelled = new Promise((_resolve, reject) => {
+        onAbort = () => reject(signal.reason || Object.assign(new Error("Leaving this artwork was cancelled."), { code: "EDITOR_NAVIGATION_CANCELLED" }));
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      });
+      return Promise.race([promise3, cancelled]).catch((error112) => {
+        if (closing) cancelClose();
+        throw error112;
+      }).finally(() => signal.removeEventListener("abort", onAbort));
+    };
+    const flushEditor = ({ closing = false, signal } = {}) => {
       if (disposed) return Promise.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
+      if (signal?.aborted) return Promise.reject(signal.reason || Object.assign(new Error("Leaving this artwork was cancelled."), { code: "EDITOR_NAVIGATION_CANCELLED" }));
       if (!appReady) return Promise.resolve({ saved: true });
-      if (flush) return flush.promise;
+      if (closing) {
+        iframe.setAttribute("inert", "");
+        iframe.setAttribute("aria-busy", "true");
+      }
+      if (flush) {
+        if (flush.closingCancelled) {
+          return waitForFlush(flush.promise.then(() => flushEditor({ closing, signal })), signal, closing);
+        }
+        if (closing) {
+          flush.closing = true;
+          iframe.contentWindow?.postMessage({ type: "codex-design:editor-flush", channel, requestId: flush.requestId, closing: true }, "*");
+        }
+        return waitForFlush(flush.promise, signal, closing);
+      }
       const requestId = crypto.randomUUID();
       let resolve, reject;
       const promise3 = new Promise((yes, no) => {
@@ -24586,9 +24628,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         flush = void 0;
         reject(Object.assign(new Error("The editor did not confirm that changes were saved."), { code: "EDITOR_UNSAVED_CHANGES" }));
       }, 1e4);
-      flush = { requestId, promise: promise3, resolve, reject, timer };
-      iframe.contentWindow?.postMessage({ type: "codex-design:editor-flush", channel, requestId }, "*");
-      return promise3;
+      flush = { requestId, promise: promise3, resolve, reject, timer, closing };
+      iframe.contentWindow?.postMessage({ type: "codex-design:editor-flush", channel, requestId, ...closing ? { closing: true } : {} }, "*");
+      return waitForFlush(promise3, signal, closing);
     };
     const openHistory = ({ signal } = {}) => {
       if (disposed) return Promise.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
@@ -24640,9 +24682,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         if (!disposed) iframe.contentWindow?.postMessage({ ...message, channel }, "*");
       },
       flush: flushEditor,
+      cancelClose,
       openHistory,
       dispose() {
         if (disposed) return;
+        iframe.contentWindow?.postMessage({ type: "codex-design:editor-dispose", channel }, "*");
         bridge.cancelSystemSync?.(artifactId2);
         for (const jobId of motionJobs) void bridge.invoke("editor.motionExport", { id: artifactId2, operation: "cancel", jobId }).catch(() => {
         });
@@ -24760,6 +24804,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let currentSurface = null;
     let currentEditorUrl = null;
     let currentNativeEditor = null;
+    let currentEditorFrame = null;
     let currentEditorLoad = null;
     let editHistoryAction = null;
     const renamingIds = /* @__PURE__ */ new Set();
@@ -24769,6 +24814,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const thumbnailPending = /* @__PURE__ */ new Set();
     const unconfirmedMutations = /* @__PURE__ */ new Set();
     let viewQueue = Promise.resolve();
+    let viewIntent = null;
     let toastTimer;
     let conversationTimer;
     let purgeConfirmation = null;
@@ -24791,6 +24837,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const menuDismissal = createMenuDismissal({ document, window, onDismiss: closeMenu });
     const recordFor = (id) => state.records.find((record3) => record3.id === id);
     const activeRecord = () => recordFor(state.view.activeTabId);
+    function disposeEditorView() {
+      currentEditorFrame?.removeEventListener("load", postEditorLanguage);
+      currentEditorFrame = null;
+      currentNativeEditor?.dispose();
+      currentNativeEditor = null;
+      currentEditorUrl = null;
+    }
     function cancelEditHistory(closeDialog = false) {
       const current = editHistoryAction;
       if (!current) return;
@@ -24798,22 +24851,34 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       current.abort.abort(new BridgeError("Opening edit history was cancelled.", "EDITOR_HISTORY_CANCELLED"));
       if (closeDialog && elements.dialog.querySelector("[data-history-id]") === current.form) elements.dialog.close();
     }
-    async function flushCurrentEditor() {
-      const editor = currentNativeEditor;
+    async function flushCurrentEditor({ editor = currentNativeEditor, closing = false, signal } = {}) {
       if (typeof editor?.flush !== "function") return;
       announce(t2("savingChanges"));
       try {
-        await editor.flush();
-        announce(t2("changesSaved"));
+        await editor.flush({ closing, signal });
+        if (editor === currentNativeEditor && !signal?.aborted) announce(t2("changesSaved"));
       } catch (error112) {
-        announce(t2("editorSaveFailed"));
+        if (editor === currentNativeEditor && !signal?.aborted) announce(t2("editorSaveFailed"));
         throw error112;
       }
     }
+    function cancelNavigation() {
+      const intent = viewIntent;
+      if (!intent || intent.phase === "committing") return false;
+      viewIntent = null;
+      intent.abort.abort(new BridgeError("Leaving this artwork was cancelled.", "EDITOR_NAVIGATION_CANCELLED"));
+      if (intent.phase !== "committing") intent.editor?.cancelClose?.();
+      if (!state.destroyed) renderTabs();
+      return true;
+    }
     const previousNavigationGuard = bridge.beforeNavigate;
     const navigationGuard = async (request) => {
+      cancelNavigation();
       await previousNavigationGuard?.(request);
-      if (state.view.activeTabId !== "library" && (request?.action === "teardown" || request?.id !== state.view.activeTabId)) await flushCurrentEditor();
+      if (state.view.activeTabId !== "library" && (request?.action === "teardown" || request?.id !== state.view.activeTabId)) {
+        cancelEditHistory(true);
+        await flushCurrentEditor({ closing: true });
+      }
     };
     bridge.beforeNavigate = navigationGuard;
     function upsertRecord(record3) {
@@ -25003,7 +25068,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         const selected = tab.id === state.view.activeTabId;
         const record3 = recordFor(tab.id);
         const title = tab.type === "library" ? t2("library") : record3?.title || t2("restoredTabMissing");
-        return '<div class="workspace-tab ' + (selected ? "is-active" : "") + '" role="presentation"' + (tab.type === "artifact" ? ' draggable="true"' : "") + ' data-tab-id="' + escape2(tab.id) + '"><button type="button" id="tab-' + escape2(tab.id) + '" class="tab-select" role="tab" data-action="activate-tab" data-id="' + escape2(tab.id) + '" data-focus-key="tab-' + escape2(tab.id) + '" aria-selected="' + selected + '" aria-controls="design-workspace-panel" tabindex="' + (selected ? "0" : "-1") + '" title="' + escape2(title) + '">' + (tab.type === "library" ? icon("slides") : "") + "<span>" + escape2(title) + "</span></button>" + (tab.type === "artifact" ? '<button type="button" class="tab-close" data-action="close-tab" data-id="' + escape2(tab.id) + '" aria-label="' + escape2(t2("closeDesign", { title })) + '" title="' + escape2(t2("closeKeepsRunning")) + '">' + icon("close") + "</button>" : "") + "</div>";
+        const closing = viewIntent?.action === "closeTab" && viewIntent.payload.id === tab.id && !viewIntent.abort.signal.aborted;
+        const cancellable = closing && viewIntent.phase !== "committing";
+        return '<div class="workspace-tab ' + (selected ? "is-active" : "") + '" role="presentation"' + (tab.type === "artifact" ? ' draggable="true"' : "") + ' data-tab-id="' + escape2(tab.id) + '"><button type="button" id="tab-' + escape2(tab.id) + '" class="tab-select" role="tab" data-action="activate-tab" data-id="' + escape2(tab.id) + '" data-focus-key="tab-' + escape2(tab.id) + '" aria-selected="' + selected + '" aria-controls="design-workspace-panel" tabindex="' + (selected ? "0" : "-1") + '" title="' + escape2(title) + '">' + (tab.type === "library" ? icon("slides") : "") + "<span>" + escape2(title) + "</span></button>" + (tab.type === "artifact" ? '<button type="button" class="tab-close" data-action="' + (cancellable ? "cancel-navigation" : "close-tab") + '" data-id="' + escape2(tab.id) + '" aria-label="' + escape2(t2(cancellable ? "cancelClosing" : closing ? "savingChanges" : "closeDesign", { title })) + '" title="' + escape2(t2(cancellable ? "savingCanCancel" : closing ? "savingChanges" : "closeKeepsRunning")) + '"' + (closing && !cancellable ? ' disabled aria-busy="true"' : closing ? ' aria-busy="true"' : "") + ">" + (closing ? '<span class="spinner" aria-hidden="true"></span>' : icon("close")) + "</button>" : "") + "</div>";
       }).join("");
       elements.panel.setAttribute("aria-labelledby", "tab-" + state.view.activeTabId);
       restoreFocus(focused);
@@ -25157,17 +25224,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         return;
       }
       if (currentNativeEditor && state.view.activeTabId === id) {
+        const previousEditor = currentNativeEditor, previousSequence = editorSequence;
         try {
-          await flushCurrentEditor();
+          await flushCurrentEditor({ editor: previousEditor, closing: true });
         } catch (error112) {
-          toast(errorMessage(error112), true);
+          if (!state.destroyed && state.view.activeTabId === id && currentNativeEditor === previousEditor) toast(errorMessage(error112), true);
           return;
         }
+        if (state.destroyed || state.view.activeTabId !== id || currentNativeEditor !== previousEditor || editorSequence !== previousSequence || renamingIds.has(id)) return;
       }
       const sequence = ++editorSequence;
-      currentNativeEditor?.dispose();
-      currentNativeEditor = null;
-      currentEditorUrl = null;
+      disposeEditorView();
       const host = elements.panel.querySelector(".editor-frame-host");
       if (!host) return;
       host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape2(t2("loadingEditor")) + "</p></div>";
@@ -25182,6 +25249,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         const result = await invoke(native ? "editor.document" : "editor.open", { id, force, ...native ? { language: "en", channel, canDraftComments: bridge.canDraftComments === true } : {} });
         if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id || renamingIds.has(id)) return;
         const iframe = document.createElement("iframe");
+        currentEditorFrame = iframe;
         iframe.className = "design-editor-frame";
         iframe.title = t2("editorFrame", { title: record3.title });
         iframe.allow = "clipboard-read; clipboard-write; fullscreen";
@@ -25238,8 +25306,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     }
     function renderEditorFailure(message, id, diagnostic) {
-      currentNativeEditor?.dispose();
-      currentNativeEditor = null;
+      disposeEditorView();
       const host = elements.panel.querySelector(".editor-frame-host");
       if (!host) return;
       const code = typeof diagnostic?.code === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$/.test(diagnostic.code) ? diagnostic.code : "";
@@ -25260,9 +25327,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const id = state.view.activeTabId;
       if (id === "library") {
         ++editorSequence;
-        currentNativeEditor?.dispose();
-        currentNativeEditor = null;
-        currentEditorUrl = null;
+        disposeEditorView();
         if (currentSurface !== "library") thumbnailCache.clear();
         if (currentSurface !== "library") renderLibrary();
         else renderRecords();
@@ -25275,8 +25340,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const title = record3?.title || t2("restoredTabMissing");
       elements.panel.classList.remove("library-panel");
       if (currentSurface !== id) {
-        currentNativeEditor?.dispose();
-        currentNativeEditor = null;
+        disposeEditorView();
         elements.panel.innerHTML = '<section class="editor-workspace"><header class="editor-workspace-heading"><div class="editor-title-group"><h1 class="editor-design-title"><button type="button" class="editor-title-button" data-action="rename" data-id="' + escape2(id) + '" title="' + escape2(t2("rename")) + '">' + escape2(title) + '</button></h1></div><div class="editor-heading-actions"><a class="icon-button editor-external" target="_blank" rel="noopener noreferrer" aria-label="' + escape2(t2("editorExternal")) + '" hidden>' + icon("external") + '</a><button type="button" class="icon-button" data-action="item-menu" data-menu-trigger="true" data-id="' + escape2(id) + '" aria-haspopup="menu" aria-label="' + escape2(t2("moreActions", { title })) + '">' + icon("more") + '</button></div></header><div class="editor-frame-host"></div></section>';
         currentSurface = id;
         openEditor(id);
@@ -25379,17 +25443,42 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       renderWorkspace();
     }
     function changeView(action, payload) {
+      cancelNavigation();
+      const intent = { action, payload, abort: new AbortController(), phase: "queued", editor: null };
+      viewIntent = intent;
+      renderTabs();
+      const currentIntent = () => !state.destroyed && viewIntent === intent && !intent.abort.signal.aborted;
       viewQueue = viewQueue.catch(() => {
       }).then(async () => {
+        if (!currentIntent()) return false;
         try {
           const current = state.view.activeTabId;
+          const editor = currentNativeEditor;
+          intent.editor = editor;
+          intent.phase = "saving";
           const leavesCurrent = current !== "library" && (action === "closeTab" && payload.id === current || ["openTab", "activateTab"].includes(action) && payload.id !== current);
-          if (leavesCurrent) await flushCurrentEditor();
-          applyView(await invoke("view." + action, payload));
+          if (leavesCurrent) {
+            cancelEditHistory(true);
+            await flushCurrentEditor({ editor, closing: true, signal: intent.abort.signal });
+          }
+          if (!currentIntent() || state.view.activeTabId !== current || currentNativeEditor !== editor) return false;
+          intent.phase = "committing";
+          renderTabs();
+          const before = state.view;
+          const result = await invoke("view." + action, payload);
+          if (!state.destroyed && state.view === before) applyView(result);
           return true;
         } catch (error112) {
-          toast(errorMessage(error112), true);
+          if (!state.destroyed && !intent.abort.signal.aborted && viewIntent === intent) {
+            if (currentNativeEditor === intent.editor) intent.editor?.cancelClose?.();
+            toast(errorMessage(error112), true);
+          }
           return false;
+        } finally {
+          if (viewIntent === intent) {
+            viewIntent = null;
+            if (!state.destroyed) renderTabs();
+          }
         }
       });
       return viewQueue;
@@ -25677,8 +25766,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           if (state.view.activeTabId === id) {
             await flushCurrentEditor();
             ++editorSequence;
-            currentNativeEditor?.dispose();
-            currentNativeEditor = null;
+            disposeEditorView();
             elements.panel.querySelector(".design-editor-frame")?.remove();
           }
           await transfer.restoreSnapshot(id, form.dataset.snapshotId);
@@ -25739,9 +25827,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           if (renaming && state.view.activeTabId === id) {
             if (currentNativeEditor && currentNativeEditor !== editor) throw new BridgeError("The active editor changed while preparing the rename. Try again from its current tab.", "EDITOR_CHANGED");
             ++editorSequence;
-            currentNativeEditor?.dispose();
-            currentNativeEditor = null;
-            currentEditorUrl = null;
+            disposeEditorView();
             elements.panel.querySelector(".design-editor-frame")?.remove();
           }
         }
@@ -25994,7 +26080,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         await changeView("activateTab", { id });
         if (id === "library") await refreshRecords(true);
       } else if (action === "close-tab") await changeView("closeTab", { id });
-      else if (action === "favorite") await favoriteRecord(id);
+      else if (action === "cancel-navigation") {
+        if (cancelNavigation()) announce(t2("closingCancelled"));
+      } else if (action === "favorite") await favoriteRecord(id);
       else if (action === "restore") await restoreRecord(id);
       else if (action === "refresh") await refreshRecords();
       else if (action === "clear-search") {
@@ -26189,12 +26277,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     return {
       refresh: () => refreshRecords(true),
       activateArtifact: (id) => changeView("openTab", { id }),
+      cancelNavigation,
       destroy() {
         state.destroyed = true;
+        cancelNavigation();
         cancelEditHistory();
         if (bridge.beforeNavigate === navigationGuard) bridge.beforeNavigate = previousNavigationGuard;
-        currentNativeEditor?.dispose();
-        currentNativeEditor = null;
+        disposeEditorView();
         ++editorSequence;
         ++conversationSequence;
         clearTimeout(toastTimer);
@@ -44035,7 +44124,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.7.0";
+  var PLUGIN_UI_VERSION = "0.7.1";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
   var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard", "motion"]);

@@ -1,6 +1,6 @@
 {
   "name": "codex-design-build",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "type": "module",
   "description": "Pinned build dependencies for the local Codex Design plugin",

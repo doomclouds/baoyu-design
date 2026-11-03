@@ -119,7 +119,7 @@ product chrome.
 
 ## 4. Check fidelity before anyone sees it
 
-Render the recreated surface at z = 1 with `frames.ts` and put it beside
+Render the recreated surface at z = 1 with `stills <root> --at <times>` and put it beside
 a real screenshot (or the running product) in one contact sheet; look
 for the tells reviewers catch: squashed controls (a 28 px button drawn
 24), wrong font weight or tracking, greys that are flat instead of the

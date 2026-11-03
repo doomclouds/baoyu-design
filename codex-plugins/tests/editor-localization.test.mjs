@@ -7,16 +7,26 @@ import vm from 'node:vm';
 import { build, transform } from 'esbuild';
 import { createHash } from 'node:crypto';
 import {
-  EDITOR_KINDS, extractNativeMessages, createEditorCatalog,
+  EDITOR_KINDS, extractNativeMessages, createEditorCatalog, NATIVE_HOST_MESSAGE_OVERRIDES,
   adaptEditorLocalization, adaptStaticCommentChrome,
 } from '../editor-localization.mjs';
 import { repairEditorRuntime } from '../source/scripts/editor-runtime-adapter.mjs';
 import { includePublishedSource } from '../publish-filter.mjs';
+import { adaptNativeHostErrors } from '../source/scripts/native-editor-language-adapter.mjs';
 import {
   initializeEditorLocalization, resolveLanguage, LANGUAGE_EVENT, PENDING_LANGUAGE_EVENT,
 } from '../source/scripts/editor-localization.js';
 
 const repository = path.resolve(import.meta.dirname, '../..');
+const reviewedHostText = {
+  BNC1wrrvvB: 'This artwork could not be loaded. Reopen it in Codex Design and check that its local files are available.',
+  oeBy29hnwL: 'Saving is unavailable in this view. Reopen the artwork in Codex Design to reconnect local editing.',
+  aKvb9N4RA6: 'Couldn’t prepare this design to send: the design contains what looks like a private editor access link, which cannot be sent.',
+  OcwDW1DfuT: 'This view could not save the requested video format. Reopen the artwork in Codex Design and try the export again.',
+  W1u6GkazZ0: 'Press Save video to choose a local destination. If that fails, reopen this artwork in Codex Design and export again.',
+  WQZQZTd1Yn: 'If saving keeps failing, reopen this artwork in Codex Design and export again. The export renders the video from the start.',
+  'RcLB4R+/kt': 'Transparent MOV export is unavailable in this local editor. Choose MP4 or GIF instead.',
+};
 
 function browser(language = 'zh-CN', configuration = {}, saved = 'zh') {
   const listeners = new Map(), events = [], storage = new Map([['codex-design.ui-language', saved]]);
@@ -57,14 +67,52 @@ test('all five real editors have exact English-only catalogs and retain the hist
     assert.equal(catalog.coverage.englishNative, native.size);
     for (const [key, english] of native) {
       if (kind !== 'motion') discovered.add(english);
-      assert.equal(catalog.resources.en.editor[key], english);
+      assert.equal(catalog.resources.en.editor[key], reviewedHostText[key] ?? english);
     }
     assert.equal(adaptStaticCommentChrome(source), source, 'the removed translation adapter must not rewrite canonical literals');
     const repaired = repairEditorRuntime(source);
     assert.deepEqual([...extractNativeMessages(repaired)], [...native], 'runtime repairs preserve native IDs and canonical defaults');
+    const localErrors = adaptNativeHostErrors(source);
+    assert.deepEqual([...extractNativeMessages(localErrors)], [...native], 'capability error adaptation preserves canonical message definitions');
+    assert.equal(adaptNativeHostErrors(localErrors), localErrors);
+    await transform(localErrors, { loader: 'js' });
     await transform(repaired, { loader: 'js' });
   }
   assert.deepEqual([...discovered].sort(), inventory.messages.map(item => item.text).sort());
+});
+
+test('only seven reviewed host-message IDs receive exact local-operation wording', () => {
+  assert.deepEqual(Object.keys(NATIVE_HOST_MESSAGE_OVERRIDES).sort(), Object.keys(reviewedHostText).sort());
+  const record = (id, text) => '{defaultMessage:' + JSON.stringify(text) + ',id:' + JSON.stringify(id) + '}';
+  for (const [id, reviewed] of Object.entries(NATIVE_HOST_MESSAGE_OVERRIDES)) {
+    assert.equal(reviewed.message, reviewedHostText[id]);
+    for (const original of reviewed.sources) {
+      const source = record(id, original);
+      assert.equal(extractNativeMessages(source).get(id), original);
+      assert.equal(createEditorCatalog('motion', [source]).resources.en.editor[id], reviewedHostText[id]);
+      assert.equal(createEditorCatalog('motion', [record('unreviewed-' + id, original)]).resources.en.editor['unreviewed-' + id], original);
+    }
+    assert.throws(() => createEditorCatalog('motion', [record(id, 'An unreviewed future capability message')]), /Unreviewed native host message variant/);
+  }
+  const source = 'var authored={title:"A story about Claude",copyright:"Anthropic",font:"Anthropic Sans"};';
+  assert.equal(adaptStaticCommentChrome(source), source);
+  assert.equal(adaptNativeHostErrors(source), source);
+});
+
+test('reviewed missing-self errors use local wording only inside a native editor and retain protocol codes', () => {
+  for (const host of ['claude', 'slidesHost', 'designHost', 'designSystemHost']) {
+    const original = `window.${host}.self is missing — this view’s runtime predates the self capability (or this page is running outside a Frame shell and the emulator). Content cannot be saved from here.`;
+    const source = `var authored=${JSON.stringify(original)};function missing(){throw Error(${JSON.stringify(original)})}function denied(){throw{code:"not_granted",message:"The self capability is not available to this view."}}`;
+    const adapted = adaptNativeHostErrors(source);
+    assert.equal(adaptNativeHostErrors(adapted), adapted);
+    const standalone = {}; vm.runInNewContext(adapted, standalone);
+    assert.throws(() => standalone.missing(), error => error.message === original);
+    assert.throws(() => standalone.denied(), error => error.code === 'not_granted' && error.message === 'The self capability is not available to this view.');
+    const native = { __CODEX_DESIGN_EDITOR_TRANSPORT__: {} }; vm.runInNewContext(adapted, native);
+    assert.equal(native.authored, original, 'an identical string used as authored data is unchanged');
+    assert.throws(() => native.missing(), error => error.message === reviewedHostText.oeBy29hnwL);
+    assert.throws(() => native.denied(), error => error.code === 'not_granted' && error.message === 'Permission to save is unavailable in this view. Reopen the artwork in Codex Design to retry.');
+  }
 });
 
 test('only the two reviewed upstream export-menu message variants can share an ID', () => {

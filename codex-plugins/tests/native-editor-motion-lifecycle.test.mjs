@@ -19,14 +19,15 @@ function fixture(t, onCall = () => undefined) {
     return await onCall(action, payload) ?? { jobId: payload.id === firstId ? firstJob : secondJob, status: payload.operation === 'cancel' ? 'cancelled' : 'running' };
   } };
   const mount = (artifactId, channel) => {
-    const sent = [];
+    const sent = [], attributes = new Map();
     const iframe = { ownerDocument: { defaultView: owner }, contentWindow: { postMessage: message => sent.push(message) },
-      setAttribute() {}, removeAttribute() {}, addEventListener() {}, removeEventListener() {} };
+      setAttribute(name, value) { attributes.set(name, value); }, removeAttribute(name) { attributes.delete(name); }, addEventListener() {}, removeEventListener() {} };
     const editor = mountNativeEditor({ iframe, bridge, artifactId, channel, document: { html: '<html><body>Motion lifecycle fixture</body></html>' } });
     editors.push(editor);
-    return { editor, sent, request: (requestId, payload) => Promise.all([...(listeners.get('message') || [])].map(callback => callback({
-      source: iframe.contentWindow, data: { type: 'codex-design:editor-request', channel, requestId, action: 'editor.motionExport', payload },
-    }))) };
+    const receive = (type, data = {}) => Promise.all([...(listeners.get('message') || [])].map(callback => callback({
+      source: iframe.contentWindow, data: { type, channel, ...data },
+    })));
+    return { editor, sent, attributes, receive, request: (requestId, payload) => receive('codex-design:editor-request', { requestId, action: 'editor.motionExport', payload }) };
   };
   t.after(() => { for (const editor of editors) editor.dispose(); });
   return { mount, calls, listeners, cancellations: () => calls.filter(call => call.payload.operation === 'cancel') };
@@ -63,4 +64,87 @@ test('a Motion start that returns its job id after parent disposal is cancelled 
   assert.equal(second.sent.filter(message => message.type === 'codex-design:editor-response').length, 1);
   await second.request('other-status', { operation: 'status', jobId: secondJob });
   assert.equal(f.cancellations().some(call => call.payload.id === secondId), false);
+});
+
+test('a closing flush promotes the same in-flight writer and a failed save releases inert state without pretending it was saved', async t => {
+  const f = fixture(t), frame = f.mount(firstId, 'promoted-close-channel');
+  await frame.receive('codex-design:editor-app-ready');
+  const normal = frame.editor.flush(), closing = frame.editor.flush({ closing: true });
+  let settled = false;
+  const results = Promise.allSettled([normal, closing]).then(value => { settled = true; return value; });
+  const saves = frame.sent.filter(message => message.type === 'codex-design:editor-flush');
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].requestId, saves[1].requestId, 'Promotion must not create a second writer.');
+  assert.equal(saves[1].closing, true);
+  assert.equal(frame.attributes.has('inert'), true);
+  await frame.receive('codex-design:editor-flushed', { requestId: saves[0].requestId, saved: true });
+  await drain();
+  assert.equal(settled, false, 'An already travelling generic save ACK cannot confirm the last blur edit in a promoted close.');
+  assert.equal(frame.attributes.has('inert'), true);
+  await frame.receive('codex-design:editor-flushed', { requestId: saves[0].requestId, closing: true, saved: false,
+    error: { code: 'EDITOR_UNSAVED_CHANGES', message: 'The film could not be saved.' } });
+  for (const result of await results) {
+    assert.equal(result.status, 'rejected'); assert.equal(result.reason.code, 'EDITOR_UNSAVED_CHANGES');
+  }
+  assert.equal(frame.attributes.has('inert'), false);
+  assert.equal(frame.attributes.has('aria-busy'), false);
+  assert.ok(frame.sent.some(message => message.type === 'codex-design:editor-cancel-close'));
+  const retried = frame.editor.flush();
+  const request = frame.sent.filter(message => message.type === 'codex-design:editor-flush').at(-1);
+  assert.notEqual(request.requestId, saves[0].requestId);
+  await frame.receive('codex-design:editor-flushed', { requestId: request.requestId, saved: true });
+  assert.deepEqual(await retried, { saved: true });
+});
+
+test('aborting a closing caller cancels only its wait while the shared writer still requires an exact save acknowledgement', async t => {
+  const f = fixture(t), frame = f.mount(firstId, 'abort-close-channel');
+  await frame.receive('codex-design:editor-app-ready');
+  const controller = new AbortController();
+  const cancelled = frame.editor.flush({ closing: true, signal: controller.signal }).then(value => ({ value }), error => ({ error }));
+  const request = frame.sent.find(message => message.type === 'codex-design:editor-flush');
+  controller.abort();
+  assert.equal((await cancelled).error.name, 'AbortError');
+  assert.equal(frame.attributes.has('inert'), false);
+  let saved = false;
+  const remaining = frame.editor.flush().then(value => { saved = true; return value; });
+  await drain();
+  assert.equal(saved, false);
+  assert.equal(frame.sent.filter(message => message.type === 'codex-design:editor-flush').length, 1, 'Caller cancellation cannot restart or discard the active writer.');
+  await frame.receive('codex-design:editor-flushed', { requestId: 'an-unrelated-request', saved: true });
+  assert.equal(saved, false);
+  await frame.receive('codex-design:editor-flushed', { requestId: request.requestId, closing: true, saved: true });
+  await drain();
+  const fresh = frame.sent.filter(message => message.type === 'codex-design:editor-flush').at(-1);
+  assert.notEqual(fresh.requestId, request.requestId);
+  assert.equal(saved, false, 'A later caller must obtain a fresh receipt after the cancelled close writer finishes.');
+  await frame.receive('codex-design:editor-flushed', { requestId: request.requestId, closing: true, saved: true });
+  assert.equal(saved, false);
+  await frame.receive('codex-design:editor-flushed', { requestId: fresh.requestId, saved: true });
+  assert.deepEqual(await remaining, { saved: true });
+});
+
+test('cancelled close A cannot confirm a later close B until its fresh request receives an explicit closing acknowledgement', async t => {
+  const f = fixture(t), frame = f.mount(firstId, 'cancel-and-reclose-channel');
+  await frame.receive('codex-design:editor-app-ready');
+  let oldGenericSaved = false, newCloseSaved = false;
+  const generic = frame.editor.flush().then(value => { oldGenericSaved = true; return value; });
+  const controller = new AbortController();
+  const closeA = frame.editor.flush({ closing: true, signal: controller.signal }).then(value => ({ value }), error => ({ error }));
+  const old = frame.sent.filter(message => message.type === 'codex-design:editor-flush').at(-1);
+  controller.abort(); assert.equal((await closeA).error.name, 'AbortError');
+  const closeB = frame.editor.flush({ closing: true }).then(value => { newCloseSaved = true; return value; });
+  await drain();
+  assert.equal(frame.sent.filter(message => message.type === 'codex-design:editor-flush').length, 2, 'The cancelled gesture writer must settle before another writer starts.');
+  await frame.receive('codex-design:editor-flushed', { requestId: old.requestId, saved: true });
+  await drain(); assert.equal(oldGenericSaved, false); assert.equal(newCloseSaved, false);
+  await frame.receive('codex-design:editor-flushed', { requestId: old.requestId, closing: true, saved: true });
+  assert.deepEqual(await generic, { saved: true }); await drain();
+  const fresh = frame.sent.filter(message => message.type === 'codex-design:editor-flush').at(-1);
+  assert.notEqual(fresh.requestId, old.requestId); assert.equal(fresh.closing, true);
+  assert.equal(newCloseSaved, false);
+  await frame.receive('codex-design:editor-flushed', { requestId: old.requestId, closing: true, saved: true });
+  await frame.receive('codex-design:editor-flushed', { requestId: fresh.requestId, saved: true });
+  await drain(); assert.equal(newCloseSaved, false, 'Neither the previous close ACK nor a generic fresh ACK can confirm close B.');
+  await frame.receive('codex-design:editor-flushed', { requestId: fresh.requestId, closing: true, saved: true });
+  assert.deepEqual(await closeB, { saved: true });
 });

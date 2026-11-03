@@ -44,8 +44,7 @@ the brand's REAL sources (codebase, attached files, decks, guidelines).
   the first yourself, laid out as `format.md`'s "tokens.css as
   compiled", its first line `/* <title> — generated from tokens.json */`
   (the page takes over only a file whose first comment ends with those
-  words). A page that opens a system synced by `/design-sync` never saves it,
-  so each sync writes the file, laid out the same. Where a system's components wrap themselves in an element the
+  words). A system owned by an external source-project synchronization workflow (`"editing": "code"`) stays read-only in the page. That external producer writes the same file format; this plugin does not install a source producer. Where a system's components wrap themselves in an element the
   tokens are declared on, the page's values cannot reach inside: their
   values still go into `tokens.json`, remove nothing, and tell the user
   an edit on the page will not change those previews.

@@ -79,6 +79,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let currentSurface = null;
   let currentEditorUrl = null;
   let currentNativeEditor = null;
+  let currentEditorFrame = null;
   let currentEditorLoad = null;
   let editHistoryAction = null;
   const renamingIds = new Set();
@@ -88,6 +89,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   const thumbnailPending = new Set();
   const unconfirmedMutations = new Set();
   let viewQueue = Promise.resolve();
+  let viewIntent = null;
   let toastTimer;
   let conversationTimer;
   let purgeConfirmation = null;
@@ -105,6 +107,13 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   const menuDismissal = createMenuDismissal({ document, window, onDismiss: closeMenu });
   const recordFor = (id) => state.records.find((record) => record.id === id);
   const activeRecord = () => recordFor(state.view.activeTabId);
+  function disposeEditorView() {
+    currentEditorFrame?.removeEventListener('load', postEditorLanguage);
+    currentEditorFrame = null;
+    currentNativeEditor?.dispose();
+    currentNativeEditor = null;
+    currentEditorUrl = null;
+  }
   function cancelEditHistory(closeDialog = false) {
     const current = editHistoryAction;
     if (!current) return;
@@ -112,17 +121,29 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     current.abort.abort(new BridgeError('Opening edit history was cancelled.', 'EDITOR_HISTORY_CANCELLED'));
     if (closeDialog && elements.dialog.querySelector('[data-history-id]') === current.form) elements.dialog.close();
   }
-  async function flushCurrentEditor() {
-    const editor = currentNativeEditor;
+  async function flushCurrentEditor({ editor = currentNativeEditor, closing = false, signal } = {}) {
     if (typeof editor?.flush !== 'function') return;
     announce(t('savingChanges'));
-    try { await editor.flush(); announce(t('changesSaved')); }
-    catch (error) { announce(t('editorSaveFailed')); throw error; }
+    try { await editor.flush({ closing, signal }); if (editor === currentNativeEditor && !signal?.aborted) announce(t('changesSaved')); }
+    catch (error) { if (editor === currentNativeEditor && !signal?.aborted) announce(t('editorSaveFailed')); throw error; }
+  }
+  function cancelNavigation() {
+    const intent = viewIntent;
+    if (!intent || intent.phase === 'committing') return false;
+    viewIntent = null;
+    intent.abort.abort(new BridgeError('Leaving this artwork was cancelled.', 'EDITOR_NAVIGATION_CANCELLED'));
+    if (intent.phase !== 'committing') intent.editor?.cancelClose?.();
+    if (!state.destroyed) renderTabs();
+    return true;
   }
   const previousNavigationGuard = bridge.beforeNavigate;
   const navigationGuard = async request => {
+    cancelNavigation();
     await previousNavigationGuard?.(request);
-    if (state.view.activeTabId !== 'library' && (request?.action === 'teardown' || request?.id !== state.view.activeTabId)) await flushCurrentEditor();
+    if (state.view.activeTabId !== 'library' && (request?.action === 'teardown' || request?.id !== state.view.activeTabId)) {
+      cancelEditHistory(true);
+      await flushCurrentEditor({ closing: true });
+    }
   };
   bridge.beforeNavigate = navigationGuard;
   function upsertRecord(record) {
@@ -286,9 +307,11 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       const selected = tab.id === state.view.activeTabId;
       const record = recordFor(tab.id);
       const title = tab.type === 'library' ? t('library') : record?.title || t('restoredTabMissing');
+      const closing = viewIntent?.action === 'closeTab' && viewIntent.payload.id === tab.id && !viewIntent.abort.signal.aborted;
+      const cancellable = closing && viewIntent.phase !== 'committing';
       return '<div class="workspace-tab ' + (selected ? 'is-active' : '') + '" role="presentation"' + (tab.type === 'artifact' ? ' draggable="true"' : '') + ' data-tab-id="' + escape(tab.id) + '">'
         + '<button type="button" id="tab-' + escape(tab.id) + '" class="tab-select" role="tab" data-action="activate-tab" data-id="' + escape(tab.id) + '" data-focus-key="tab-' + escape(tab.id) + '" aria-selected="' + selected + '" aria-controls="design-workspace-panel" tabindex="' + (selected ? '0' : '-1') + '" title="' + escape(title) + '">' + (tab.type === 'library' ? icon('slides') : '') + '<span>' + escape(title) + '</span></button>'
-        + (tab.type === 'artifact' ? '<button type="button" class="tab-close" data-action="close-tab" data-id="' + escape(tab.id) + '" aria-label="' + escape(t('closeDesign', { title })) + '" title="' + escape(t('closeKeepsRunning')) + '">' + icon('close') + '</button>' : '') + '</div>';
+        + (tab.type === 'artifact' ? '<button type="button" class="tab-close" data-action="' + (cancellable ? 'cancel-navigation' : 'close-tab') + '" data-id="' + escape(tab.id) + '" aria-label="' + escape(t(cancellable ? 'cancelClosing' : closing ? 'savingChanges' : 'closeDesign', { title })) + '" title="' + escape(t(cancellable ? 'savingCanCancel' : closing ? 'savingChanges' : 'closeKeepsRunning')) + '"' + (closing && !cancellable ? ' disabled aria-busy="true"' : closing ? ' aria-busy="true"' : '') + '>' + (closing ? '<span class="spinner" aria-hidden="true"></span>' : icon('close')) + '</button>' : '') + '</div>';
     }).join('');
     elements.panel.setAttribute('aria-labelledby', 'tab-' + state.view.activeTabId);
     restoreFocus(focused);
@@ -428,13 +451,13 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     if (isDeleted(record)) { renderEditorFailure(t('restoredTabMissing'), id); return; }
     if (record.contentStatus && record.contentStatus !== 'ok') { renderEditorFailure(t(record.contentStatus === 'missing' ? 'missingBody' : 'invalidBody'), id); return; }
     if (currentNativeEditor && state.view.activeTabId === id) {
-      try { await flushCurrentEditor(); }
-      catch (error) { toast(errorMessage(error), true); return; }
+      const previousEditor = currentNativeEditor, previousSequence = editorSequence;
+      try { await flushCurrentEditor({ editor: previousEditor, closing: true }); }
+      catch (error) { if (!state.destroyed && state.view.activeTabId === id && currentNativeEditor === previousEditor) toast(errorMessage(error), true); return; }
+      if (state.destroyed || state.view.activeTabId !== id || currentNativeEditor !== previousEditor || editorSequence !== previousSequence || renamingIds.has(id)) return;
     }
     const sequence = ++editorSequence;
-    currentNativeEditor?.dispose();
-    currentNativeEditor = null;
-    currentEditorUrl = null;
+    disposeEditorView();
     const host = elements.panel.querySelector('.editor-frame-host');
     if (!host) return;
     host.innerHTML = '<div class="editor-loading" role="status"><span class="spinner"></span><p>' + escape(t('loadingEditor')) + '</p></div>';
@@ -447,6 +470,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       const result = await invoke(native ? 'editor.document' : 'editor.open', { id, force, ...(native ? { language: 'en', channel, canDraftComments: bridge.canDraftComments === true } : {}) });
       if (state.destroyed || sequence !== editorSequence || state.view.activeTabId !== id || renamingIds.has(id)) return;
       const iframe = document.createElement('iframe');
+      currentEditorFrame = iframe;
       iframe.className = 'design-editor-frame';
       iframe.title = t('editorFrame', { title: record.title });
       iframe.allow = 'clipboard-read; clipboard-write; fullscreen';
@@ -491,8 +515,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     }
   }
   function renderEditorFailure(message, id, diagnostic) {
-    currentNativeEditor?.dispose();
-    currentNativeEditor = null;
+    disposeEditorView();
     const host = elements.panel.querySelector('.editor-frame-host');
     if (!host) return;
     const code = typeof diagnostic?.code === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$/.test(diagnostic.code) ? diagnostic.code : '';
@@ -513,9 +536,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const id = state.view.activeTabId;
     if (id === 'library') {
       ++editorSequence;
-      currentNativeEditor?.dispose();
-      currentNativeEditor = null;
-      currentEditorUrl = null;
+      disposeEditorView();
       if (currentSurface !== 'library') thumbnailCache.clear();
       if (currentSurface !== 'library') renderLibrary();
       else renderRecords();
@@ -528,8 +549,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const title = record?.title || t('restoredTabMissing');
     elements.panel.classList.remove('library-panel');
     if (currentSurface !== id) {
-      currentNativeEditor?.dispose();
-      currentNativeEditor = null;
+      disposeEditorView();
       elements.panel.innerHTML = '<section class="editor-workspace"><header class="editor-workspace-heading"><div class="editor-title-group"><h1 class="editor-design-title"><button type="button" class="editor-title-button" data-action="rename" data-id="' + escape(id) + '" title="' + escape(t('rename')) + '">' + escape(title) + '</button></h1></div><div class="editor-heading-actions"><a class="icon-button editor-external" target="_blank" rel="noopener noreferrer" aria-label="' + escape(t('editorExternal')) + '" hidden>' + icon('external') + '</a><button type="button" class="icon-button" data-action="item-menu" data-menu-trigger="true" data-id="' + escape(id) + '" aria-haspopup="menu" aria-label="' + escape(t('moreActions', { title })) + '">' + icon('more') + '</button></div></header><div class="editor-frame-host"></div></section>';
       currentSurface = id;
       openEditor(id);
@@ -633,15 +653,39 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     renderWorkspace();
   }
   function changeView(action, payload) {
+    cancelNavigation();
+    const intent = { action, payload, abort: new AbortController(), phase: 'queued', editor: null };
+    viewIntent = intent;
+    renderTabs();
+    const currentIntent = () => !state.destroyed && viewIntent === intent && !intent.abort.signal.aborted;
     viewQueue = viewQueue.catch(() => {}).then(async () => {
+      if (!currentIntent()) return false;
       try {
         const current = state.view.activeTabId;
+        const editor = currentNativeEditor;
+        intent.editor = editor; intent.phase = 'saving';
         const leavesCurrent = current !== 'library' && (action === 'closeTab' && payload.id === current || ['openTab', 'activateTab'].includes(action) && payload.id !== current);
-        if (leavesCurrent) await flushCurrentEditor();
-        applyView(await invoke('view.' + action, payload));
+        if (leavesCurrent) {
+          cancelEditHistory(true);
+          await flushCurrentEditor({ editor, closing: true, signal: intent.abort.signal });
+        }
+        if (!currentIntent() || state.view.activeTabId !== current || currentNativeEditor !== editor) return false;
+        intent.phase = 'committing';
+        renderTabs();
+        const before = state.view;
+        const result = await invoke('view.' + action, payload);
+        // A bridge notification may have applied this result already, or a
+        // newer external view. Never replay a late response over either one.
+        if (!state.destroyed && state.view === before) applyView(result);
         return true;
       }
-      catch (error) { toast(errorMessage(error), true); return false; }
+      catch (error) {
+        if (!state.destroyed && !intent.abort.signal.aborted && viewIntent === intent) {
+          if (currentNativeEditor === intent.editor) intent.editor?.cancelClose?.();
+          toast(errorMessage(error), true);
+        }
+        return false;
+      } finally { if (viewIntent === intent) { viewIntent = null; if (!state.destroyed) renderTabs(); } }
     });
     return viewQueue;
   }
@@ -903,7 +947,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
         if (state.view.activeTabId === id) {
           await flushCurrentEditor();
           // Stop this iframe's autosave before replacing its source files.
-          ++editorSequence; currentNativeEditor?.dispose(); currentNativeEditor = null; elements.panel.querySelector('.design-editor-frame')?.remove();
+          ++editorSequence; disposeEditorView(); elements.panel.querySelector('.design-editor-frame')?.remove();
         }
         await transfer.restoreSnapshot(id, form.dataset.snapshotId);
         elements.dialog.close();
@@ -959,9 +1003,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
           // The native index title changes on disk. Retire this saved frame
           // before that write so it cannot publish against its previous base.
           ++editorSequence;
-          currentNativeEditor?.dispose();
-          currentNativeEditor = null;
-          currentEditorUrl = null;
+          disposeEditorView();
           elements.panel.querySelector('.design-editor-frame')?.remove();
         }
       }
@@ -1166,6 +1208,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'open') { state.mobileSidebar = false; await changeView('openTab', { id }); }
     else if (action === 'activate-tab') { await changeView('activateTab', { id }); if (id === 'library') await refreshRecords(true); }
     else if (action === 'close-tab') await changeView('closeTab', { id });
+    else if (action === 'cancel-navigation') { if (cancelNavigation()) announce(t('closingCancelled')); }
     else if (action === 'favorite') await favoriteRecord(id);
     else if (action === 'restore') await restoreRecord(id);
     else if (action === 'refresh') await refreshRecords();
@@ -1297,12 +1340,13 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   return {
     refresh: () => refreshRecords(true),
     activateArtifact: (id) => changeView('openTab', { id }),
+    cancelNavigation,
     destroy() {
       state.destroyed = true;
+      cancelNavigation();
       cancelEditHistory();
       if (bridge.beforeNavigate === navigationGuard) bridge.beforeNavigate = previousNavigationGuard;
-      currentNativeEditor?.dispose();
-      currentNativeEditor = null;
+      disposeEditorView();
       ++editorSequence;
       ++conversationSequence;
       clearTimeout(toastTimer);

@@ -204,10 +204,28 @@ function adaptMotionDelivery(text, name, relative) {
     .replace('It is part of the folder, so `open`, `archive` and a shared link', 'It is part of the film content, so native open and content export')
     .replace(/- The film's `url`, the type's link, `type_url`, `auto_open`: the folder is the\n  film, and its first `write-db` creates it\./, '- The native `appUrl` from `create` or `open` opens the film\'s existing Codex Design artwork Tab. Its saved root holds the film; do not create a second folder from a hosted type URL.')
     .replace(/- render-offline\.md's step 1 \(the player's three files\): copy[\s\S]*?(?=\n- sound\.md)/, '- For offline frame inspection, use the bundled `stills <root>` command and the local `render-offline.md` guidance. Do not copy or install a separate player driver.');
+  if (name === 'codex-motion') adapted = adapted
+    .replaceAll('`frames.ts --every 1 --sheet`', '`stills <root> --every <seconds>` through this skill\'s `scripts/codex-artifact.mjs`')
+    .replaceAll('`frames.ts --at`', '`stills <root> --at <times>`')
+    .replaceAll('`frames.ts`', '`stills <root> --at <times>`')
+    .replace('`check.ts` does not\nhit-test clicks yet.', 'the local structural `check <root>` does not hit-test clicks or render the film.')
+    .replace('## QA for long films\n\n', '## QA for long films\n\nThe local stills command writes separate PNG/JPEG frames, not a contact sheet; no `--sheet` option is provided. It returns at most 120 frames per call. Choose an interval that covers the complete film, or request selected times in separate calls. Compose a contact sheet with an available image tool when useful, or inspect the returned frames individually.\n\n');
   if (name === 'codex-motion' && relative === 'artifact-type/reference/film-api.md') {
-    adapted = adapted.replace(/## 6\. The scripts \(run where you work, not in the page\)[\s\S]*$/,
+    adapted = adapted
+      .replace('## 1. The film folder you write\n\n', '## 1. The film folder you write\n\nThe layout below describes upstream authoring inputs. In Codex, retain the saved root from `create`: film documents live under `db/film/`, modules under `db/modules/`, and uploads under `_blobs/`. Write them through the local wrapper as SKILL.md specifies; do not create a second film folder or run an upstream producer.\n\n')
+      .replace(/`make\.ts` turns the folder into store records \(`film\/meta`, one\n`assets\/<file>` per image → an uploaded blob, one `modules\/<file>`\nper module, `film\/script` last\); the frames and check scripts read\nthe folder directly\. Budgets make enforces:/, 'Use the local `write-db <root>` and `upload <root>` commands for store records (`film/meta`, assets, modules and `film/script`), then `check <root>` for structural validation. Local content budgets:')
+      .replace('`data:` ref by make (never uploaded).', '`data:` ref in its asset record (never uploaded).')
+      .replace('in whatever the machine has (`check.ts` warns):', 'in whatever the machine has (inspect actual rendered output and font warnings from `stills` or `export`):')
+      .replace(/`check\.ts`'s ms\/frame is the export raster cost \(~100 ms at 1× is\n  normal\) with an estimate for a full 2× export\./, 'the local structural check does not measure rendering cost or estimate export speed. Observe the actual stills/export run when performance matters.')
+      .replace('assets; and logs `raster-safety:` errors — which fail `check.ts` — for', 'assets; and logs `raster-safety:` errors for')
+      .replace('## 5. What the runner enforces\n\n', '## 5. What the runner enforces\n\nThese are player/rendering constraints, not checks run by the local structural `check` command. Inspect actual rendering errors and output; the upstream determinism, live-diff and raster-check scripts are not bundled.\n\n')
+      .replace(/## 6\. The scripts \(run where you work, not in the page\)[\s\S]*$/,
       '## 6. Local commands\n\nUse this skill\'s bundled `scripts/codex-artifact.mjs` with the saved film root; do not install dependencies into the plugin or invoke unbundled TypeScript scripts.\n\n- `check <root>` validates stored documents and syntax; it does not render or prove determinism.\n- `stills <root> --at 0,3.5` renders the player\'s actual export frames for visual inspection. Use `--scenes` or `--every <seconds>` when useful.\n- `score <root> --levels` reports sound and loudness; `export <root> --audio-only` produces requested sound output.\n- `export <root> [--out <file.mp4>]` produces the requested video; `captions` exports subtitles. Chrome is required for rendering; ffmpeg is required for recording and supported audio conversions.\n\nThese local checks have their documented limits; never claim the hosted check.ts determinism, live-diff or raster-safety suite ran when only the local structural check ran.\n');
   }
+  if (name === 'codex-motion' && relative === 'artifact-type/reference/sound.md') adapted = adapted
+    .replace('`check.ts` lists them with the event\ncount, tempo and sounding span.', '`score <root>` lists them with the event count, tempo and sounding span.')
+    .replace('`export.ts --no-video --levels`', '`score <root> --levels`')
+    .replace('`--mid score.mid` added to them writes a Standard\nMIDI File on your grid for a composer.', 'the upstream MIDI-file export flag is not exposed by this local wrapper. For requested listening output, use `export <root> --audio-only`.');
   if (name === 'codex-motion' && relative === 'SKILL.md') {
     adapted = adapted.replace(/\| `write-db`, `read-db`, `upload`, `check`, `captions`, `beats`, `sync`, `comments`, `share`, `archive`, `open` \|/,
       '| `write-db`, `read-db`, `upload`, `check`, `captions`, `beats`, `sync`, `comments`, `open` |');
@@ -251,6 +269,22 @@ If one authorized retrieval can produce the complete result, prefer it over a de
 `;
 
 function adaptLocalMarkdown(text, name, relative) {
+  if (name === 'codex-design-system') text = text
+    .replace("and `/design-sync`'s, line 1", 'and an external source-project producer\'s output, line 1')
+    .replace('A page that opens a system synced by `/design-sync` never saves it,\n  so each sync writes the file, laid out the same.', 'A system owned by an external source-project synchronization workflow (`"editing": "code"`) stays read-only in the page. That external producer writes the same file format; this plugin does not install a source producer.');
+  if (name === 'codex-design-system' && ['artifact-type/reference/format.md', 'artifact-type/reference/cover.md'].includes(relative)) text = text
+    .replace(/(^# [^\n]+\n\n)/, '$1This page preserves upstream format conventions. Its producer `make.ts` is not bundled: follow this skill\'s local file workflow and structural `check`, then inspect previews with available Codex tools. No local `--render-check` command or automatic producer is provided.\n\n')
+    .replace('make.ts checks it like every preview; `--render-check`\nrenders it.', 'Run the local structural `check`, then inspect the cover in its native editor; structural validation does not render it.')
+    .replace('`make.ts --render-check`\nrenders previews headless, warns on blank/error/thin.', 'the local structural `check` does not render previews or detect blank/error/thin output. Open the native editor and inspect the actual previews.');
+  if (name === 'codex-slides' && relative === 'artifact-type/reference/images.md') text = text.replace(/^If you build a `deck\.html` with the appifact-slides skill's `scripts\/make\.ts`,[^\n]+$/m,
+    'For the local Slides format, use this skill\'s `codex-artifact.mjs upload <root> <file>` and keep the returned asset URL, or copy a design-system image as SKILL.md describes. The upstream single-file producer and its inline-image flags are not bundled. Do not invoke an unavailable build script or add a second deck.html workflow.');
+  if (name === 'codex-slides' && relative === 'artifact-type/reference/fonts.md') text = text
+    .replace(/Where the appifact-slides skill is installed and you build `deck\.html` with `make\.ts`,[\s\S]*?Then declare each face as below, its `url\(…\)` that name\./,
+      'For Codex, follow SKILL.md\'s local design-system installation: copy the required font files byte for byte, or upload an existing font file with the bundled command, and use its actual installed path or returned URL in the deck index. Do not invoke an upstream single-file producer.')
+    .replace('(With `scripts/make.ts`, use `--inline-images`.)', 'The upstream inline-font producer is not bundled; use the local upload command or the documented fallback.');
+  if (name === 'codex-design' && relative === 'artifact-type/reference/brand-typography.md') text = text
+    .replace(/(^# [^\n]+\n\n)/, '$1Optional supplied-brand example, not a default for Codex artwork. Use these values only when the user\'s brief calls for this brand; otherwise follow the actual supplied brand or choose a suitable type system.\n\n')
+    .replace('README.md); author', '[NOTICE.md](../../../../NOTICE.md)); author');
   if (name === 'codex-motion' || name === 'codex-motion-director') text = text
     .replaceAll('claude.ai', 'the hosted editor')
     .replaceAll('Claude Code', 'a local coding agent')

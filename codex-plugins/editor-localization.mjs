@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { repairEditorRuntime } from './source/scripts/editor-runtime-adapter.mjs';
 import { readCommentComponent } from './source/scripts/comment-toolbar-adapter.mjs';
+import { adaptNativeHostErrors } from './source/scripts/native-editor-language-adapter.mjs';
 
 export const EDITOR_KINDS = ['slides', 'design', 'design-system', 'dashboard', 'motion'];
 
@@ -106,6 +107,50 @@ const REVIEWED_MESSAGE_VARIANTS = {
   ],
 };
 
+// Adapt only reviewed host-operation messages; keep IDs, original defaults,
+// protocol names, brand examples and authored artwork bytes unchanged.
+export const NATIVE_HOST_MESSAGE_OVERRIDES = Object.freeze({
+  BNC1wrrvvB: {
+    sources: [
+      'Sign in to Claude to see this content, then reload the page. If you’re already signed in, you might not have access to it.',
+      'Sign in to see this content, then reload the page. If you’re already signed in, you might not have access to it.',
+      'You might not have access to this content. Reload the page to try again.',
+    ],
+    message: 'This artwork could not be loaded. Reopen it in Codex Design and check that its local files are available.',
+  },
+  oeBy29hnwL: {
+    sources: ['claude', 'slidesHost', 'designHost', 'designSystemHost'].map(host => `This view’s runtime does not offer self-publish (window.${host}.self is absent) — content can be viewed but not saved from here.`),
+    message: 'Saving is unavailable in this view. Reopen the artwork in Codex Design to reconnect local editing.',
+  },
+  aKvb9N4RA6: {
+    sources: ['Couldn’t prepare this design to send: the design contains what looks like a live Claude Design access link, which cannot be sent.'],
+    message: 'Couldn’t prepare this design to send: the design contains what looks like a private editor access link, which cannot be sent.',
+  },
+  OcwDW1DfuT: {
+    sources: ['This copy of Claude is out of date. Reload or reopen it, then export again.'],
+    message: 'This view could not save the requested video format. Reopen the artwork in Codex Design and try the export again.',
+  },
+  W1u6GkazZ0: {
+    sources: ['Press Save video. If that fails, reload Claude and export again.'],
+    message: 'Press Save video to choose a local destination. If that fails, reopen this artwork in Codex Design and export again.',
+  },
+  WQZQZTd1Yn: {
+    sources: ['If it keeps failing, reload Claude and export again, which renders the video from the start. If that fails too, try again later.'],
+    message: 'If saving keeps failing, reopen this artwork in Codex Design and export again. The export renders the video from the start.',
+  },
+  'RcLB4R+/kt': {
+    sources: ['Content credentials record that a video was made with Claude, and a MOV can’t be saved without them.'],
+    message: 'Transparent MOV export is unavailable in this local editor. Choose MP4 or GIF instead.',
+  },
+});
+
+function localHostMessage(id, original) {
+  const reviewed = NATIVE_HOST_MESSAGE_OVERRIDES[id];
+  if (!reviewed) return original;
+  if (!reviewed.sources.includes(original)) throw new Error('Unreviewed native host message variant: ' + id);
+  return reviewed.message;
+}
+
 function compatibleMessage(id, previous, message) {
   if (previous === undefined || previous === message) return message;
   const reviewed = REVIEWED_MESSAGE_VARIANTS[id];
@@ -136,7 +181,7 @@ export function createEditorCatalog(kind, sources) {
   for (const source of sources) for (const [id, text] of extractNativeMessages(source)) {
     messages.set(id, compatibleMessage(id, messages.get(id), text));
   }
-  const english = Object.fromEntries(messages);
+  const english = Object.fromEntries([...messages].map(([id, original]) => [id, localHostMessage(id, original)]));
   for (const [key, text] of Object.entries(CDS_MESSAGES)) english['cds.' + key] = text;
   Object.assign(english, CHROME_MESSAGES);
   return { kind, language: 'en', resources: { en: { editor: english } },
@@ -240,7 +285,7 @@ export async function adaptEditorLocalization(pluginRoot, { bundlePath } = {}) {
     if (!html.includes('<head>')) throw new Error('Missing editor head for ' + kind);
     html = html.replace(/<head>\s*/, '<head>\n' + tags);
     for (let i = 0; i < sourceFiles.length; i++) {
-      const patched = repairEditorRuntime(sources[i]);
+      const patched = repairEditorRuntime(adaptNativeHostErrors(sources[i]));
       if (patched === originalSources[i]) continue;
       if (path.dirname(sourceFiles[i]) === assets) {
         // Editor assets are served immutable. A new chrome callsite must get a

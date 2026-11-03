@@ -6,6 +6,27 @@ const layer = '"data-baoyu-clash-layer"';
 const actions = ['theirs:"Use theirs"', 'mine:"Keep mine"', 'copy:"Keep both"'];
 const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const unsupported = () => Object.assign(new Error('The canonical conflict language selector changed; native adaptation was refused.'), { code: 'EDITOR_LANGUAGE_ADAPTER_UNSUPPORTED' });
+const hostErrorMarker = '/* codex-design:native-host-operation-errors-v1 */';
+
+/** Change only audited capability-error branches, never arbitrary string values. */
+export function adaptNativeHostErrors(source) {
+  if (source.includes(hostErrorMarker)) return source;
+  let adapted = source;
+  const unavailable = 'Saving is unavailable in this view. Reopen the artwork in Codex Design to reconnect local editing.';
+  for (const host of ['claude', 'slidesHost', 'designHost', 'designSystemHost']) {
+    const original = `window.${host}.self is missing — this view’s runtime predates the self capability (or this page is running outside a Frame shell and the emulator). Content cannot be saved from here.`;
+    const statement = `throw Error(${JSON.stringify(original)})`;
+    if (!adapted.includes(statement)) continue;
+    if (adapted.split(statement).length !== 2) throw new Error('The reviewed self-capability error branch changed.');
+    adapted = adapted.replace(statement, `throw Error(${native}?${JSON.stringify(unavailable)}:${JSON.stringify(original)})`);
+  }
+  const denied = 'throw{code:"not_granted",message:"The self capability is not available to this view."}';
+  if (adapted.includes(denied)) {
+    if (adapted.split(denied).length !== 2) throw new Error('The reviewed self-capability denial branch changed.');
+    adapted = adapted.replace(denied, `throw{code:"not_granted",message:${native}?"Permission to save is unavailable in this view. Reopen the artwork in Codex Design to retry.":"The self capability is not available to this view."}`);
+  }
+  return adapted === source ? source : hostErrorMarker + '\n' + adapted;
+}
 
 /** Keep the canonical conflict/presence chrome English only inside the native app. */
 export function adaptNativeEditorLanguage(source) {

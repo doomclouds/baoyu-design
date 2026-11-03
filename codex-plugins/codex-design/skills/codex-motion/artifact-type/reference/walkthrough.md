@@ -74,10 +74,11 @@ slides into UI · real customer names or data.
 
 ## QA for long films
 
-`frames.ts --every 1 --sheet` reads as a storyboard: two or more
+The local stills command writes separate PNG/JPEG frames, not a contact sheet; no `--sheet` option is provided. It returns at most 120 frames per call. Choose an interval that covers the complete film, or request selected times in separate calls. Compose a contact sheet with an available image tool when useful, or inspect the returned frames individually.
+
+`stills <root> --every <seconds>` through this skill's `scripts/codex-artifact.mjs` reads as a storyboard: two or more
 consecutive cells at each point of interest, no cell where nothing
 readable is on screen, the cursor never jumps between consecutive cells
 without a fade, captions never overlap their region, at most one
 secondary color per scene. Check click targets by eye on the stills at
-each click time (`frames.ts --at` those times); `check.ts` does not
-hit-test clicks yet.
+each click time (`stills <root> --at <times>` those times); the local structural `check <root>` does not hit-test clicks or render the film.

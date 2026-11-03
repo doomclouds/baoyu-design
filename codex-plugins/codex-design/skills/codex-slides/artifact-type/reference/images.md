@@ -6,7 +6,7 @@ This page explains more than just `<img src="photos/reef.jpg" alt="…">`. It co
 
 Every image FILE goes into the artifact's asset store as an upload (Artifact `publish`, `file_path`, `asset:true`; or `upload_asset` where your tool lists that). The slide keeps only the reference that call returns (`/_blob/<id>`), written verbatim as the `src`. The one exception is a design system's picture copied into the deck with its install (`deck-files.md`, "A design system in the deck"): it is not uploaded, and its `src` is its path in the deck, `project/ds/<folder>/<path>`, with no leading `/`. The image data never goes through you and never into a slide: never write a `data:` URI, and never put base64 in a call or a reply. That keeps slide files small.
 
-If you build a `deck.html` with the appifact-slides skill's `scripts/make.ts`, `src` is the file's path, relative to the `.html` file and under its folder or your working folder (each `--assets-from <dir>` adds a folder). The script checks each file, lists the ones to upload (it embeds svg and avif files itself), and takes each url back as `--asset <file>=<url>`. With no asset store, use its `--inline-images` flag, not the empty frames below. The comment at the top of the script lists the flags.
+For the local Slides format, use this skill's `codex-artifact.mjs upload <root> <file>` and keep the returned asset URL, or copy a design-system image as SKILL.md describes. The upstream single-file producer and its inline-image flags are not bundled. Do not invoke an unavailable build script or add a second deck.html workflow.
 
 - `png`, `jpg`, `webp`, and `gif` files upload as they are. If a photo is much bigger than it will show on the slide, it is worth shrinking it first to about 2× its box.
 
