@@ -69,7 +69,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     records: [], view: normalizeViewState(), category: 'all', favorites: false,
     query: '', sort: 'updated', layout: 'list', loading: true, error: null,
     menu: null, toast: null, mobileSidebar: false, sidebarCollapsed: false, destroyed: false,
-    busy: new Set(), chat: new Map(), drafts: new Map(), minimized: new Set(), trashSelection: new Set(),
+    busy: new Set(), chat: new Map(), drafts: new Map(), minimized: new Set(), selection: new Set(), selectionFailures: [], selectionSyncError: null,
   };
   try { state.sidebarCollapsed = localStorage.getItem('codex-design.sidebar-collapsed') === 'true'; } catch {}
   let recordsSequence = 0;
@@ -85,6 +85,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   let editorRecordLoad = null;
   const thumbnailCache = new Map();
   const thumbnailPending = new Set();
+  const unconfirmedMutations = new Set();
   let viewQueue = Promise.resolve();
   let toastTimer;
   let conversationTimer;
@@ -145,6 +146,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   });
   const disabled = (action) => enabled(action) ? '' : ' disabled';
   const busy = (key) => state.busy.has(key);
+  const selectionBusy = () => busy('library-selection') || busy('purge-trash');
+  let selectionOperationIds = new Set();
   const focusKey = () => document.activeElement?.getAttribute('data-focus-key');
   function restoreFocus(key) {
     if (!key) return;
@@ -308,8 +311,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
           : state.category !== 'trash' && !state.favorites ? createButton(true) : '') + '</section>';
   }
   function recordActions(record) {
-    if (isDeleted(record)) return '<button type="button" class="button secondary restore-button" data-action="restore" data-id="' + escape(record.id) + '"' + (busy('purge-trash') ? ' disabled' : disabled('library.restore')) + '>' + icon('restore') + escape(t('restore')) + '</button>'
-      + '<button type="button" class="button trash-delete-button" data-action="purge-dialog" data-id="' + escape(record.id) + '" aria-label="' + escape(t('deletePermanentlyTitle', { title: record.title })) + '"' + (busy('purge-trash') ? ' disabled' : disabled('library.purge')) + '>' + escape(t('deletePermanently')) + '</button>';
+    if (isDeleted(record)) return '<button type="button" class="button secondary restore-button row-restore" data-action="restore" data-id="' + escape(record.id) + '"' + (selectionBusy() ? ' disabled' : disabled('library.restore')) + '>' + icon('restore') + escape(t('restore')) + '</button>'
+      + '<button type="button" class="icon-button row-purge" data-action="purge-dialog" data-id="' + escape(record.id) + '" title="' + escape(t('deletePermanently')) + '" aria-label="' + escape(t('deletePermanentlyTitle', { title: record.title })) + '"' + (selectionBusy() ? ' disabled' : disabled('library.purge')) + '>' + icon('trash') + '</button>';
     return '<button type="button" class="icon-button favorite-button ' + (record.favorite ? 'is-favorite' : '') + '" data-action="favorite" data-id="' + escape(record.id) + '" data-focus-key="favorite-' + escape(record.id) + '" aria-label="' + escape(t(record.favorite ? 'unfavoriteDesign' : 'favoriteDesign', { title: record.title })) + '" aria-pressed="' + Boolean(record.favorite) + '"' + disabled('library.setFavorite') + '>' + icon('star') + '</button>'
       + '<button type="button" class="icon-button" data-action="item-menu" data-menu-trigger="true" data-id="' + escape(record.id) + '" aria-haspopup="menu" aria-label="' + escape(t('moreActions', { title: record.title })) + '">' + icon('more') + '</button>';
   }
@@ -317,27 +320,43 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     return record.contentStatus && record.contentStatus !== 'ok' ? '<span class="record-status">' + icon('warning') + escape(t(record.contentStatus === 'missing' ? 'missing' : 'invalid')) + '</span>' : '<span class="record-kind">' + escape(t(record.kind)) + '</span>';
   }
   function recordOpen(record, className = '') {
-    const cannotOpen = isDeleted(record) || (record.contentStatus && record.contentStatus !== 'ok') || !enabled('view.openTab');
+    const cannotOpen = isDeleted(record) || selectionOperationIds.has(record.id) || (record.contentStatus && record.contentStatus !== 'ok') || !enabled('view.openTab');
     const visual = className === 'card-open' ? thumbnail(record) : '<span class="record-type-icon" title="' + escape(t(record.kind)) + '" aria-hidden="true">' + icon(record.kind) + '</span>';
     return '<button type="button" class="record-open ' + className + '" data-action="open" data-id="' + escape(record.id) + '" aria-label="' + escape(t('openDesign', { title: record.title })) + '"' + (cannotOpen ? ' disabled' : '') + '>' + visual + '<span class="record-copy"><span class="record-title">' + escape(record.title) + '</span>' + recordStatus(record) + '</span></button>';
   }
   function selectedTrashRecords(records = visibleRecords()) {
-    return state.category === 'trash' ? records.filter(record => isDeleted(record) && state.trashSelection.has(record.id)) : [];
+    return state.category === 'trash' ? records.filter(record => isDeleted(record) && state.selection.has(record.id)) : [];
   }
-  function trashCheckbox(record, className = '') {
-    return '<label class="trash-checkbox ' + className + '"><input type="checkbox" data-action="trash-select" data-id="' + escape(record.id) + '" data-focus-key="trash-select-' + escape(record.id) + '" aria-label="' + escape(t('selectTrashDesign', { title: record.title })) + '"' + (state.trashSelection.has(record.id) ? ' checked' : '') + (busy('purge-trash') ? ' disabled' : '') + '></label>';
+  function recordCheckbox(record, className = '') {
+    const action = state.category === 'trash' ? 'trash-select' : 'library-select';
+    return '<label class="selection-toggle ' + className + '"><input class="selection-checkbox" type="checkbox" data-action="' + action + '" data-id="' + escape(record.id) + '" data-focus-key="select-' + escape(record.id) + '" aria-label="' + escape(t('selectTrashDesign', { title: record.title })) + '"' + (state.selection.has(record.id) ? ' checked' : '') + (selectionBusy() ? ' disabled' : '') + '></label>';
   }
-  function renderTrashSelection(records) {
-    if (state.category !== 'trash') return;
+  function selectAllCheckbox(records) {
+    const selected = records.filter(record => state.selection.has(record.id)).length;
+    return '<label class="selection-toggle"><input class="selection-checkbox" type="checkbox" data-select-all="true" data-action="' + (state.category === 'trash' ? 'trash-select-all' : 'library-select-all') + '" data-focus-key="select-all" aria-label="' + escape(t('selectVisibleTrash', { count: records.length })) + '"' + (records.length && selected === records.length ? ' checked' : '') + (!records.length || selectionBusy() ? ' disabled' : '') + '></label>';
+  }
+  function clearSelection() { state.selection.clear(); state.selectionFailures = []; state.selectionSyncError = null; }
+  function renderSelection(records) {
     const visible = new Set(records.map(record => record.id));
-    state.trashSelection = new Set([...state.trashSelection].filter(id => visible.has(id)));
-    const selected = selectedTrashRecords(records).length;
-    const controls = elements.panel.querySelector('.trash-selection-bar');
+    state.selection = new Set([...state.selection].filter(id => visible.has(id)));
+    const selected = state.selection.size;
+    const controls = elements.panel.querySelector('.library-selection-bar');
     if (!controls) return;
-    controls.innerHTML = '<label class="trash-select-all"><input type="checkbox" data-action="trash-select-all" data-focus-key="trash-select-all"' + (records.length && selected === records.length ? ' checked' : '') + (!records.length || busy('purge-trash') ? ' disabled' : '') + '><span>' + escape(t('selectVisibleTrash', { count: records.length })) + '</span></label>'
-      + '<span class="trash-selection-count" role="status">' + escape(t('trashSelected', { count: selected })) + '</span><button type="button" class="button trash-delete-button" data-action="purge-selected"' + (!selected || busy('purge-trash') ? ' disabled' : disabled('library.purge')) + '>' + escape(t('deleteSelected')) + '</button>';
-    const checkbox = controls.querySelector('input');
-    if (checkbox) checkbox.indeterminate = selected > 0 && selected < records.length;
+    controls.hidden = !selected;
+    controls.setAttribute('aria-busy', String(selectionBusy()));
+    controls.innerHTML = selected ? '<span class="selection-count" role="status">' + escape(t('trashSelected', { count: selected })) + '</span><button type="button" class="selection-clear" data-action="selection-clear"' + (selectionBusy() ? ' disabled' : '') + '>' + escape(t('clearSelection')) + '</button><div class="selection-actions">'
+      + (state.category === 'trash'
+        ? '<button type="button" class="button secondary selection-action" data-action="restore-selected"' + (selectionBusy() ? ' disabled' : disabled('library.restore')) + '>' + icon('restore') + escape(t('restore')) + '</button><button type="button" class="button selection-action is-danger" data-action="purge-selected"' + (selectionBusy() ? ' disabled' : disabled('library.purge')) + '>' + icon('trash') + escape(t('deleteSelected')) + '</button>'
+        : '<button type="button" class="button secondary selection-action" data-action="trash-selected"' + (selectionBusy() ? ' disabled' : disabled('library.trash')) + '>' + icon('trash') + escape(t('trashAction')) + '</button>') + '</div>' : '';
+    const filters = elements.panel.querySelector('.filter-tabs');
+    if (filters) filters.hidden = selected > 0;
+    const feedback = elements.panel.querySelector('.selection-feedback');
+    if (feedback) {
+      feedback.hidden = !state.selectionFailures.length && !state.selectionSyncError;
+      feedback.innerHTML = (state.selectionFailures.length ? '<p>' + escape(t('selectionFailed', { count: state.selectionFailures.length })) + '</p><ul>' + state.selectionFailures.map(record => '<li>' + escape(record.title) + ': ' + escape(record.unconfirmed ? t('selectionUnconfirmed') : errorMessage(record.error)) + '</li>').join('') + '</ul>' : '')
+        + (state.selectionSyncError ? '<p>' + escape(t('selectionSyncFailed')) + '</p>' : '')
+        + (state.selectionSyncError || state.selectionFailures.some(record => record.unconfirmed) ? '<button type="button" class="button secondary" data-action="selection-refresh"' + (selectionBusy() ? ' disabled' : '') + '>' + escape(t('refresh')) + '</button>' : '');
+    }
   }
   function renderRecords() {
     const container = elements.panel.querySelector('.records-container');
@@ -345,15 +364,16 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const focused = focusKey();
     const records = visibleRecords();
     const trash = state.category === 'trash';
-    renderTrashSelection(records);
+    renderSelection(records);
     const counter = elements.panel.querySelector('.design-count');
     if (counter) counter.textContent = t('count', { count: records.length });
     container.className = 'records-container ' + (state.layout === 'grid' ? 'is-grid' : 'is-list');
     if (state.loading) container.innerHTML = '<div class="library-empty loading-state" role="status"><span class="spinner"></span><p>' + escape(t('loadingLibrary')) + '</p></div>';
     else if (!records.length || state.error) container.innerHTML = renderEmpty(records);
-    else if (state.layout === 'grid') container.innerHTML = '<div class="design-grid' + (trash ? ' trash-grid' : '') + '">' + records.map((record) => '<article class="design-card' + (trash && state.trashSelection.has(record.id) ? ' is-selected' : '') + '">' + (trash ? trashCheckbox(record, 'trash-card-selection') : '') + recordOpen(record, 'card-open') + '<div class="card-bottom"><span>' + escape(formatTime(record.updatedAt)) + '</span><div class="record-actions">' + recordActions(record) + '</div></div></article>').join('') + '</div>';
-    else container.innerHTML = '<table class="design-table' + (trash ? ' trash-table' : '') + '"><thead><tr>' + (trash ? '<th scope="col" class="trash-selection-column"><span class="sr-only">' + escape(t('selectDesigns')) + '</span></th>' : '') + '<th scope="col">' + escape(t('name')) + '</th><th scope="col" class="kind-column">' + escape(t('kindColumn')) + '</th><th scope="col" class="edited-column">' + escape(t('lastEdited')) + '</th><th scope="col"><span class="sr-only">' + escape(t('actions')) + '</span></th></tr></thead><tbody>'
-      + records.map((record) => '<tr' + (trash && state.trashSelection.has(record.id) ? ' class="is-selected"' : '') + '>' + (trash ? '<td class="trash-selection-column">' + trashCheckbox(record) + '</td>' : '') + '<th scope="row">' + recordOpen(record) + '</th><td class="kind-column">' + escape(t(record.kind)) + '</td><td class="edited-column"><time datetime="' + escape(record.updatedAt) + '">' + escape(formatTime(record.updatedAt)) + '</time></td><td><div class="record-actions">' + recordActions(record) + '</div></td></tr>').join('') + '</tbody></table>';
+    else if (state.layout === 'grid') container.innerHTML = '<div class="grid-selection-header">' + selectAllCheckbox(records) + '<span>' + escape(t('selectVisibleTrash', { count: records.length })) + '</span></div><div class="design-grid' + (trash ? ' trash-grid' : '') + '">' + records.map((record) => '<article class="design-card artwork-card' + (state.selection.has(record.id) ? ' is-selected' : '') + '">' + recordCheckbox(record, 'card-selection' + (trash ? ' trash-card-selection' : '')) + recordOpen(record, 'card-open') + '<div class="card-bottom"><span>' + escape(formatTime(record.updatedAt)) + '</span><div class="record-actions row-actions">' + recordActions(record) + '</div></div></article>').join('') + '</div>';
+    else container.innerHTML = '<table class="design-table has-selection' + (trash ? ' trash-table' : '') + '"><thead><tr><th scope="col" class="selection-column">' + selectAllCheckbox(records) + '</th><th scope="col">' + escape(t('name')) + '</th><th scope="col" class="kind-column">' + escape(t('kindColumn')) + '</th><th scope="col" class="edited-column">' + escape(t('lastEdited')) + '</th><th scope="col"><span class="sr-only">' + escape(t('actions')) + '</span></th></tr></thead><tbody>'
+      + records.map((record) => '<tr class="artwork-row' + (state.selection.has(record.id) ? ' is-selected' : '') + '"><td class="selection-column">' + recordCheckbox(record) + '</td><th scope="row">' + recordOpen(record) + '</th><td class="kind-column">' + escape(t(record.kind)) + '</td><td class="edited-column"><time datetime="' + escape(record.updatedAt) + '">' + escape(formatTime(record.updatedAt)) + '</time></td><td><div class="record-actions row-actions">' + recordActions(record) + '</div></td></tr>').join('') + '</tbody></table>';
+    for (const checkbox of container.querySelectorAll('[data-select-all]')) checkbox.indeterminate = state.selection.size > 0 && state.selection.size < records.length;
     restoreFocus(focused);
     hydrateThumbnails();
   }
@@ -362,7 +382,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     elements.panel.classList.add('library-panel');
     elements.panel.innerHTML = '<section class="library-content"><header class="library-heading"><div class="heading-copy"><button type="button" class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="' + escape(t('libraryNavigation')) + '" aria-expanded="' + state.mobileSidebar + '">' + icon('menu') + '</button><div><h1>' + escape(categoryTitle) + '</h1><p class="design-count"></p></div></div><div class="library-heading-actions"><label class="search-field">' + icon('search') + '<span class="sr-only">' + escape(t('search')) + '</span><input type="search" class="library-search" placeholder="' + escape(t('searchKind', { kind: categoryTitle })) + '" value="' + escape(state.query) + '" autocomplete="off"></label>'
       + (state.category !== 'trash' ? createButton() : '') + '</div></header>'
-      + '<div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape(t('favorites')) + '"><button type="button" class="filter-tab ' + (!state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape(t('all')) + '</button><button type="button" class="filter-tab ' + (state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape(t('favorites')) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape(t('sort')) + '">' + icon('sort') + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === 'grid' ? 'is-selected' : '') + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === 'grid') + '" aria-label="' + escape(t('gridView')) + '">' + icon('grid') + '</button><button type="button" class="icon-button ' + (state.layout === 'list' ? 'is-selected' : '') + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === 'list') + '" aria-label="' + escape(t('listView')) + '">' + icon('list') + '</button></div></div>' + (state.category === 'trash' ? '<div class="trash-selection-bar"></div>' : '') + '<div class="records-container"></div></section>';
+      + '<div class="library-controls"><div class="filter-tabs" role="group" aria-label="' + escape(t('favorites')) + '"><button type="button" class="filter-tab ' + (!state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="all" aria-pressed="' + !state.favorites + '">' + escape(t('all')) + '</button><button type="button" class="filter-tab ' + (state.favorites ? 'is-selected' : '') + '" data-action="filter" data-value="favorites" aria-pressed="' + state.favorites + '">' + escape(t('favorites')) + '</button></div><div class="view-controls"><button type="button" class="icon-button" data-action="sort-menu" data-menu-trigger="true" aria-haspopup="menu" aria-label="' + escape(t('sort')) + '">' + icon('sort') + '</button><span class="control-divider"></span><button type="button" class="icon-button ' + (state.layout === 'grid' ? 'is-selected' : '') + '" data-action="layout" data-layout="grid" aria-pressed="' + (state.layout === 'grid') + '" aria-label="' + escape(t('gridView')) + '">' + icon('grid') + '</button><button type="button" class="icon-button ' + (state.layout === 'list' ? 'is-selected' : '') + '" data-action="layout" data-layout="list" aria-pressed="' + (state.layout === 'list') + '" aria-label="' + escape(t('listView')) + '">' + icon('list') + '</button></div></div><div class="library-selection-bar' + (state.category === 'trash' ? ' trash-selection-bar' : '') + '" hidden></div><div class="selection-feedback" role="alert" hidden></div><div class="records-container"></div></section>';
     renderRecords();
   }
   async function openEditor(id, force = false) {
@@ -647,10 +667,11 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     }
   }
   async function setCategory(category) {
+    if (selectionBusy()) return;
     if (!['all', 'recent', 'trash', ...KINDS].includes(category)) return;
     const previous = { category: state.category, favorites: state.favorites, query: state.query, sort: state.sort };
     state.category = category;
-    state.trashSelection.clear();
+    clearSelection();
     state.favorites = false;
     state.query = '';
     state.mobileSidebar = false;
@@ -775,7 +796,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     }
   }
   function openPurgeDialog(records) {
-    if (busy('purge-trash') || !enabled('library.purge')) return;
+    if (selectionBusy() || !enabled('library.purge')) return;
     const eligible = records.filter(record => record && isDeleted(record));
     if (!eligible.length) return;
     cancelEditHistory();
@@ -797,9 +818,11 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     try {
       // The service limit applies to a request, not to a user's visible selection.
       for (let offset = 0; offset < confirmed.length; offset += 200) {
+        if (state.destroyed) return;
         const batch = confirmed.slice(offset, offset + 200);
         try {
           const result = await invoke('library.purge', { ids: batch.map(record => record.id) });
+          if (state.destroyed) return;
           if (!Array.isArray(result?.deleted) || !Array.isArray(result?.failed)) throw new BridgeError('The library returned an invalid deletion result.', 'INVALID_RESPONSE');
           const expected = new Set(batch.map(record => record.id));
           if (result.deleted.some(id => !expected.has(id)) || result.failed.some(item => !expected.has(item?.id))) throw new BridgeError('The library returned unrelated deletion results.', 'INVALID_RESPONSE');
@@ -809,16 +832,19 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
             else failed.push({ ...record, error: failures.get(record.id)?.error || { code: 'PURGE_UNCONFIRMED' }, removed: failures.get(record.id)?.removed });
           }
         } catch (error) {
+          if (state.destroyed) return;
           for (const record of confirmed.slice(offset)) failed.push({ ...record, error });
           break;
         }
       }
+      if (state.destroyed) return;
       if (deleted.size) {
         ++recordsSequence;
         state.records = state.records.filter(record => !deleted.has(record.id));
-        for (const id of deleted) { state.trashSelection.delete(id); thumbnailCache.delete(id); }
+        for (const id of deleted) { state.selection.delete(id); thumbnailCache.delete(id); }
       }
       await refreshRecords(true);
+      if (state.destroyed) return;
       const summary = [deleted.size ? t('purgeDeleted', { count: deleted.size }) : '', failed.length ? t('purgeFailed', { count: failed.length }) : ''].filter(Boolean).join(' ');
       if (failed.length) {
         // Reconfirm only the remaining items before a retry; successful deletions
@@ -832,9 +858,12 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       toast(summary, failed.length > 0);
     } finally {
       state.busy.delete('purge-trash');
-      form.removeAttribute('aria-busy');
-      elements.dialog.querySelector('button[type="submit"]').disabled = false;
-      if (state.view.activeTabId === 'library') renderRecords();
+      if (!state.destroyed) {
+        form.removeAttribute('aria-busy');
+        const submit = elements.dialog.querySelector('button[type="submit"]');
+        if (submit) submit.disabled = false;
+        if (state.view.activeTabId === 'library') renderRecords();
+      }
     }
   }
   function openDialog(type, record, details = {}) {
@@ -886,6 +915,29 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       return;
     }
     if (!form.reportValidity() || form.getAttribute('aria-busy') === 'true' || type === 'rename' && renamingIds.has(id)) return;
+    if (type === 'trash') {
+      const record = recordFor(id);
+      if (!record) return;
+      form.setAttribute('aria-busy', 'true');
+      form.querySelector('button[type="submit"]').disabled = true;
+      try {
+        const result = await mutateSelection('trash', [record]);
+        if (state.destroyed || elements.dialog.querySelector('.dialog-form') !== form) return;
+        if (result?.confirmed.includes(id)) elements.dialog.close();
+        else {
+          const failure = result?.failed.find(item => item.id === id);
+          const errorNode = form.querySelector('.dialog-error');
+          errorNode.hidden = false;
+          errorNode.textContent = failure?.unconfirmed ? t('selectionUnconfirmed') : errorMessage(failure?.error);
+        }
+      } finally {
+        if (!state.destroyed) {
+          form.removeAttribute('aria-busy');
+          form.querySelector('button[type="submit"]').disabled = false;
+        }
+      }
+      return;
+    }
     const data = new FormData(form);
     const title = String(data.get('title') || '').trim();
     if (type !== 'trash' && !title) { form.elements.title.focus(); return; }
@@ -917,7 +969,6 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       upsertRecord(returnedRecord);
       if (!renaming || elements.dialog.querySelector('.dialog-form') === form) elements.dialog.close();
       toast(t({ rename: 'renamed', copy: 'copied', trash: 'trashed' }[type]));
-      if (type === 'trash' && state.view.tabs.some((tab) => tab.id === id)) await changeView('closeTab', { id });
       if (type === 'copy') {
         const newRecord = result?.artifact || result;
         if (newRecord?.id) await changeView('openTab', { id: newRecord.id });
@@ -946,12 +997,96 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       announce(t('favoriteSaved'));
     });
   }
+  async function refreshSelectionView() {
+    await refreshRecords(true);
+    if (state.destroyed) return;
+    const listError = state.error;
+    const value = await invoke('view.get');
+    if (state.destroyed) return;
+    const view = value?.viewState || value;
+    const normalized = normalizeViewState(view);
+    if (view?.version !== 1 || !Array.isArray(view.tabs) || normalized.activeTabId !== view.activeTabId || normalized.tabs.length !== view.tabs.length
+      || view.tabs.some((tab, index) => tab?.id !== normalized.tabs[index].id || tab.type !== normalized.tabs[index].type || tab.type === 'artifact' && tab.artifactId !== normalized.tabs[index].artifactId)) throw new BridgeError('The library returned an invalid view.', 'INVALID_RESPONSE');
+    applyView(value);
+    if (listError) throw listError;
+  }
+  async function mutateSelection(type, suppliedRecords) {
+    if (selectionBusy() || !enabled('library.' + type)) return;
+    const removing = type === 'trash';
+    const records = (suppliedRecords || visibleRecords().filter(record => state.selection.has(record.id)))
+      .filter(record => isRecord(record) && isDeleted(record) !== removing)
+      .filter((record, index, all) => all.findIndex(item => item.id === record.id) === index)
+      .map(record => ({ ...record }));
+    if (!records.length) return;
+    const confirmed = new Set(), failed = [];
+    state.busy.add('library-selection');
+    selectionOperationIds = new Set(records.map(record => record.id));
+    state.selectionFailures = []; state.selectionSyncError = null;
+    if (state.view.activeTabId === 'library') renderRecords();
+    const readRecord = async id => {
+      const value = await invoke('library.get', { id });
+      const record = value?.artifact || value;
+      if (!isRecord(record) || record.id !== id) throw new BridgeError('The library could not confirm this artwork.', 'INVALID_RESPONSE');
+      return record;
+    };
+    try {
+      for (const record of records) {
+        if (state.destroyed) break;
+        let attempted = false, preflightUnconfirmed = false;
+        try {
+          // An unacknowledged mutation is read back before any retry. Never
+          // blindly replay it because the previous response was missing.
+          if (unconfirmedMutations.has(record.id)) {
+            preflightUnconfirmed = true;
+            const current = await readRecord(record.id);
+            if (state.destroyed) return;
+            preflightUnconfirmed = false;
+            unconfirmedMutations.delete(record.id);
+            if (isDeleted(current) === removing) {
+              confirmed.add(record.id); upsertRecord(current); state.selection.delete(record.id); continue;
+            }
+          }
+          if (removing && state.view.activeTabId === record.id) await flushCurrentEditor();
+          if (state.destroyed) return;
+          attempted = true;
+          const value = await invoke('library.' + type, { id: record.id });
+          if (state.destroyed) return;
+          const result = value?.artifact || value;
+          if (!isRecord(result) || result.id !== record.id || isDeleted(result) !== removing) throw new BridgeError('The artwork update was not confirmed.', 'INVALID_RESPONSE');
+          confirmed.add(record.id); unconfirmedMutations.delete(record.id); upsertRecord(result); state.selection.delete(record.id);
+        } catch (error) {
+          if (state.destroyed) return;
+          if (attempted) {
+            try {
+              const current = await readRecord(record.id);
+              if (state.destroyed) return;
+              unconfirmedMutations.delete(record.id);
+              if (isDeleted(current) === removing) { confirmed.add(record.id); upsertRecord(current); state.selection.delete(record.id); continue; }
+            } catch {
+              if (state.destroyed) return;
+              unconfirmedMutations.add(record.id);
+              failed.push({ ...record, error, unconfirmed: true }); continue;
+            }
+          }
+          failed.push({ ...record, error, unconfirmed: preflightUnconfirmed });
+        }
+      }
+      if (state.destroyed) return;
+      state.selectionFailures = failed;
+      try { await refreshSelectionView(); }
+      catch (error) { state.selectionSyncError = error; }
+      if (state.destroyed) return;
+      const message = [confirmed.size ? t(removing ? 'selectionTrashed' : 'selectionRestored', { count: confirmed.size }) : '', failed.length ? t('selectionFailed', { count: failed.length }) : '', state.selectionSyncError ? t('selectionSyncFailed') : ''].filter(Boolean).join(' ');
+      if (message) toast(message, failed.length > 0 || Boolean(state.selectionSyncError));
+      return { confirmed: [...confirmed], failed, syncError: state.selectionSyncError };
+    } finally {
+      selectionOperationIds.clear(); state.busy.delete('library-selection');
+      if (!state.destroyed && state.view.activeTabId === 'library') renderRecords();
+    }
+  }
   async function restoreRecord(id) {
-    await runAction('restore-' + id, async () => {
-      await invoke('library.restore', { id });
-      await refreshRecords(true);
-      toast(t('restored'));
-    });
+    const record = recordFor(id);
+    if (record) await mutateSelection('restore', [record]);
   }
   function renderInterface() {
     if (state.destroyed) return;
@@ -978,6 +1113,8 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     const button = event.target.closest('[data-action]');
     if (!button || button.disabled) return;
     const { action, id } = button.dataset;
+    if (selectionBusy() && ['library-select', 'library-select-all', 'trash-select', 'trash-select-all', 'selection-clear', 'selection-refresh', 'trash-selected', 'restore-selected', 'purge-selected', 'purge-dialog', 'restore', 'trash-dialog', 'filter', 'clear-search', 'favorite'].includes(action)) return;
+    if (selectionOperationIds.has(id) && ['open', 'activate-tab', 'close-tab', 'rename', 'copy', 'item-menu'].includes(action)) return;
     if (!['item-menu', 'sort-menu', 'create'].includes(action)) closeMenu();
     if (action === 'create') openMenu('create', button, undefined, menuInputMode(event));
     else if (action === 'create-kind') await createArtifact(button.dataset.value);
@@ -994,17 +1131,32 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
       if (record) openDialog(action === 'trash-dialog' ? 'trash' : action, record);
     } else if (action === 'purge-dialog') openPurgeDialog([recordFor(id)]);
     else if (action === 'purge-selected') openPurgeDialog(selectedTrashRecords());
-    else if (action === 'trash-select' && !busy('purge-trash') && state.category === 'trash') {
-      if (visibleRecords().some(record => record.id === id && isDeleted(record))) {
-        if (button.checked) state.trashSelection.add(id); else state.trashSelection.delete(id);
+    else if (action === 'trash-selected' && state.category !== 'trash') await mutateSelection('trash');
+    else if (action === 'restore-selected' && state.category === 'trash') await mutateSelection('restore');
+    else if (action === 'selection-clear') { clearSelection(); renderRecords(); restoreFocus('select-all'); }
+    else if (action === 'selection-refresh') {
+      await runAction('library-selection', async () => {
+        await refreshSelectionView();
+        if (state.destroyed) return;
+        if (state.error) throw state.error;
+        state.selectionFailures = state.selectionFailures.filter(record => state.selection.has(record.id)).map(record => ({ ...record, unconfirmed: false }));
+        state.selectionSyncError = null;
+      });
+      if (!state.destroyed && state.view.activeTabId === 'library') renderRecords();
+    }
+    else if ((action === 'trash-select' && state.category === 'trash') || (action === 'library-select' && state.category !== 'trash')) {
+      if (visibleRecords().some(record => record.id === id)) {
+        if (button.checked) state.selection.add(id); else state.selection.delete(id);
+        state.selectionFailures = []; state.selectionSyncError = null;
         renderRecords();
       }
-    } else if (action === 'trash-select-all' && !busy('purge-trash') && state.category === 'trash') {
-      for (const record of visibleRecords()) { if (button.checked) state.trashSelection.add(record.id); else state.trashSelection.delete(record.id); }
+    } else if ((action === 'trash-select-all' && state.category === 'trash') || (action === 'library-select-all' && state.category !== 'trash')) {
+      for (const record of visibleRecords()) { if (button.checked) state.selection.add(record.id); else state.selection.delete(record.id); }
+      state.selectionFailures = []; state.selectionSyncError = null;
       renderRecords();
     } else if (action === 'close-dialog') { if (!busy('purge-trash')) { purgeConfirmation = null; cancelEditHistory(); elements.dialog.close(); } }
     else if (action === 'category') await setCategory(button.dataset.category);
-    else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; state.trashSelection.clear(); renderLibrary(); }
+    else if (action === 'filter') { state.favorites = button.dataset.value === 'favorites'; clearSelection(); renderLibrary(); }
     else if (action === 'layout') { state.layout = button.dataset.layout; renderLibrary(); }
     else if (action === 'sort-menu') openMenu('sort', button, undefined, menuInputMode(event));
     else if (action === 'item-menu') openMenu('item', button, id, menuInputMode(event));
@@ -1015,7 +1167,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'favorite') await favoriteRecord(id);
     else if (action === 'restore') await restoreRecord(id);
     else if (action === 'refresh') await refreshRecords();
-    else if (action === 'clear-search') { state.query = ''; state.trashSelection.clear(); renderLibrary(); elements.panel.querySelector('.library-search')?.focus(); }
+    else if (action === 'clear-search') { state.query = ''; clearSelection(); renderLibrary(); elements.panel.querySelector('.library-search')?.focus(); }
     else if (action === 'retry-editor') await openEditor(id, true);
     else if (action === 'toggle-conversation') {
       const artifactId = state.view.activeTabId;
@@ -1037,7 +1189,10 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   }
   root.addEventListener('click', (event) => { handleAction(event).catch((error) => toast(errorMessage(error), true)); }, { signal: abort.signal });
   root.addEventListener('input', (event) => {
-    if (event.target.matches('.library-search')) { state.query = event.target.value; state.trashSelection.clear(); renderRecords(); }
+    if (event.target.matches('.library-search')) {
+      if (selectionBusy()) { event.target.value = state.query; return; }
+      state.query = event.target.value; clearSelection(); renderRecords();
+    }
     if (event.target.matches('.conversation-composer textarea')) {
       state.drafts.set(state.view.activeTabId, event.target.value);
       const submit = elements.floating.querySelector('.send-button');

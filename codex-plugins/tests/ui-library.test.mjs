@@ -23,7 +23,7 @@ class Surface {
   emit(name, event = {}) { for (const handler of this.listeners.get(name) || []) handler({ target: this, ...event }); }
 }
 
-async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument, onGet, onHistory } = {}) {
+async function start(t, { savedLanguage = 'zh', native = true, active = false, failSave = false, records: inputRecords, purgeResult, purgeError, canDraftComments = false, onCreate, onRename, onFlush, onDocument, onGet, onHistory, onTrash, onRestore, onList, onViewGet } = {}) {
   const document = new Surface(), window = new Surface(), nodes = [], storageReads = [], actions = [], editorCalls = [], editorInstances = [], posted = [], timeline = [];
   document.documentElement = {}; document.hidden = false; document.activeElement = null;
   class Element extends Surface {
@@ -36,18 +36,46 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
       this.children = []; this.slots.clear();
       const historyId = /data-history-id="([^"]+)"/.exec(value)?.[1];
       if (historyId) { const form = new Element('SECTION', this); form.dataset.historyId = historyId; this.slots.set('[data-history-id]', form); }
+      // Parse only real rendered checkbox inputs. The controller can update
+      // indeterminate on these nodes; absent selectors must not invent inputs.
+      for (const match of value.matchAll(/<input\b[^>]*>/g)) {
+        const attrs = new Map([...match[0].matchAll(/([\w-]+)(?:="([^"]*)")?/g)].slice(1).map(attr => [attr[1], attr[2] ?? '']));
+        if (attrs.get('type') !== 'checkbox') continue;
+        const input = new Element('INPUT', this);
+        input.attrs = attrs; input.className = attrs.get('class') || '';
+        input.checked = attrs.has('checked'); input.disabled = attrs.has('disabled'); input.indeterminate = false;
+        for (const [name, value] of attrs) if (name.startsWith('data-')) input.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
+        this.children.push(input);
+      }
     }
     classList = { add() {}, remove() {}, toggle() {}, contains: name => this.className.split(' ').includes(name) };
     setAttribute(name, value) { this.attrs.set(name, value); }
     getAttribute(name) { return this.attrs.get(name); }
     removeAttribute(name) { this.attrs.delete(name); }
     querySelector(selector) {
+      if (selector === 'input' || selector.startsWith('input[') || /^\[data-(?:action|select-all)/.test(selector)) return this.querySelectorAll(selector)[0] || null;
+      if (selector === '.trash-selection-bar' && /class="(?=[^"]*\blibrary-selection-bar\b)(?=[^"]*\btrash-selection-bar\b)[^"]*"/.test(this._html)) return this.querySelector('.library-selection-bar');
       if (selector === '.design-editor-frame' || selector === 'iframe') return [...nodes].reverse().find(node => node.tagName === 'IFRAME' && node.className === 'design-editor-frame' && this.contains(node)) || null;
       if (selector.startsWith('button') && this === root.querySelector('.menu-layer') && this.innerHTML) return this.firstElementChild.querySelector(selector);
       if (!this.slots.has(selector)) this.slots.set(selector, new Element(selector.startsWith('button') ? 'BUTTON' : 'DIV', this));
       return this.slots.get(selector);
     }
-    querySelectorAll() { return []; }
+    querySelectorAll(selector = '') {
+      const selectors = [...selector.matchAll(/\[([\w-]+)(?:([*$^]?=)["']([^"']*)["'])?\]/g)];
+      const inputSelector = selector === 'input' || selector.startsWith('input[') || /^\[data-(?:action|select-all)/.test(selector);
+      if (!inputSelector) return [];
+      const found = [], visited = new Set();
+      const visit = node => {
+        if (visited.has(node)) return; visited.add(node);
+        if (node.tagName === 'INPUT' && selectors.every(([, name, operator, value]) => {
+          const actual = node.getAttribute(name);
+          return operator === '=' ? actual === value : operator === '$=' ? actual?.endsWith(value) : operator === '^=' ? actual?.startsWith(value) : operator === '*=' ? actual?.includes(value) : actual !== undefined;
+        })) found.push(node);
+        for (const child of [...node.children, ...node.slots.values()]) visit(child);
+      };
+      for (const child of [...this.children, ...this.slots.values()]) visit(child);
+      return found;
+    }
     get firstElementChild() { return this.innerHTML ? this.querySelector('.menu-panel') : null; }
     getBoundingClientRect() { return { left: 100, right: 140, top: 100, bottom: 140, width: 40, height: 40 }; }
     replaceChildren(...children) { this.innerHTML = ''; this.children = children; for (const child of children) child.parent = this; }
@@ -78,7 +106,7 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
     subscribe(handler) { subscribe = handler; return () => {}; },
     async invoke(action, payload) {
       actions.push({ action, payload }); timeline.push(action);
-      if (action === 'library.list') return libraryRecords;
+      if (action === 'library.list') return onList ? onList(payload, libraryRecords) : libraryRecords;
       if (action === 'library.get') {
         if (onGet) return onGet(payload);
         const found = libraryRecords.find(item => item.id === payload.id);
@@ -95,13 +123,26 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
         libraryRecords = libraryRecords.map(item => item.id === payload.id ? renamed : item);
         return renamed;
       }
+      if (action === 'library.trash' || action === 'library.restore') {
+        const apply = () => {
+          const current = libraryRecords.find(item => item.id === payload.id);
+          if (!current) throw Object.assign(new Error('No such artwork.'), { code: 'NOT_FOUND' });
+          const deleted = action === 'library.trash';
+          const next = { ...current, deleted, deletedAt: deleted ? new Date().toISOString() : null };
+          libraryRecords = libraryRecords.map(item => item.id === payload.id ? next : item);
+          if (deleted) view = { ...view, tabs: view.tabs.filter(tab => tab.id !== payload.id), activeTabId: view.activeTabId === payload.id ? 'library' : view.activeTabId };
+          return next;
+        };
+        const hook = action === 'library.trash' ? onTrash : onRestore;
+        return hook ? hook(payload, apply) : apply();
+      }
       if (action === 'library.purge') {
         if (purgeError) throw purgeError;
         const result = typeof purgeResult === 'function' ? await purgeResult(payload) : purgeResult || { deleted: payload.ids, failed: [] };
         libraryRecords = libraryRecords.filter(item => !result.deleted.includes(item.id));
         return result;
       }
-      if (action === 'view.get') return view;
+      if (action === 'view.get') return onViewGet ? onViewGet(view) : view;
       if (action === 'view.openTab') return view = { ...view, tabs: view.tabs.some(tab => tab.id === payload.id) ? view.tabs : [...view.tabs, { id: payload.id, artifactId: payload.id, type: 'artifact' }], activeTabId: payload.id };
       if (action === 'view.activateTab') return view = { ...view, activeTabId: payload.id };
       if (action === 'view.closeTab') return view = { ...view, tabs: view.tabs.filter(tab => tab.id !== payload.id), activeTabId: 'library' };
@@ -143,6 +184,8 @@ async function start(t, { savedLanguage = 'zh', native = true, active = false, f
   t.after(() => controller.destroy());
   return { controller, root, bridge, document, window, actions, editorCalls, editorInstances, posted, storageReads, record, original, timeline,
     records: () => libraryRecords,
+    view: () => view,
+    setRecords(records) { libraryRecords = records; },
     addExternalRecord(record) { libraryRecords = [...libraryRecords, record]; },
     notify: event => subscribe(event),
     node: selector => root.querySelector(selector),
@@ -811,6 +854,299 @@ function trashRecord(number, title, extra = {}) {
 const purgeCalls = fixture => fixture.actions.filter(item => item.action === 'library.purge');
 const trashControls = fixture => fixture.node('.workspace-panel').querySelector('.trash-selection-bar').innerHTML;
 const renderedRecords = fixture => fixture.node('.workspace-panel').querySelector('.records-container').innerHTML;
+const selectionControls = fixture => fixture.node('.workspace-panel').querySelector('.library-selection-bar').innerHTML;
+const selectionFeedback = fixture => fixture.node('.workspace-panel').querySelector('.selection-feedback');
+const selectAllInput = (fixture, trash = false) => fixture.node('.workspace-panel').querySelector('.records-container').querySelector('input[data-action="' + (trash ? 'trash' : 'library') + '-select-all"]');
+const libraryRecord = (number, title, extra = {}) => trashRecord(number, title, { deleted: false, deletedAt: null, ...extra });
+const selectionCalls = fixture => fixture.actions.filter(item => ['library.trash', 'library.restore'].includes(item.action));
+const noSelectionActions = controls => assert.doesNotMatch(controls, /0 selected|data-action="(?:trash-selected|restore-selected|purge-selected|selection-clear)"/);
+
+test('library and Trash put select-all in the leading table column and show no bulk actions at zero selection', async t => {
+  const records = ['slides', 'design', 'design-system', 'dashboard'].map((kind, index) => libraryRecord(index + 1, kind + ' artwork', { kind }));
+  records.push(trashRecord(9, 'Deleted artwork'));
+  const f = await start(t, { records });
+  for (const category of ['all', 'slides', 'design', 'design-system', 'dashboard', 'recent', 'trash']) {
+    f.click('category', { category }); await setImmediate();
+    const trash = category === 'trash', html = renderedRecords(f), count = ['all', 'recent'].includes(category) ? 4 : 1;
+    assert.match(html, /<thead><tr><th[^>]*class="[^"]*selection-column/);
+    const input = selectAllInput(f, trash);
+    assert.ok(input, category + ' has a real rendered header input');
+    assert.equal(input.getAttribute('aria-label'), 'Select all ' + count + ' visible');
+    assert.equal(input.checked, false); assert.equal(input.indeterminate, false);
+    noSelectionActions(trash ? trashControls(f) : selectionControls(f));
+    assert.ok(html.indexOf('data-action="' + (trash ? 'trash' : 'library') + '-select"') < html.indexOf('class="record-type-icon"'), 'Each row checkbox precedes its type icon.');
+  }
+});
+
+test('active selection is visible-only, reports mixed header state and survives layout and refresh without a bar select-all', async t => {
+  const records = [libraryRecord(1, 'Alpha one'), libraryRecord(2, 'Alpha two'), libraryRecord(3, 'Beta hidden'), trashRecord(4, 'Alpha deleted')];
+  const f = await start(t, { records });
+  f.search('Alpha');
+  f.check('library-select', true, { id: records[0].id });
+  assert.match(selectionControls(f), /1 selected/);
+  assert.equal(selectAllInput(f).checked, false); assert.equal(selectAllInput(f).indeterminate, true);
+  f.check('library-select', true, { id: records[2].id });
+  assert.match(selectionControls(f), /1 selected/);
+  f.check('library-select-all', true);
+  assert.match(selectionControls(f), /2 selected/);
+  assert.doesNotMatch(selectionControls(f), /data-action="library-select-all"/);
+  assert.equal(selectAllInput(f).checked, true); assert.equal(selectAllInput(f).indeterminate, false);
+  f.click('layout', { layout: 'grid' });
+  assert.match(renderedRecords(f), /design-grid/);
+  assert.equal(f.node('.workspace-panel').querySelector('.records-container').querySelectorAll('input[data-action="library-select"]').length, 2);
+  assert.ok(selectAllInput(f)); assert.equal(selectAllInput(f).checked, true);
+  await f.controller.refresh(); assert.match(selectionControls(f), /2 selected/);
+  f.setRecords(records.filter(record => record.id !== records[0].id));
+  await f.controller.refresh();
+  assert.match(selectionControls(f), /1 selected/);
+  f.click('layout', { layout: 'list' }); assert.equal(selectAllInput(f).checked, true);
+  f.click('selection-clear'); noSelectionActions(selectionControls(f));
+});
+
+test('active search, favorites and categories reset selection and cannot target hidden or deleted records', async t => {
+  const records = [libraryRecord(1, 'One', { favorite: true }), libraryRecord(2, 'Two'), trashRecord(3, 'Deleted')];
+  const f = await start(t, { records });
+  f.check('library-select-all', true); f.search('Two'); noSelectionActions(selectionControls(f));
+  f.check('library-select-all', true); assert.match(selectionControls(f), /1 selected/);
+  f.click('clear-search'); noSelectionActions(selectionControls(f));
+  f.check('library-select-all', true); f.click('filter', { value: 'favorites' }); noSelectionActions(selectionControls(f));
+  assert.equal(selectAllInput(f).getAttribute('aria-label'), 'Select all 1 visible');
+  f.check('library-select', true, { id: records[1].id });
+  f.check('library-select', true, { id: records[2].id });
+  noSelectionActions(selectionControls(f));
+  f.check('library-select-all', true); f.click('category', { category: 'trash' }); await setImmediate(); noSelectionActions(trashControls(f));
+  f.click('category', { category: 'all' }); await setImmediate(); noSelectionActions(selectionControls(f));
+  f.click('trash-selected'); await setImmediate(); assert.equal(selectionCalls(f).length, 0);
+});
+
+test('batch trash is sequential, keeps failures selected by title and reason, and retries only confirmed remaining records', async t => {
+  const records = [libraryRecord(1, 'Move first'), libraryRecord(2, 'Busy artwork'), libraryRecord(3, 'Move last')];
+  let fail = true, pending = 0, maxPending = 0;
+  const f = await start(t, { records, onTrash: async (payload, apply) => {
+    maxPending = Math.max(maxPending, ++pending);
+    await setImmediate(); pending--;
+    if (payload.id === records[1].id && fail) throw Object.assign(new Error('Native editing is active.'), { code: 'ARTIFACT_BUSY' });
+    return apply();
+  } });
+  f.check('library-select-all', true); f.click('trash-selected');
+  for (let i = 0; i < 8; i++) await setImmediate();
+  assert.equal(maxPending, 1);
+  assert.deepEqual(selectionCalls(f).map(call => call.payload.id), records.map(record => record.id));
+  assert.equal(f.records().filter(record => record.deleted).length, 2);
+  assert.match(selectionControls(f), /1 selected/);
+  assert.equal(selectionFeedback(f).hidden, false);
+  assert.match(selectionFeedback(f).innerHTML, /Busy artwork/);
+  assert.match(selectionFeedback(f).innerHTML, /active editing task/);
+  assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+  assert.equal(f.actions.at(-1).action, 'view.get');
+  fail = false; f.click('trash-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.deepEqual(selectionCalls(f).slice(3).map(call => call.payload.id), [records[1].id]);
+  noSelectionActions(selectionControls(f));
+});
+
+test('batch restore retains failed Trash selection and never opens restored artwork or permanently deletes it', async t => {
+  const records = [trashRecord(1, 'Restore first'), trashRecord(2, 'Locked restore')];
+  let fail = true;
+  const f = await start(t, { records, onRestore: (payload, apply) => {
+    if (payload.id === records[1].id && fail) throw Object.assign(new Error('Restore files locked.'), { code: 'EBUSY' });
+    return apply();
+  } });
+  f.click('category', { category: 'trash' }); await setImmediate();
+  f.check('trash-select-all', true); f.click('restore-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.deepEqual(selectionCalls(f).map(call => call.payload.id), records.map(record => record.id));
+  assert.equal(f.records()[0].deleted, false); assert.equal(f.records()[1].deletedAt !== null, true);
+  assert.match(trashControls(f), /1 selected/);
+  assert.equal(selectionFeedback(f).hidden, false);
+  assert.match(selectionFeedback(f).innerHTML, /Locked restore/); assert.match(selectionFeedback(f).innerHTML, /files are in use/);
+  assert.equal(f.actions.some(call => ['view.openTab', 'view.closeTab', 'library.purge'].includes(call.action)), false);
+  fail = false; f.click('restore-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(selectionCalls(f).length, 3); noSelectionActions(trashControls(f));
+});
+
+test('batch selection is immutable while busy and duplicate or opposite actions cannot expand its target set', async t => {
+  for (const trash of [false, true]) {
+    const records = [trash ? trashRecord(1, 'First') : libraryRecord(1, 'First'), trash ? trashRecord(2, 'Second') : libraryRecord(2, 'Second')];
+    let release, calls = 0;
+    const hook = async (_payload, apply) => { if (++calls === 1) await new Promise(resolve => { release = resolve; }); return apply(); };
+    const f = await start(t, { records, ...(trash ? { onRestore: hook } : { onTrash: hook }) });
+    if (trash) { f.click('category', { category: 'trash' }); await setImmediate(); }
+    const action = trash ? 'restore-selected' : 'trash-selected', prefix = trash ? 'trash' : 'library';
+    f.check(prefix + '-select-all', true); f.click(action); await setImmediate();
+    f.click(action); f.click(trash ? 'trash-selected' : 'restore-selected'); f.click('selection-clear');
+    f.check(prefix + '-select-all', false); f.check(prefix + '-select', false, { id: records[1].id });
+    assert.equal(calls, 1); assert.match(trash ? trashControls(f) : selectionControls(f), /2 selected/);
+    release(); for (let i = 0; i < 5; i++) await setImmediate();
+    assert.deepEqual(selectionCalls(f).map(call => call.payload.id), records.map(record => record.id));
+    assert.ok(selectionCalls(f).every(call => call.action === (trash ? 'library.restore' : 'library.trash')));
+  }
+});
+
+test('unknown batch replies reconcile actual records and view instead of inventing success or losing failure selection', async t => {
+  const records = [libraryRecord(1, 'Actually moved'), libraryRecord(2, 'Unconfirmed move')];
+  const f = await start(t, { records, onTrash: (payload, apply) => { if (payload.id === records[0].id) apply(); return undefined; } });
+  f.check('library-select-all', true); f.click('trash-selected'); for (let i = 0; i < 5; i++) await setImmediate();
+  assert.equal(f.records()[0].deleted, true); assert.equal(f.records()[1].deleted, false);
+  assert.match(selectionControls(f), /1 selected/);
+  assert.equal(selectionFeedback(f).hidden, false);
+  assert.match(selectionFeedback(f).innerHTML, /Unconfirmed move/);
+  assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+  assert.ok(f.actions.filter(call => call.action === 'library.list').length >= 2);
+  assert.equal(f.actions.at(-1).action, 'view.get');
+});
+
+test('unacknowledged mutation read failures survive clear/reselect and require a fresh exact read before any retry', async t => {
+  const record = libraryRecord(1, 'Unknown update');
+  let allowRead = false, mutations = 0, reads = 0;
+  const f = await start(t, { records: [record], onTrash: (_payload, apply) => ++mutations === 1 ? undefined : apply(),
+    onGet: ({ id: requested }) => {
+      reads++; assert.equal(requested, record.id);
+      if (!allowRead) throw Object.assign(new Error('Read connection unavailable.'), { code: 'BRIDGE_UNAVAILABLE' });
+      return f.records().find(record => record.id === requested);
+    } });
+  f.check('library-select-all', true); f.click('trash-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(mutations, 1); assert.equal(reads, 1);
+  assert.match(selectionControls(f), /1 selected/);
+  assert.match(selectionFeedback(f).innerHTML, /data-action="selection-refresh"/);
+  f.click('selection-clear'); f.check('library-select-all', true); f.click('trash-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(mutations, 1, 'Unconfirmed mutations cannot be replayed because the user cleared the visible selection.');
+  assert.equal(reads, 2); assert.match(selectionControls(f), /1 selected/);
+  allowRead = true; f.click('trash-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(mutations, 2); assert.equal(reads, 3);
+  assert.equal(f.records()[0].deleted, true); noSelectionActions(selectionControls(f));
+});
+
+test('a final invalid view reply is shown as a synchronization failure and Refresh never replays a confirmed mutation', async t => {
+  const record = libraryRecord(1, 'Move once');
+  let views = 0;
+  const f = await start(t, { records: [record], onViewGet: view => ++views === 2 ? { tabs: [], activeTabId: 'missing' } : view });
+  f.check('library-select-all', true); f.click('trash-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(selectionCalls(f).length, 1); assert.equal(f.records()[0].deleted, true);
+  assert.equal(selectionFeedback(f).hidden, false);
+  assert.match(selectionFeedback(f).innerHTML, /data-action="selection-refresh"/);
+  noSelectionActions(selectionControls(f));
+  f.click('trash-selected'); f.click('selection-refresh'); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(selectionCalls(f).length, 1); assert.equal(views, 3);
+  assert.equal(selectionFeedback(f).hidden, true);
+});
+
+test('trashing an unrelated persistent tab does not flush or replace the active editor', async t => {
+  const other = libraryRecord(1, 'Other tab');
+  const current = libraryRecord(2, 'Active editor', { id });
+  const f = await start(t, { records: [current, other], active: true });
+  await f.controller.activateArtifact(other.id); await f.controller.activateArtifact(id); await setImmediate();
+  const editor = f.editorInstances.at(-1); f.actions.length = 0; f.editorCalls.length = 0;
+  f.click('trash-dialog', { id: other.id }); f.submit('trash', { id: other.id }); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.equal(f.editorCalls.includes('flush'), false); assert.equal(editor.disposed, false); assert.equal(f.frame(), editor.iframe);
+  assert.equal(f.view().activeTabId, id); assert.equal(f.view().tabs.some(tab => tab.id === other.id), false);
+  assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+  assert.ok(f.actions.some(call => call.action === 'view.get'));
+});
+
+test('trashing the active editor waits for its real save barrier and a refused save keeps the tab and content', async t => {
+  for (const failSave of [false, true]) {
+    const current = libraryRecord(1, 'Current artwork', { id });
+    const f = await start(t, { records: [current], active: true, failSave });
+    const editor = f.editorInstances[0]; f.actions.length = 0; f.timeline.length = 0;
+    f.click('trash-dialog', { id }); f.submit('trash', { id }); for (let i = 0; i < 4; i++) await setImmediate();
+    if (failSave) {
+      assert.equal(selectionCalls(f).length, 0); assert.equal(f.view().activeTabId, id);
+      assert.equal(editor.disposed, false); assert.equal(f.records()[0].deleted, false);
+    } else {
+      assert.ok(f.timeline.indexOf('saved') < f.timeline.indexOf('library.trash'));
+      assert.equal(f.view().activeTabId, 'library'); assert.equal(f.view().tabs.some(tab => tab.id === id), false);
+      assert.equal(f.records()[0].deleted, true);
+      assert.equal(f.actions.some(call => call.action === 'view.closeTab'), false);
+    }
+  }
+});
+
+test('destroying during an active save or an uncertain preflight read starts no later mutation or reconciliation', async t => {
+  {
+    let releaseSave;
+    const record = libraryRecord(1, 'Saving artwork', { id });
+    const f = await start(t, { records: [record], active: true, onFlush: () => new Promise(resolve => { releaseSave = resolve; }) });
+    f.click('trash-dialog', { id }); const form = f.submit('trash', { id }); await setImmediate();
+    assert.equal(typeof releaseSave, 'function');
+    const submit = form.querySelector('button[type="submit"]'), calls = f.actions.length;
+    f.controller.destroy(); releaseSave(); for (let i = 0; i < 4; i++) await setImmediate();
+    assert.equal(f.actions.length, calls, 'A completed save after teardown cannot start trash, readback or view refresh.');
+    assert.equal(selectionCalls(f).length, 0); assert.equal(f.records()[0].deleted, false);
+    assert.equal(form.getAttribute('aria-busy'), 'true'); assert.equal(submit.disabled, true, 'Teardown does not mutate detached dialog controls.');
+    assert.equal(f.root.innerHTML, '');
+  }
+  {
+    let releaseRead, reads = 0;
+    const record = libraryRecord(1, 'Uncertain artwork');
+    const f = await start(t, { records: [record], onTrash: () => undefined, onGet: () => {
+      if (++reads === 1) throw Object.assign(new Error('Read unavailable.'), { code: 'BRIDGE_UNAVAILABLE' });
+      return new Promise(resolve => { releaseRead = resolve; });
+    } });
+    f.check('library-select-all', true); f.click('trash-selected'); for (let i = 0; i < 4; i++) await setImmediate();
+    assert.equal(selectionCalls(f).length, 1);
+    f.click('trash-selected'); await setImmediate(); assert.equal(typeof releaseRead, 'function');
+    const calls = f.actions.length;
+    f.controller.destroy(); releaseRead(record); for (let i = 0; i < 4; i++) await setImmediate();
+    assert.equal(f.actions.length, calls, 'An uncertain preflight completed after teardown cannot replay its mutation or refresh the view.');
+    assert.equal(selectionCalls(f).length, 1); assert.equal(reads, 2); assert.equal(f.root.innerHTML, '');
+  }
+});
+
+test('malformed raw active views cannot normalize away an unrelated live editor or hide invalid duplicate tabs', async t => {
+  const current = libraryRecord(1, 'Keep editing', { id }), other = libraryRecord(2, 'Trash other');
+  const library = { id: 'library', type: 'library' }, tab = { id, type: 'artifact', artifactId: id };
+  const invalidViews = [
+    { version: 1, tabs: [library, { id, type: 'artifact' }], activeTabId: id },
+    { version: 1, tabs: [library, tab, { ...tab }], activeTabId: id },
+    { version: 1, tabs: [library, { id, type: 'library', artifactId: id }], activeTabId: id },
+  ];
+  for (const invalid of invalidViews) {
+    let views = 0;
+    const f = await start(t, { records: [current, other], active: true, onViewGet: view => ++views === 1 ? view : invalid });
+    const editor = f.editorInstances[0]; f.editorCalls.length = 0;
+    f.click('trash-dialog', { id: other.id }); f.submit('trash', { id: other.id }); for (let i = 0; i < 4; i++) await setImmediate();
+    assert.equal(selectionCalls(f).length, 1); assert.equal(f.records().find(record => record.id === other.id).deleted, true);
+    assert.equal(editor.disposed, false); assert.equal(f.frame(), editor.iframe);
+    assert.equal(f.editorCalls.includes('flush'), false);
+    assert.match(f.node('.toast-layer').innerHTML, /is-error/);
+    assert.ok(f.node('.toast-layer').innerHTML.includes(en.selectionSyncFailed), 'An invalid raw response must be reported rather than silently normalized/applied.');
+  }
+});
+
+test('a late single Trash result cannot close or write into a replacement Rename dialog', async t => {
+  for (const fail of [false, true]) {
+    const first = libraryRecord(1, 'Trash A'), second = libraryRecord(2, 'Rename B');
+    let finish;
+    const f = await start(t, { records: [first, second], onTrash: (_payload, apply) => new Promise((resolve, reject) => {
+      finish = () => fail ? reject(Object.assign(new Error('Trash refused.'), { code: 'ARTIFACT_BUSY' })) : resolve(apply());
+    }) });
+    f.click('trash-dialog', { id: first.id }); const original = f.submit('trash', { id: first.id }); await setImmediate();
+    assert.equal(typeof finish, 'function');
+    f.click('close-dialog'); f.click('rename', { id: second.id });
+    const dialog = f.node('dialog'), replacement = dialog.querySelector('.dialog-form'), html = dialog.innerHTML;
+    assert.notEqual(replacement, original); assert.equal(dialog.open, true); assert.match(html, /Rename B/);
+    const replacementError = replacement.querySelector('.dialog-error');
+    finish(); for (let i = 0; i < 4; i++) await setImmediate();
+    assert.equal(dialog.open, true); assert.equal(dialog.innerHTML, html); assert.equal(dialog.querySelector('.dialog-form'), replacement);
+    assert.equal(replacementError.textContent, undefined); assert.equal(replacementError.hidden, undefined);
+    assert.equal(f.actions.some(call => call.action === 'library.rename'), false);
+  }
+});
+
+test('destroying a 201-item purge while its first batch is pending never sends the second batch or touches detached controls', async t => {
+  const records = Array.from({ length: 201 }, (_, index) => trashRecord(index + 1, 'Purge ' + (index + 1)));
+  let finish;
+  const f = await start(t, { records, purgeResult: payload => new Promise(resolve => { finish = () => resolve({ deleted: payload.ids, failed: [] }); }) });
+  f.click('category', { category: 'trash' }); await setImmediate();
+  f.check('trash-select-all', true); f.click('purge-selected'); const form = f.submit('purge'); await setImmediate();
+  assert.equal(typeof finish, 'function'); assert.deepEqual(purgeCalls(f).map(call => call.payload.ids.length), [200]);
+  const submit = form.querySelector('button[type="submit"]'), calls = f.actions.length;
+  f.controller.destroy(); finish(); for (let i = 0; i < 4; i++) await setImmediate();
+  assert.deepEqual(purgeCalls(f).map(call => call.payload.ids.length), [200]);
+  assert.equal(f.actions.length, calls, 'No later batch, list or view request is allowed after teardown.');
+  assert.equal(f.records().length, 1, 'Only the already-issued backend batch may have completed.');
+  assert.equal(form.getAttribute('aria-busy'), 'true'); assert.equal(submit.disabled, true);
+  assert.equal(f.root.innerHTML, '');
+});
 
 test('Trash single delete requires an immutable titled native modal confirmation and Cancel or Escape never calls purge', async t => {
   const deleted = trashRecord(1, 'A <deleted> artwork');
@@ -821,7 +1157,9 @@ test('Trash single delete requires an immutable titled native modal confirmation
   assert.notEqual(f.node('dialog').open, true);
   f.click('category', { category: 'trash' }); await setImmediate();
   assert.match(renderedRecords(f), /data-action="purge-dialog"/);
-  assert.match(renderedRecords(f), />Delete permanently</);
+  const purgeButton = /<button\b[^>]*data-action="purge-dialog"[^>]*>[\s\S]*?<\/button>/.exec(renderedRecords(f))?.[0];
+  assert.ok(purgeButton); assert.match(purgeButton, /aria-label="[^"]+"/); assert.match(purgeButton, /title="[^"]+"/);
+  assert.match(purgeButton, /<svg/); assert.equal(purgeButton.replace(/<[^>]*>/g, '').trim(), '', 'Permanent deletion is icon-only in the row.');
   f.click('purge-dialog', { id: deleted.id });
   assert.equal(f.node('dialog').open, true);
   assert.match(f.node('dialog').innerHTML, /Permanently delete 1 design\?/);
@@ -847,13 +1185,14 @@ test('Trash selection and select-all follow the filtered visible list and surviv
   const f = await start(t, { records });
   f.click('category', { category: 'trash' }); await setImmediate();
   f.search('Alpha'); f.check('trash-select-all', true);
-  assert.match(trashControls(f), /Select all 2 visible/);
+  assert.equal(selectAllInput(f, true).getAttribute('aria-label'), 'Select all 2 visible');
   assert.match(trashControls(f), /2 selected/);
-  assert.match(renderedRecords(f), /trash-selection-column/);
+  assert.match(renderedRecords(f), /class="[^"]*selection-column/);
   assert.doesNotMatch(renderedRecords(f), /Beta hidden|Alpha active/);
   f.click('layout', { layout: 'grid' });
   assert.match(renderedRecords(f), /trash-grid/);
-  assert.equal((renderedRecords(f).match(/trash-card-selection/g) || []).length, 2);
+  assert.equal(f.node('.workspace-panel').querySelector('.records-container').querySelectorAll('input[data-action="trash-select"]').length, 2);
+  assert.equal(selectAllInput(f, true).checked, true);
   assert.match(trashControls(f), /2 selected/);
   f.click('purge-selected');
   assert.match(f.node('dialog').innerHTML, /Permanently delete 2 designs\?/);
@@ -862,7 +1201,7 @@ test('Trash selection and select-all follow the filtered visible list and surviv
   assert.doesNotMatch(f.node('dialog').innerHTML, /Beta hidden|Alpha active/);
   f.submit('purge'); await setImmediate();
   assert.deepEqual(Array.from(purgeCalls(f)[0].payload.ids).sort(), [records[0].id, records[1].id].sort());
-  assert.match(trashControls(f), /0 selected/);
+  noSelectionActions(trashControls(f));
   assert.equal(f.records().length, 2);
   assert.match(f.node('.toast-layer').innerHTML, /2 designs permanently deleted/);
 });
@@ -873,18 +1212,19 @@ test('Trash clears selection when search, favorites or category changes and reco
   f.click('category', { category: 'trash' }); await setImmediate();
   f.check('trash-select', true, { id: records[0].id });
   assert.match(trashControls(f), /1 selected/);
+  assert.equal(selectAllInput(f, true).checked, false); assert.equal(selectAllInput(f, true).indeterminate, true);
   await f.controller.refresh(); assert.match(trashControls(f), /1 selected/);
-  f.search('Two'); assert.match(trashControls(f), /0 selected/);
+  f.search('Two'); noSelectionActions(trashControls(f));
   f.check('trash-select-all', true); assert.match(trashControls(f), /1 selected/);
-  f.click('clear-search'); assert.match(trashControls(f), /0 selected/);
+  f.click('clear-search'); noSelectionActions(trashControls(f));
   f.check('trash-select-all', true); f.click('filter', { value: 'favorites' });
-  assert.match(trashControls(f), /0 selected/); assert.match(trashControls(f), /Select all 1 visible/);
+  noSelectionActions(trashControls(f)); assert.equal(selectAllInput(f, true).getAttribute('aria-label'), 'Select all 1 visible');
   f.check('trash-select-all', true);
   f.click('category', { category: 'all' }); await setImmediate();
   f.click('category', { category: 'trash' }); await setImmediate();
-  assert.match(trashControls(f), /0 selected/);
+  noSelectionActions(trashControls(f));
   f.check('trash-select-all', true); f.check('trash-select-all', false);
-  assert.match(trashControls(f), /0 selected/);
+  noSelectionActions(trashControls(f));
   f.click('purge-selected'); assert.equal(purgeCalls(f).length, 0);
 });
 
@@ -908,7 +1248,7 @@ test('Trash partial deletion removes only confirmed successes, retains failed it
   f.submit('purge'); await setImmediate();
   assert.deepEqual(Array.from(purgeCalls(f)[1].payload.ids), [records[1].id]);
   assert.equal(f.node('dialog').open, false);
-  assert.match(trashControls(f), /0 selected/);
+  noSelectionActions(trashControls(f));
 });
 
 test('Trash preflight errors keep every item and selection and show failure without a success claim', async t => {

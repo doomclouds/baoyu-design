@@ -40,6 +40,23 @@ Actions and results:
 
 A record has `id`, `kind`, `title`, `createdAt`, `updatedAt`, `favorite`, `contentStatus` and optional `deletedAt`, `projectName`, `thumbnailUrl`. Missing optional metadata is represented honestly. View state is `{version:1,tabs:[{id:'library',type:'library'},{id,artifactId:id,type:'artifact'}],activeTabId}`. The backend owns durable identity, unique tabs, bindings, autosave, recovery points and recycling. Closing a tab never invokes a worker/editor-stop action.
 
+Library and Trash use the same visible-record selection model in table and card
+views. A dedicated header checkbox selects only the current filtered results;
+its mixed state reflects partial selection. Search, favorites and category
+changes clear selection, while layout changes preserve visible selected IDs.
+The contextual top toolbar is absent at zero selection. Active artwork offers
+Move to trash; Trash offers Restore and Delete selected. Each Trash row keeps
+Restore and an accessible icon-only permanent-delete button on one line.
+
+Move/Restore batches freeze their IDs and call existing single-artwork actions
+serially. Confirmed successes leave selection; failures remain with their
+titles and reasons. Unacknowledged mutations are read back before retrying,
+including after clearing/reselecting. Only a selected active editor is flushed
+before trashing; the backend already closes its persisted Tab, so the UI reads
+and validates the final view instead of closing it again. Unmounting stops
+later mutations, and a late response cannot close a replacement dialog.
+Permanent deletion retains its titled confirmation and bounded 200-ID batches.
+
 Conversation sending is enabled only when an actual binding and `capabilities.sendMessage === true` are returned. `reasonCode: 'NATIVE_EDIT_CHAT_UNAVAILABLE'` receives a localized unavailable state. The app never creates chats, switches a global active chat, starts a model, synthesizes an assistant reply, or treats an accepted request as a completed edit.
 
 When the bridge advertises `supportsInlineEditor`, the UI opens the self-contained document through `native-editor.mjs`, with a fresh channel and fixed artifact identity. The helper validates the frame source/channel and brokers only scoped editor requests, event subscriptions and downloads. The inner document must retain an opaque origin relative to the MCP host. Tab changes, retry, restore and teardown dispose subscriptions. A real editor readiness signal clears the loading overlay; failed startup offers a localized retry state. The standalone HTTP preview retains its existing loopback iframe path.
