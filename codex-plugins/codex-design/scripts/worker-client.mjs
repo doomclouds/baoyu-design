@@ -142,7 +142,7 @@ async function prepareRestorePoint(root, job, resumed) {
   const libraryRoot = path.dirname(path.dirname(root));
   // Legacy/project artifacts keep their existing workflow. A real library
   // artifact has both its manifest and the surrounding persistent library identity.
-  if (!['slides', 'design', 'design-system', 'dashboard'].includes(kind)
+  if (!['slides', 'design', 'design-system', 'dashboard', 'motion'].includes(kind)
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
     || !fs.existsSync(path.join(root, 'artifact.json'))
     || !fs.existsSync(path.join(libraryRoot, '_state', 'library.json'))) return null;

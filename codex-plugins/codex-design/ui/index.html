@@ -23748,11 +23748,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     openingEditHistory: "Opening edit history…",
     editHistoryDescription: "View detailed edits, compare changes and restore selected content in this artwork’s editor.",
     editHistoryUnavailable: "Detailed edit history is available only in a supported native artwork editor.",
-    transferTooLarge: "This artwork package exceeds the 16 MB transfer limit.",
+    transferTooLarge: "This artwork package exceeds the supported transfer limit.",
     invalidBundle: "Choose a valid Codex Design artwork package.",
     fileReadFailed: "The selected file could not be read.",
     downloadUnavailable: "This host does not support artwork downloads.",
-    untitled: { slides: "Untitled slides", design: "Untitled design", "design-system": "Untitled design system", dashboard: "Untitled dashboard" },
+    untitled: { slides: "Untitled slides", design: "Untitled design", "design-system": "Untitled design system", dashboard: "Untitled dashboard", motion: "Untitled motion" },
     editorChangesSaved: "I have confirmed that my changes are saved.",
     thumbnailContentReference: "Content reference; live charts are not executed.",
     appName: "Codex Design",
@@ -23763,6 +23763,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     design: "Design",
     "design-system": "Design systems",
     dashboard: "Dashboards",
+    motion: "Motion",
     recent: "Recent",
     trash: "Trash",
     favorites: "Favorites",
@@ -23794,7 +23795,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     bridgeUnavailable: "Open Codex Design from its connected workspace to access your designs.",
     retry: "Try again",
     emptyTitle: "Create your first artwork",
-    emptyBody: "Start with slides, a design, a design system, or a dashboard.",
+    emptyBody: "Start with slides, a design, a design system, a dashboard, or a Motion film.",
     emptyFavorites: "Your favorites live here.",
     emptyFavoritesBody: "Favorite a design to keep it close at hand.",
     emptySearch: "No matching designs",
@@ -23803,12 +23804,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     emptyTrash: "The trash is empty",
     emptyTrashBody: "Designs you move to the trash can be restored here.",
     createArtwork: "Create artwork",
-    newArtwork: { slides: "New slides", design: "New design", "design-system": "New design system", dashboard: "New dashboard" },
+    newArtwork: { slides: "New slides", design: "New design", "design-system": "New design system", dashboard: "New dashboard", motion: "New motion" },
     emptyCategory: {
       slides: { title: "Create your first slide deck", body: "Build presentations and visual stories." },
       design: { title: "Create your first design", body: "Explore ideas on an editable canvas." },
       "design-system": { title: "Create your first design system", body: "Define tokens, components, and reusable guidance." },
-      dashboard: { title: "Create your first dashboard", body: "Bring metrics, charts, and data together." }
+      dashboard: { title: "Create your first dashboard", body: "Bring metrics, charts, and data together." },
+      motion: { title: "Create your first Motion film", body: "Animate stories, walkthroughs, and short films." }
     },
     newDesign: "New design",
     newKind: "New {{kind}}",
@@ -23903,6 +23905,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     designDescription: "Canvases and prototypes",
     systemDescription: "Tokens, components and guidance",
     dashboardDescription: "Data and the stories behind it",
+    motionDescription: "Animated stories and short films",
     reorderLeft: "Move tab left",
     reorderRight: "Move tab right",
     tabKeyboardHelp: "Use arrow keys to switch tabs. Use Alt+Shift and arrow keys to reorder a design tab.",
@@ -24114,8 +24117,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 
   // source/ui/library-transfer.mjs
   var FORMAT = "codex-design-artifact";
-  var KINDS = /* @__PURE__ */ new Set(["slides", "design", "design-system", "dashboard"]);
+  var KINDS = /* @__PURE__ */ new Set(["slides", "design", "design-system", "dashboard", "motion"]);
   var MAX_UI_BUNDLE_BYTES = 16 * 1024 * 1024;
+  var MAX_NATIVE_BUNDLE_BYTES = 180 * 1024 * 1024;
+  var UPLOAD_CHUNK_BYTES = 768 * 1024;
   var fail = (code, message) => Object.assign(new Error(message), { code });
   var bytes = (value) => new TextEncoder().encode(value).byteLength;
   function contentPath(kind, relative) {
@@ -24123,6 +24128,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const parts = relative.split("/");
     if (parts.some((part) => !part || part === "." || part === ".." || part.trimEnd() !== part || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw fail("INVALID_BUNDLE", "The package contains an unsafe path.");
     if (parts.some((part) => ["comments.json", "node_modules", "_state", "_trash"].includes(part) || part.startsWith(".") && part !== ".image-slots.state.json")) return false;
+    if (kind === "motion") return /^db\/(?:film|modules|assets)\/[A-Za-z0-9][A-Za-z0-9_.~\-]{0,99}\.json$/.test(relative) || /^_blobs\/[a-f0-9]{32}(?:\.json)?$/.test(relative) || /^src\/.+\.(?:[cm]?js|jsx|tsx?|css|html?|json|md|txt|svg|csv|tsv)$/i.test(relative);
     if (kind !== "dashboard") return parts[0] === "project" && parts.length > 1;
     return parts[0] === "_blobs" && parts.length === 2 || parts[0] === "db" && parts.length >= 3 && ["files", "datasets"].includes(parts[1]) || /^db\/dash\/(?:meta|params|look)\.json$/.test(relative);
   }
@@ -24152,7 +24158,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       seen.add(key);
       const size = file3.data.length * 3 / 4 - (file3.data.endsWith("==") ? 2 : file3.data.endsWith("=") ? 1 : 0);
       totalBytes += size;
-      if (size > 32 * 1024 * 1024 || totalBytes > 128 * 1024 * 1024) throw fail("TRANSFER_TOO_LARGE", "The artwork package exceeds the transfer size limit.");
+      if (size > (bundle.kind === "motion" ? 64 : 32) * 1024 * 1024 || totalBytes > 128 * 1024 * 1024) throw fail("TRANSFER_TOO_LARGE", "The artwork package exceeds the transfer size limit.");
       files.push({ path: file3.path, encoding: "base64", data: file3.data });
     }
     const portable = { format: FORMAT, version: 1, kind: bundle.kind, title: bundle.title.trim(), files };
@@ -24161,7 +24167,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     return portable;
   }
   function packageFilename(title) {
-    let stem = String(title || "Artwork").normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, "_").trim().replace(/[. ]+$/g, "").slice(0, 100);
+    let stem = Array.from(String(title || "Artwork").normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, "_").trim().replace(/[. ]+$/g, "")).slice(0, 100).join("");
+    while (bytes(stem + ".codexdesign.json") > 220) stem = Array.from(stem).slice(0, -1).join("");
+    stem = stem.replace(/[. ]+$/g, "");
     if (!stem || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) stem = "Artwork";
     return stem + ".codexdesign.json";
   }
@@ -24210,17 +24218,47 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     invoke,
     pickFile = pickArtworkFile,
     download = downloadArtwork,
+    downloadResource,
     onImported,
     onRestored,
-    maxBundleBytes = MAX_UI_BUNDLE_BYTES
+    maxBundleBytes = MAX_UI_BUNDLE_BYTES,
+    maxImportBytes = maxBundleBytes === MAX_UI_BUNDLE_BYTES ? MAX_NATIVE_BUNDLE_BYTES : maxBundleBytes
   } = {}) {
     if (typeof invoke !== "function") throw new TypeError("A library invocation function is required.");
+    const upload = async (file3) => {
+      let transferId;
+      try {
+        const started = await invoke("library.transfer", { operation: "start", bytes: file3.size });
+        transferId = started?.transferId;
+        if (typeof transferId !== "string" || !/^[0-9a-f-]{36}$/i.test(transferId) || started.offset !== 0) throw fail("FILE_READ_FAILED", "The package upload could not be started.");
+        for (let offset = 0; offset < file3.size; ) {
+          const chunk = new Uint8Array(await file3.slice(offset, Math.min(file3.size, offset + UPLOAD_CHUNK_BYTES)).arrayBuffer());
+          if (!chunk.byteLength || chunk.byteLength > UPLOAD_CHUNK_BYTES) throw fail("FILE_READ_FAILED", "The selected package could not be read completely.");
+          let binary = "";
+          for (let at = 0; at < chunk.length; at += 16384) binary += String.fromCharCode(...chunk.subarray(at, at + 16384));
+          const written = await invoke("library.transfer", { operation: "write", transferId, offset, base64: btoa(binary) });
+          offset += chunk.byteLength;
+          if (written?.transferId !== transferId || written.offset !== offset) throw fail("FILE_READ_FAILED", "The package upload offset could not be confirmed.");
+        }
+        return await invoke("library.transfer", { operation: "finish", transferId });
+      } catch (error112) {
+        if (transferId) await invoke("library.transfer", { operation: "cancel", transferId }).catch(() => {
+        });
+        throw error112;
+      }
+    };
     return {
       async importArtifact(file3) {
         file3 ??= await pickFile();
         if (!file3) return null;
         if (typeof file3.text !== "function" || !Number.isFinite(file3.size) || file3.size < 0) throw fail("FILE_READ_FAILED", "The selected file could not be read.");
-        if (file3.size > maxBundleBytes) throw fail("TRANSFER_TOO_LARGE", "The artwork package exceeds the transfer size limit.");
+        if (file3.size > maxImportBytes) throw fail("TRANSFER_TOO_LARGE", "The artwork package exceeds the transfer size limit.");
+        if (file3.size > maxBundleBytes) {
+          if (typeof file3.slice !== "function") throw fail("TRANSFER_TOO_LARGE", "This host cannot upload a large artwork package.");
+          const artifact2 = await upload(file3);
+          await onImported?.(artifact2);
+          return artifact2;
+        }
         let text;
         try {
           text = await file3.text();
@@ -24232,7 +24270,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         await onImported?.(artifact);
         return artifact;
       },
-      async exportArtifact(id, title) {
+      async exportArtifact(id, title, { kind } = {}) {
+        if (kind === "motion" && typeof downloadResource === "function") {
+          const resource = await invoke("library.exportArtifact", { id, asFile: true });
+          if (!resource || resource.artifactId !== id || resource.mimeType !== "application/json" || typeof resource.exportToken !== "string" || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1 || resource.bytes > maxImportBytes) throw fail("INVALID_BUNDLE", "The exported artwork package could not be confirmed.");
+          const saved2 = await downloadResource(resource);
+          if (saved2?.saved !== true || typeof saved2.path !== "string" || !saved2.path) throw fail("DOWNLOAD_UNCONFIRMED", "The package save result could not be confirmed.");
+          return { filename: saved2.filename || resource.filename, bytes: resource.bytes, path: saved2.path };
+        }
         const bundle = portableBundle(await invoke("library.exportArtifact", { id }), { maxBytes: maxBundleBytes });
         const text = JSON.stringify(bundle), filename = packageFilename(title || bundle.title);
         const saved = await download({ filename, text });
@@ -24259,7 +24304,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }
 
   // source/ui/native-editor.mjs
-  var ALLOWED = /* @__PURE__ */ new Set(["editor.request", "editor.digest", "editor.events.open", "editor.events.poll", "editor.events.close", "editor.download", "editor.previewDocument"]);
+  var ALLOWED = /* @__PURE__ */ new Set(["editor.request", "editor.digest", "editor.motionExport", "editor.systemSync", "editor.events.open", "editor.events.poll", "editor.events.close", "editor.download", "editor.previewDocument"]);
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var REQUEST_LIMIT = 128;
   var errorDetail = (error112) => ({ code: error112?.code || "EDITOR_REQUEST_FAILED", message: String(error112?.message || error112).slice(0, 2e3) });
@@ -24344,6 +24389,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (typeof editorDocument?.html !== "string" || !editorDocument.html.trim()) throw new TypeError("The editor document is missing.");
     const ownerWindow = iframe.ownerDocument?.defaultView || window;
     const subscriptions = /* @__PURE__ */ new Set();
+    const motionJobs = /* @__PURE__ */ new Set();
     const requests = /* @__PURE__ */ new Map(), drafts = /* @__PURE__ */ new Map();
     let disposed = false;
     let appReady = false;
@@ -24417,7 +24463,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const execute = async (message) => {
       let result;
       try {
-        result = message.action === "editor.download" ? await bridge.downloadResource(message.payload) : await bridge.invoke(message.action, { ...message.payload, id: artifactId2 });
+        result = message.action === "editor.download" ? await bridge.downloadResource({ ...message.payload, artifactId: artifactId2 }) : message.action === "editor.systemSync" ? await bridge.syncDesignSystem({ id: artifactId2, namespace: message.payload.namespace }) : await bridge.invoke(message.action, { ...message.payload, id: artifactId2 });
         if (message.action === "editor.events.open" && result?.subscriptionId) {
           if (disposed) {
             void bridge.invoke("editor.events.close", { id: artifactId2, subscriptionId: result.subscriptionId }).catch(() => {
@@ -24427,6 +24473,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           subscriptions.add(result.subscriptionId);
         }
         if (message.action === "editor.events.close") subscriptions.delete(message.payload.subscriptionId);
+        if (message.action === "editor.motionExport" && typeof result?.jobId === "string" && UUID.test(result.jobId)) {
+          if (result.status === "running") {
+            if (disposed) {
+              void bridge.invoke("editor.motionExport", { id: artifactId2, operation: "cancel", jobId: result.jobId }).catch(() => {
+              });
+              return;
+            }
+            motionJobs.add(result.jobId);
+          } else motionJobs.delete(result.jobId);
+        }
         if (message.action === "editor.request" && result?.nativeDraft) await draftComment(result.nativeDraft);
         return { result };
       } catch (error112) {
@@ -24587,6 +24643,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       openHistory,
       dispose() {
         if (disposed) return;
+        bridge.cancelSystemSync?.(artifactId2);
+        for (const jobId of motionJobs) void bridge.invoke("editor.motionExport", { id: artifactId2, operation: "cancel", jobId }).catch(() => {
+        });
+        motionJobs.clear();
         disposed = true;
         clearTimeout(startup);
         stopViewport();
@@ -24612,7 +24672,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }
 
   // source/ui/library-ui.js
-  var KINDS2 = ["slides", "design", "design-system", "dashboard"];
+  var KINDS2 = ["slides", "design", "design-system", "dashboard", "motion"];
   var ICONS = {
     plus: '<path d="M12 5v14M5 12h14"/>',
     library: '<path d="M4 5h4v14H4zM10 4h4v15h-4zM16 6l4-1 3 13-4 1z"/>',
@@ -24620,6 +24680,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     design: '<path d="M5 4h14l1 8c0 5-4 8-8 9-4-1-8-4-8-9z"/><circle cx="12" cy="11" r="2"/>',
     "design-system": '<path d="M12 3l9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9"/>',
     dashboard: '<rect x="3" y="5" width="6" height="15" rx="1"/><rect x="15" y="3" width="6" height="15" rx="1"/><path d="M10 8h3v13h-3"/>',
+    motion: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 8l6 4-6 4z"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/>',
     trash: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
     search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/>',
@@ -24764,6 +24825,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const transfer = createLibraryTransfer({
       invoke: (action, payload) => invoke(action, payload),
       ...typeof bridge.downloadArtifact === "function" ? { download: bridge.downloadArtifact.bind(bridge) } : {},
+      ...typeof bridge.downloadResource === "function" ? { downloadResource: bridge.downloadResource.bind(bridge) } : {},
       onImported: async (record3) => {
         upsertRecord(record3);
         await changeView("openTab", { id: record3.id });
@@ -25856,7 +25918,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         });
       } else if (action === "export") await runAction("export-" + id, async () => {
         if (state.view.activeTabId === id) await flushCurrentEditor();
-        const saved = await transfer.exportArtifact(id, recordFor(id)?.title);
+        const record3 = recordFor(id);
+        const saved = await transfer.exportArtifact(id, record3?.title, { kind: record3?.kind });
         toast(saved?.path ? t2("exported") + ": " + saved.path : t2("exported"));
       });
       else if (action === "history") await openHistory(id);
@@ -43972,10 +44035,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   };
 
   // source/server/contract.mjs
-  var PLUGIN_UI_VERSION = "0.6.6";
+  var PLUGIN_UI_VERSION = "0.7.0";
   var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
   var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
-  var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
+  var KINDS3 = Object.freeze(["slides", "design", "design-system", "dashboard", "motion"]);
   var READ_ACTIONS = Object.freeze(["library.list", "library.get", "view.get", "conversation.get", "reference.get", "reference.readFile"]);
   var ACTIONS = Object.freeze([
     ...READ_ACTIONS,
@@ -43991,6 +44054,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "library.restoreSnapshot",
     "library.exportArtifact",
     "library.importArtifact",
+    "library.transfer",
     "thumbnail.get",
     "view.openTab",
     "view.activateTab",
@@ -44001,6 +44065,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "editor.previewDocument",
     "editor.request",
     "editor.digest",
+    "editor.motionExport",
+    "editor.systemSync",
     "editor.events.open",
     "editor.events.poll",
     "editor.events.close",
@@ -44027,7 +44093,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "EXPORT_REQUEST_CONFLICT",
     "EXPORT_DIRECTORY_CHANGED",
     "EXPORT_UNSAFE_TARGET",
-    "EXPORT_TARGET_CHANGED"
+    "EXPORT_TARGET_CHANGED",
+    "EXPORT_SOURCE_CHANGED",
+    "MOTION_EXPORT_UNAVAILABLE",
+    "MOTION_EXPORT_NOT_FOUND"
   ]);
   function directoryBreadcrumbs(directory) {
     if (typeof directory !== "string" || !directory) return [];
@@ -44338,7 +44407,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     return {
       save(resource) {
         if (disposed) return Promise.reject(fail2("The export dialog has closed.", "BRIDGE_UNAVAILABLE"));
-        const same = [active, ...queue].find((entry2) => entry2 && ["filename", "mimeType", "text", "base64"].every((key) => entry2.resource[key] === resource[key]));
+        const same = [active, ...queue].find((entry2) => entry2 && ["filename", "mimeType", "text", "base64", "exportToken", "artifactId"].every((key) => entry2.resource[key] === resource[key]));
         if (same) return same.promise;
         if (queue.length + Number(Boolean(active)) >= 3) return Promise.reject(fail2("Finish the current exports before starting another.", "EXPORT_BUSY"));
         const entry = { resource: Object.freeze({ ...resource }), navigation: 0, requestId: createId(), model: { filename: resource.filename, locations: [], directory: "", locationInput: "", parent: null, entries: [], nextCursor: null, home: null, loading: true, saving: false, uncertain: false, restartRequired: false, error: "", collision: null, collisionChanged: false, result: null } };
@@ -44365,12 +44434,64 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     };
   }
 
+  // source/ui/system-sync-dialog.mjs
+  var fail3 = (code, message) => Object.assign(new Error(message), { code });
+  var escape4 = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  function createSystemSyncDialog({ document: document2 = globalThis.document } = {}) {
+    let active, disposed = false;
+    const finish = (confirmed) => {
+      if (!active) return;
+      const { dialog, resolve } = active;
+      active = null;
+      dialog.close();
+      dialog.remove();
+      resolve(confirmed);
+    };
+    return {
+      confirm(detail) {
+        if (disposed || !document2?.body) return Promise.reject(fail3("SYSTEM_SYNC_DIALOG_UNAVAILABLE", "The synchronization review is unavailable."));
+        if (active) return Promise.reject(fail3("SYSTEM_SYNC_BUSY", "Finish the current synchronization review first."));
+        if (!Array.isArray(detail.changed) || detail.changed.some((file3) => typeof file3 !== "string") || !Array.isArray(detail.removed)) return Promise.reject(fail3("SYSTEM_SYNC_INVALID_DIFF", "The design system differences could not be verified."));
+        const dialog = document2.createElement("dialog");
+        dialog.className = "design-dialog codex-system-sync-dialog";
+        dialog.setAttribute("aria-labelledby", "codex-system-sync-title");
+        dialog.innerHTML = '<section class="dialog-form"><header><h2 id="codex-system-sync-title">Sync design system?</h2></header><p class="dialog-description">Update ' + escape4(detail.title || detail.namespace) + " in " + escape4(detail.artifactTitle || "this artwork") + ".</p><p>These " + detail.changed.length + ' files will be replaced with the source versions. Local changes in these files will be replaced. A recovery point will be saved first.</p><ul style="max-height:240px;overflow:auto;padding-inline-start:24px">' + detail.changed.map((file3) => "<li><code>" + escape4(file3) + "</code></li>").join("") + "</ul>" + (detail.removed.length ? "<p>" + detail.removed.length + " files missing from the source will remain in this artwork.</p>" : "") + '<footer><button type="button" class="button secondary" data-system-sync="cancel" autofocus>Cancel</button><button type="button" class="button primary" data-system-sync="confirm">Sync files</button></footer></section>';
+        const result = new Promise((resolve) => {
+          active = { dialog, resolve, artifactId: detail.artifactId };
+        });
+        dialog.addEventListener("click", (event) => {
+          const button = event.target.closest("[data-system-sync]");
+          if (button) finish(button.dataset.systemSync === "confirm");
+        });
+        dialog.addEventListener("cancel", (event) => {
+          event.preventDefault();
+          finish(false);
+        });
+        document2.body.appendChild(dialog);
+        try {
+          dialog.showModal();
+        } catch (error112) {
+          finish(false);
+          return Promise.reject(error112);
+        }
+        return result;
+      },
+      cancel(artifactId2) {
+        if (active?.artifactId === artifactId2) finish(false);
+      },
+      dispose() {
+        disposed = true;
+        finish(false);
+      }
+    };
+  }
+
   // source/server/ui-bridge.mjs
-  var fail3 = (message, code) => Object.assign(new Error(message), { code });
+  var fail4 = (message, code) => Object.assign(new Error(message), { code });
   var changed = (action) => !READ_ACTIONS.includes(action) && !action.startsWith("editor.") && !action.startsWith("export.") && action !== "thumbnail.get";
   var artifactRoute = /^\/artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?[^#]*)?$/i;
   var artifactId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  async function createMcpBridge({ timeoutMs = 8e3, onInitialResult, exportDialogFactory = createExportDialog, app = new i({ name: "codex-design", version: PLUGIN_UI_VERSION }) } = {}) {
+  async function createMcpBridge({ timeoutMs = 8e3, onInitialResult, exportDialogFactory = createExportDialog, systemSyncDialogFactory = createSystemSyncDialog, app = new i({ name: "codex-design", version: PLUGIN_UI_VERSION }) } = {}) {
     const extensions = new OpenAIExtensions(app);
     const listeners = /* @__PURE__ */ new Set();
     let toolInput;
@@ -44382,6 +44503,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let navigation = Promise.resolve();
     let pendingArtifact;
     let exportDialog;
+    let systemSyncDialog;
+    const systemSyncOperations = /* @__PURE__ */ new Map();
     const bridge = {
       available: true,
       transport: "mcp",
@@ -44395,8 +44518,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         return connected && !disposed && Boolean(extensions.message);
       },
       async invoke(action, payload = {}) {
-        if (disposed) throw fail3("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
-        if (action === "conversation.send") throw fail3("A verified per-artifact native conversation bridge is not available.", UNSUPPORTED_CHAT_CODE);
+        if (disposed) throw fail4("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (action === "conversation.send") throw fail4("A verified per-artifact native conversation bridge is not available.", UNSUPPORTED_CHAT_CODE);
         const result = await app.callServerTool({ name: READ_ACTIONS.includes(action) ? "design_read" : "design_action", arguments: { action, payload } });
         if (result.isError || result.structuredContent?.error) {
           let detail = result.structuredContent?.error;
@@ -44406,21 +44529,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
             } catch {
             }
           }
-          throw fail3(detail?.message || "The library request failed.", detail?.code || "DESIGN_LIBRARY_ERROR");
+          throw fail4(detail?.message || "The library request failed.", detail?.code || "DESIGN_LIBRARY_ERROR");
         }
         const value = result.structuredContent?.result;
         if (action.startsWith("view.") && changed(action)) {
           latestViewState = value;
           bridge.initialState = { ...bridge.initialState, viewState: value };
         }
-        if (changed(action)) for (const listener of listeners) listener(action.startsWith("view.") ? { type: "view.changed", viewState: value } : { type: "library.changed", action, result: value });
+        if (changed(action) && (action !== "library.transfer" || payload.operation === "finish")) for (const listener of listeners) listener(action.startsWith("view.") ? { type: "view.changed", viewState: value } : { type: "library.changed", action, result: value });
         return value;
       },
       async draftComment(request) {
-        if (disposed) throw fail3("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
-        if (!bridge.canDraftComments) throw fail3("This host cannot add design comments to the active chat draft.", "NATIVE_COMMENT_DRAFT_UNAVAILABLE");
+        if (disposed) throw fail4("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (!bridge.canDraftComments) throw fail4("This host cannot add design comments to the active chat draft.", "NATIVE_COMMENT_DRAFT_UNAVAILABLE");
         if (!request || typeof request.requestId !== "string" || !artifactId.test(request.requestId) || typeof request.artifactId !== "string" || !artifactId.test(request.artifactId) || Object.hasOwn(request, "attemptId") && (typeof request.attemptId !== "string" || !artifactId.test(request.attemptId)) || request.uri !== `codex-design://edit-requests/${request.requestId}` || typeof request.title !== "string" || !request.title.trim() || request.title.length > 300 || typeof request.summary !== "string" || !request.summary.trim() || request.summary.length > 2e4) {
-          throw fail3("The immutable design comment request is invalid.", "INVALID_COMMENT_DRAFT");
+          throw fail4("The immutable design comment request is invalid.", "INVALID_COMMENT_DRAFT");
         }
         const result = await extensions.message.send({
           role: "user",
@@ -44432,19 +44555,44 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
           ],
           _meta: { "openai/message": { target: "active", send: false } }
         });
-        if (result.isError) throw fail3("The host could not add the design comment to the active chat draft.", "NATIVE_COMMENT_DRAFT_FAILED");
+        if (result.isError) throw fail4("The host could not add the design comment to the active chat draft.", "NATIVE_COMMENT_DRAFT_FAILED");
         return result;
       },
       async downloadArtifact({ filename, text }) {
         return bridge.downloadResource({ filename, mimeType: "application/json", text });
       },
-      async downloadResource({ filename, mimeType, text, base64: base645 }) {
-        if (disposed) throw fail3("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
-        if (typeof filename !== "string" || !filename || filename.length > 300 || /[\\/\u0000-\u001f\u007f]/.test(filename) || typeof mimeType !== "string" || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(mimeType) || typeof text === "string" === (typeof base645 === "string")) throw fail3("Invalid artwork download.", "INVALID_DOWNLOAD");
-        if (typeof base645 === "string" && (base645.length > 180 * 1024 * 1024 || base645.length % 4 || /[^A-Za-z0-9+/=]/.test(base645))) throw fail3("Invalid artwork download encoding.", "INVALID_DOWNLOAD");
+      async syncDesignSystem({ id, namespace }) {
+        if (disposed || !artifactId.test(id ?? "") || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(namespace ?? "")) throw fail4("Choose a design system in this artwork.", "SYSTEM_SYNC_INVALID_REQUEST");
+        if (systemSyncOperations.has(id)) throw fail4("Finish the current synchronization review first.", "SYSTEM_SYNC_BUSY");
+        const operation = {};
+        systemSyncOperations.set(id, operation);
+        try {
+          const preview = await bridge.invoke("editor.systemSync", { id, operation: "prepare", namespace });
+          if (disposed) throw fail4("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+          if (systemSyncOperations.get(id) !== operation) throw fail4("The artwork synchronization review was cancelled.", "SYSTEM_SYNC_CANCELLED");
+          if (!Array.isArray(preview.changed) || !Array.isArray(preview.removed)) throw fail4("The design system differences could not be read.", "SYSTEM_SYNC_INVALID_DIFF");
+          if (!preview.changed.length) return { copied: 0, state: preview.state, changed: 0, removed: preview.removed.length, canSync: true };
+          systemSyncDialog ??= systemSyncDialogFactory();
+          if (!await systemSyncDialog.confirm({ ...preview, artifactId: id })) return { copied: 0, state: preview.state, changed: preview.changed.length, removed: preview.removed.length, canSync: true, cancelled: true };
+          if (disposed) throw fail4("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+          if (systemSyncOperations.get(id) !== operation) throw fail4("The artwork synchronization review was cancelled.", "SYSTEM_SYNC_CANCELLED");
+          return await bridge.invoke("editor.systemSync", { id, operation: "apply", confirmationToken: preview.confirmationToken });
+        } finally {
+          if (systemSyncOperations.get(id) === operation) systemSyncOperations.delete(id);
+        }
+      },
+      cancelSystemSync(id) {
+        systemSyncOperations.delete(id);
+        systemSyncDialog?.cancel(id);
+      },
+      async downloadResource({ filename, mimeType, text, base64: base645, exportToken, artifactId: artifactId2 }) {
+        if (disposed) throw fail4("The design library connection has closed.", "BRIDGE_UNAVAILABLE");
+        if (typeof filename !== "string" || !filename || filename.length > 300 || /[\\/\u0000-\u001f\u007f]/.test(filename) || typeof mimeType !== "string" || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(mimeType) || [typeof text === "string", typeof base645 === "string", typeof exportToken === "string"].filter(Boolean).length !== 1) throw fail4("Invalid artwork download.", "INVALID_DOWNLOAD");
+        if (exportToken !== void 0 && (!/^[0-9a-f-]{36}$/i.test(exportToken) || !/^[0-9a-f-]{36}$/i.test(artifactId2 ?? ""))) throw fail4("Invalid rendered artwork reference.", "INVALID_DOWNLOAD");
+        if (typeof base645 === "string" && (base645.length > 180 * 1024 * 1024 || base645.length % 4 || /[^A-Za-z0-9+/=]/.test(base645))) throw fail4("Invalid artwork download encoding.", "INVALID_DOWNLOAD");
         exportDialog ??= exportDialogFactory({ invoke: (action, payload) => bridge.invoke(action, payload) });
-        const result = await exportDialog.save({ filename, mimeType, ...text === void 0 ? { base64: base645 } : { text } });
-        if (result?.saved !== true || typeof result.path !== "string" || !result.path) throw fail3("The export save result could not be confirmed.", "EXPORT_UNCONFIRMED");
+        const result = await exportDialog.save({ filename, mimeType, ...exportToken === void 0 ? text === void 0 ? { base64: base645 } : { text } : { exportToken, artifactId: artifactId2 } });
+        if (result?.saved !== true || typeof result.path !== "string" || !result.path) throw fail4("The export save result could not be confirmed.", "EXPORT_UNCONFIRMED");
         return result;
       },
       diagnostics() {
@@ -44468,6 +44616,8 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
       async dispose() {
         disposed = true;
         exportDialog?.dispose?.();
+        systemSyncOperations.clear();
+        systemSyncDialog?.dispose?.();
         bridge.available = false;
         connected = false;
         bridge.capabilities.canDraftComments = false;
@@ -44546,10 +44696,10 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
           try {
             descriptor = JSON.parse(text);
           } catch {
-            throw fail3("The artwork descriptor is not valid JSON.", "INVALID_DESCRIPTOR");
+            throw fail4("The artwork descriptor is not valid JSON.", "INVALID_DESCRIPTOR");
           }
           if (descriptor?.format !== "codex-design-descriptor" || descriptor.version !== 1 || typeof descriptor.artifactId !== "string" || !artifactId.test(descriptor.artifactId)) {
-            throw fail3("Unsupported Codex Design artwork descriptor.", "INVALID_DESCRIPTOR");
+            throw fail4("Unsupported Codex Design artwork descriptor.", "INVALID_DESCRIPTOR");
           }
           await openArtifact(descriptor.artifactId);
         } catch (error112) {
@@ -44563,6 +44713,9 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
       await bridge.beforeNavigate?.({ action: "teardown" });
       exportDialog?.dispose?.();
       exportDialog = void 0;
+      systemSyncOperations.clear();
+      systemSyncDialog?.dispose?.();
+      systemSyncDialog = void 0;
       return {};
     };
     app.ontoolinput = ({ arguments: args }) => {
@@ -44581,7 +44734,7 @@ ${request.summary.slice(0, 1e3)}${request.summary.length > 1e3 ? "\nRead the att
     let timer;
     try {
       await Promise.race([app.connect(), new Promise((_2, reject) => {
-        timer = setTimeout(() => reject(fail3("The host did not establish the MCP App connection.", "BRIDGE_UNAVAILABLE")), timeoutMs);
+        timer = setTimeout(() => reject(fail4("The host did not establish the MCP App connection.", "BRIDGE_UNAVAILABLE")), timeoutMs);
       })]);
     } catch (error112) {
       await bridge.dispose().catch(() => {

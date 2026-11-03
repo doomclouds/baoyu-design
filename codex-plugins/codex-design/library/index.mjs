@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { LibraryError, KINDS, UUID, artifactId, artifactKind, titleText, relativePath, within, statOrNull, safePath, readJson, atomicJson, readBytes, locked } from './safety.mjs';
-import { INDEX_FILES, DEFAULT_LIMITS, contentPath, contentType, collectContent, validateFiles, writeContent, blankContent } from './content.mjs';
+import { INDEX_FILES, DEFAULT_LIMITS, contentFileLimit, contentPath, contentType, collectContent, validateFiles, writeContent, blankContent } from './content.mjs';
 import { alive } from '../scripts/bridge-core.mjs';
 import { WORKER_FILE, WORKER_JOBS_FILE } from '../scripts/worker-core.mjs';
 
@@ -60,6 +60,7 @@ export class LibraryStore {
     if (typeof isBusy !== 'function') throw new LibraryError('INVALID_OPTION', 'isBusy must be a function.');
     this.root = path.resolve(root); this.isBusy = isBusy;
     this.limits = { ...DEFAULT_LIMITS, ...limits };
+    if (Object.hasOwn(limits, 'maxFileBytes') && !Object.hasOwn(limits, 'maxMotionFileBytes')) this.limits.maxMotionFileBytes = limits.maxFileBytes;
     if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError('INVALID_OPTION', 'Content limits must be positive integers.');
   }
   async initialize() {
@@ -135,7 +136,7 @@ export class LibraryStore {
       const listed = await collectContent(root, record.kind, this.limits, { includeBytes: false });
       const needed = new Set([INDEX_FILES[record.kind], 'project/tokens.json', 'db/files/index.html.json']);
       const files = [];
-      for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, this.limits.maxFileBytes)).toString('base64') : '' });
+      for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, contentFileLimit(record.kind, this.limits))).toString('base64') : '' });
       const native = validateFiles(record.kind, files);
       // The native editors write content directly. Their saves must be visible
       // to recent/sort even when no library metadata command was invoked.
@@ -224,11 +225,11 @@ export class LibraryStore {
       const relative = relativePath(file?.path); const key = relative.normalize('NFC').toLowerCase();
       if (keys.has(key)) throw new LibraryError('INVALID_BUNDLE', 'Duplicate or case-colliding bundle path.'); keys.add(key);
       if (!contentPath(bundle.kind, relative)) continue;
-      if (file.encoding !== 'base64' || typeof file.data !== 'string' || file.data.length > Math.ceil(this.limits.maxFileBytes / 3) * 4 || file.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file.data)) throw new LibraryError('INVALID_BUNDLE', 'Invalid or oversized base64 file.');
+      if (file.encoding !== 'base64' || typeof file.data !== 'string' || file.data.length > Math.ceil(contentFileLimit(bundle.kind, this.limits) / 3) * 4 || file.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file.data)) throw new LibraryError('INVALID_BUNDLE', 'Invalid or oversized base64 file.');
       const padding = file.data.indexOf('=');
       if (padding >= 0 && (padding < file.data.length - 2 || !/^={1,2}$/.test(file.data.slice(padding)))) throw new LibraryError('INVALID_BUNDLE', 'Invalid base64 padding.');
       const bytes = Buffer.from(file.data, 'base64'); encoded += file.data.length; total += bytes.length;
-      if (bytes.toString('base64') !== file.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError('LIMIT_EXCEEDED', 'The native bundle exceeds content limits.');
+      if (bytes.toString('base64') !== file.data || bytes.length > contentFileLimit(bundle.kind, this.limits) || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError('LIMIT_EXCEEDED', 'The native bundle exceeds content limits.');
       files.push({ path: relative, encoding: 'base64', data: file.data });
     }
     const native = validateFiles(bundle.kind, files); return { kind: bundle.kind, title: native.title, files };
@@ -259,7 +260,7 @@ export class LibraryStore {
     await this._checkRoot(); const { record } = await this._raw(id); relativePath(relative);
     if (!contentPath(record.kind, relative)) throw new LibraryError('CONTENT_ONLY', 'This route exposes only artwork and material files, not comments, chats, tasks, or runtime bindings.');
     if (!['utf8', 'base64'].includes(encoding)) throw new LibraryError('INVALID_OPTION', 'Unsupported file encoding.');
-    const root = await this._artifactPath(record), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
+    const root = await this._artifactPath(record), bytes = await readBytes(root, relative, contentFileLimit(record.kind, this.limits)), type = contentType(relative);
     if (encoding === 'utf8' && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError('BINARY_ENCODING_REQUIRED', 'Read binary material using base64.');
     return { path: relative, contentType: type, bytes: bytes.length,
       revision: { sha256: createHash('sha256').update(bytes).digest('hex'), observedAt: at() },

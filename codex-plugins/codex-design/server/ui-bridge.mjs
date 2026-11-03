@@ -2,13 +2,14 @@ import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import { ACTIONS, READ_ACTIONS, UNSUPPORTED_CHAT_CODE, PLUGIN_UI_VERSION } from './contract.mjs';
 import { createExportDialog } from '../ui/export-dialog.mjs';
+import { createSystemSyncDialog } from '../ui/system-sync-dialog.mjs';
 
 const fail = (message, code) => Object.assign(new Error(message), { code });
 const changed = action => !READ_ACTIONS.includes(action) && !action.startsWith('editor.') && !action.startsWith('export.') && action !== 'thumbnail.get';
 const artifactRoute = /^\/artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?[^#]*)?$/i;
 const artifactId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, exportDialogFactory = createExportDialog, app = new App({ name: 'codex-design', version: PLUGIN_UI_VERSION }) } = {}) {
+export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, exportDialogFactory = createExportDialog, systemSyncDialogFactory = createSystemSyncDialog, app = new App({ name: 'codex-design', version: PLUGIN_UI_VERSION }) } = {}) {
   const extensions = new OpenAIExtensions(app);
   const listeners = new Set();
   let toolInput;
@@ -20,6 +21,8 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, expo
   let navigation = Promise.resolve();
   let pendingArtifact;
   let exportDialog;
+  let systemSyncDialog;
+  const systemSyncOperations = new Map();
   const bridge = {
     available: true, transport: 'mcp', uiVersion: PLUGIN_UI_VERSION, supportsInlineEditor: true,
     language: 'en', hostContext: null, initialState: null, capabilities: { actions: [...ACTIONS], canDraftComments: false },
@@ -38,7 +41,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, expo
         latestViewState = value;
         bridge.initialState = { ...bridge.initialState, viewState: value };
       }
-      if (changed(action)) for (const listener of listeners) listener(action.startsWith('view.')
+      if (changed(action) && (action !== 'library.transfer' || payload.operation === 'finish')) for (const listener of listeners) listener(action.startsWith('view.')
         ? { type: 'view.changed', viewState: value } : { type: 'library.changed', action, result: value });
       return value;
     },
@@ -67,14 +70,33 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, expo
     async downloadArtifact({ filename, text }) {
       return bridge.downloadResource({ filename, mimeType: 'application/json', text });
     },
-    async downloadResource({ filename, mimeType, text, base64 }) {
+    async syncDesignSystem({ id, namespace }) {
+      if (disposed || !artifactId.test(id ?? '') || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(namespace ?? '')) throw fail('Choose a design system in this artwork.', 'SYSTEM_SYNC_INVALID_REQUEST');
+      if (systemSyncOperations.has(id)) throw fail('Finish the current synchronization review first.', 'SYSTEM_SYNC_BUSY');
+      const operation = {}; systemSyncOperations.set(id, operation);
+      try {
+        const preview = await bridge.invoke('editor.systemSync', { id, operation: 'prepare', namespace });
+        if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
+        if (systemSyncOperations.get(id) !== operation) throw fail('The artwork synchronization review was cancelled.', 'SYSTEM_SYNC_CANCELLED');
+        if (!Array.isArray(preview.changed) || !Array.isArray(preview.removed)) throw fail('The design system differences could not be read.', 'SYSTEM_SYNC_INVALID_DIFF');
+        if (!preview.changed.length) return { copied: 0, state: preview.state, changed: 0, removed: preview.removed.length, canSync: true };
+        systemSyncDialog ??= systemSyncDialogFactory();
+        if (!await systemSyncDialog.confirm({ ...preview, artifactId: id })) return { copied: 0, state: preview.state, changed: preview.changed.length, removed: preview.removed.length, canSync: true, cancelled: true };
+        if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
+        if (systemSyncOperations.get(id) !== operation) throw fail('The artwork synchronization review was cancelled.', 'SYSTEM_SYNC_CANCELLED');
+        return await bridge.invoke('editor.systemSync', { id, operation: 'apply', confirmationToken: preview.confirmationToken });
+      } finally { if (systemSyncOperations.get(id) === operation) systemSyncOperations.delete(id); }
+    },
+    cancelSystemSync(id) { systemSyncOperations.delete(id); systemSyncDialog?.cancel(id); },
+    async downloadResource({ filename, mimeType, text, base64, exportToken, artifactId }) {
       if (disposed) throw fail('The design library connection has closed.', 'BRIDGE_UNAVAILABLE');
       if (typeof filename !== 'string' || !filename || filename.length > 300 || /[\\/\u0000-\u001f\u007f]/.test(filename)
         || typeof mimeType !== 'string' || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(mimeType)
-        || (typeof text === 'string') === (typeof base64 === 'string')) throw fail('Invalid artwork download.', 'INVALID_DOWNLOAD');
+        || [typeof text === 'string', typeof base64 === 'string', typeof exportToken === 'string'].filter(Boolean).length !== 1) throw fail('Invalid artwork download.', 'INVALID_DOWNLOAD');
+      if (exportToken !== undefined && (!/^[0-9a-f-]{36}$/i.test(exportToken) || !/^[0-9a-f-]{36}$/i.test(artifactId ?? ''))) throw fail('Invalid rendered artwork reference.', 'INVALID_DOWNLOAD');
       if (typeof base64 === 'string' && (base64.length > 180 * 1024 * 1024 || base64.length % 4 || /[^A-Za-z0-9+/=]/.test(base64))) throw fail('Invalid artwork download encoding.', 'INVALID_DOWNLOAD');
       exportDialog ??= exportDialogFactory({ invoke: (action, payload) => bridge.invoke(action, payload) });
-      const result = await exportDialog.save({ filename, mimeType, ...(text === undefined ? { base64 } : { text }) });
+      const result = await exportDialog.save({ filename, mimeType, ...(exportToken === undefined ? text === undefined ? { base64 } : { text } : { exportToken, artifactId }) });
       if (result?.saved !== true || typeof result.path !== 'string' || !result.path) throw fail('The export save result could not be confirmed.', 'EXPORT_UNCONFIRMED');
       return result;
     },
@@ -88,7 +110,7 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, expo
         styleVariableNames: Object.keys(context?.styles?.variables || {}).sort() };
     },
     subscribe(handler) { listeners.add(handler); return () => listeners.delete(handler); },
-    async dispose() { disposed = true; exportDialog?.dispose?.(); bridge.available = false; connected = false; bridge.capabilities.canDraftComments = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
+    async dispose() { disposed = true; exportDialog?.dispose?.(); systemSyncOperations.clear(); systemSyncDialog?.dispose?.(); bridge.available = false; connected = false; bridge.capabilities.canDraftComments = false; listeners.clear(); app.removeEventListener('hostcontextchanged', onHostContext); await app.close(); },
   };
   const applyContext = () => {
     // SDK listeners receive params directly; the SDK merges each partial patch first.
@@ -167,6 +189,8 @@ export async function createMcpBridge({ timeoutMs = 8_000, onInitialResult, expo
   app.onteardown = async () => {
     await bridge.beforeNavigate?.({ action: 'teardown' });
     exportDialog?.dispose?.(); exportDialog = undefined;
+    systemSyncOperations.clear();
+    systemSyncDialog?.dispose?.(); systemSyncDialog = undefined;
     return {};
   };
   app.ontoolinput = ({ arguments: args }) => { toolInput = args; void readDescriptor(); };

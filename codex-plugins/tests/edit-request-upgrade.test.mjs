@@ -27,7 +27,7 @@ async function removeOwned(directory, selected) {
 
 async function packageAt(root, version) {
   await fs.mkdir(root, { recursive: true });
-  for (const name of ['scripts', 'library']) await fs.cp(path.join(source, name), path.join(root, name), { recursive: true });
+  for (const name of ['scripts', 'library', 'server']) await fs.cp(path.join(source, name), path.join(root, name), { recursive: true });
   const skillDir = path.join(root, 'skills/codex-design');
   await fs.mkdir(path.join(skillDir, 'scripts'), { recursive: true });
   await fs.writeFile(path.join(skillDir, 'SKILL.md'), 'A disposable packaged design skill. Read current artwork and check it.');

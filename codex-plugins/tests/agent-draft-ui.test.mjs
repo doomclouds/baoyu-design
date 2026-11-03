@@ -71,6 +71,24 @@ for (const [kind, names] of Object.entries(properties)) test(`${kind}: actual AI
     'An explicit user Copy action keeps its truthful clipboard confirmation.');
 });
 
+test('Motion Continue/Finalize, selection and repair handoffs only add immutable native drafts', async () => {
+  const original = await fs.readFile(new URL('../../skills/claude-motion/scripts/editor/artifact-type/app.js', import.meta.url), 'utf8');
+  const source = adaptAgentDrafts(original), target = targetWith(), send = createNativeAgentDraft();
+  const context = { __CODEX_DESIGN_EDITOR_TRANSPORT__: target.__CODEX_DESIGN_EDITOR_TRANSPORT__,
+    __codexNativeAgentDraft: input => send(input, target),
+    e: { copyTextToClipboard: () => assert.fail('Native Motion requests cannot use clipboard handoff.') } };
+  for (const property of ['stagePromptInClaude', 'deliverPromptToClaude']) {
+    const input = { selection: { label: property, text: 'Opening at authored second 1.' }, request: 'Change this scene.', fallbackPrompt: 'Original standalone prompt.' };
+    const route = { ns: { sendToClaudeSession: () => assert.fail('No upstream room, waiter or agent hook may send the request.') }, road: 'pane' };
+    assert.equal(await invoke(source, property, [input, route], context), 'staged');
+  }
+  assert.equal(await invoke(source, 'suggestOrCopyPrompt', ['Repair this film.'], context), 'staged');
+  assert.equal(target.calls.length, 3);
+  assert.ok(target.calls.every(call => new URL(call.url).pathname === '/grant/__comments/agent/requests'));
+  const first = JSON.parse(target.calls[0].request.body);
+  assert.match(first.text, /Opening at authored second 1/);
+});
+
 test('Design error repair retains every full filename, canvas title and diagnostic instead of the old 1,800-character fallback', async () => {
   const source = adaptAgentDrafts(await originalCode('design')), target = targetWith(), send = createNativeAgentDraft();
   const problems = [{ file: 'boards/An unusually long filename ' + 'x'.repeat(150) + '.dc.html', messages: ['TypeError: missing prop ' + 'a'.repeat(1800), 'Second full diagnostic.'] }];

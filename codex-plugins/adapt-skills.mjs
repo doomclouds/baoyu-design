@@ -1,12 +1,14 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const editors = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard'];
-const allSkills = [...editors, 'codex-dataviz'];
+const editors = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-motion'];
+const allSkills = [...editors, 'codex-motion-director', 'codex-dataviz'];
 const verification = 'Run the built-in `check`, fix structural problems, then use the available browser or document preview to inspect the affected output when useful. Check visible layout, relevant interactions, and the requested export when applicable. Reuse installed tools. State which checks ran and which could not run; a structural check alone does not prove visual correctness.';
 const paletteVerification = 'Run the bundled `scripts/validate_palette.js` with the actual palette, mode, and surface; the matching `scripts/validate_palette.py` is an alternative when Python is available. Fix hard failures and follow the documented secondary-encoding requirements for warnings. Render the actual chart with available tools and inspect its marks, labels, contrast, and relevant interactions. State which validators and visual checks ran and which could not run.';
 
-function codexInstructions(editor) {
+function codexInstructions(name) {
+  const editor = editors.includes(name);
+  const director = name === 'codex-motion-director';
   const lines = [
   "## Codex execution",
   "",
@@ -25,7 +27,7 @@ function codexInstructions(editor) {
   "- **Design system search:** `list` searches the current project and the existing global library's `~/.codex/CodexDesignLibrary/design-system` folder, without creating the library or searching its trash. Set `CODEX_DESIGN_SYSTEMS` to additional local design-system folders when needed; explicit folders keep priority. Separate paths with the platform path delimiter (semicolon on Windows, colon on macOS/Linux).",
   "- **Coordinate ownership from the main chat:** Before the main chat or another independent agent changes an artifact, inspect `worker-status <root>` through the Codex entry point. Do not write the same artifact while its native worker owns an active job. Pending work with no listener needs the parent's native-agent decision, not an indefinite wait. The registered worker owns its active serial job and must not wait for its own worker-status entry.",
   "- **Annotations and editor comments:** In a native Codex Design artwork Tab, use Comments in that editor's existing toolbar or navigation tools. Only an explicitly requested standalone browser preview uses the browser toolbar's annotation control, where available; the plugin adds object/file metadata to existing elements. A selection submitted through the host composer is a request for the current chat; check worker status before editing its files.",
-  "- **Native Add to chat:** The editor's Comments control saves `comments.json`. **Add to chat** prepares an immutable comment/location snapshot and appends its compact reference to the global Codex Design workspace's native draft, preserving existing input. The visible `Request: codex-design://edit-requests/<UUID>` line identifies the same immutable request as its resource attachment. It does not enqueue a worker, start a model, select a user chat, or send the draft. The user presses the native Send button. Normal comments remain local. `--delivery main` is explicit legacy compatibility only, never a fallback.",
+  "- **Native Add to chat:** The editor's Comments control saves `comments.json`. **Add to chat** prepares an immutable comment/location snapshot and appends its compact reference to the global Codex Design workspace's native draft, preserving existing input. The visible `Request: codex-design://edit-requests/<UUID>` line identifies the same immutable request as its resource attachment. It does not enqueue a worker, start a model, select a user chat, or send the draft. The user presses the native Send button; the receiving native parent explicitly accepts and dispatches the request. Normal comments remain local. Only native draft delivery is supported; legacy main-queue or hook delivery is unavailable.",
   "- **Receiving actual user-sent design requests:** When the native workspace message contains edit-request references, use the model-visible `design_request` tool to read and accept only those request IDs. This rule applies to every newly sent request, including active-turn steering. Do not scan prepared drafts and accept them automatically. Run each returned `dispatchCommand` in your own actual native parent environment; it queues the captured request once and reports worker state. Before forwarding a new request to any child, read/accept that request and run its own dispatchCommand. A follow-up or child reuse never replaces this receipt and dispatch step; a completed older request does not authorize a new comment. If a purported design request lacks its exact immutable URI/ID, ask the user to Add to chat again; do not infer an ID from an older request or unsent draft. Never fabricate or pass another thread ID. Accepting a request is not completion. Group multiple requests by artwork, keep one artwork serial, then use the native-agent controller below. A global workspace uses the host's selected/default local environment; do not pretend that changing the MCP server cwd selects a native project.",
   "- **Parent native-agent controller:** Inspect worker-status and the actual platform native-agent tools. Reuse the registered child when it is available; resume the existing child when needed; create one with the platform spawn tool only when the parent decides that is necessary. Do not create an agent for every comment. A real platform-spawned child appears in the native UI; never invent threadSource metadata. Listener presence is not proof of agent liveness. If native tools are unavailable or unloaded, leave durable jobs pending and have the parent arrange recovery; do not silently use a background model process or the main chat queue.",
   "- **Register inside the real child:** The selected child runs `worker-register <root> --name <task>` using its own actual `CODEX_THREAD_ID` environment. Never copy the parent's id or fabricate one. Registration reuses the same id; a different child requires the parent's explicit replacement decision and `--replace`.",
@@ -34,10 +36,15 @@ function codexInstructions(editor) {
   "- **Pause or replace:** Before pausing/replacing a child that may still be editing, the parent uses the platform native interrupt tool, then `worker-stop <root>` and, for a different child, explicit registration with `--replace`. The CLI pauses its local listener; it cannot interrupt a native agent. Main and independent agents must not write concurrently with that worker.",
   "- Read saved comments with `comments`. Outside a claimed worker job, use `comment-reply` and `comment-resolve` only when appropriate. Do not start a duplicate `comments --wait` watcher. The explicit `--no-agent` option disables comment delivery; it does not change native opening into a browser preview or recover or replace a native child."
 ]);
+  else if (director) lines.push(...[
+  "- Read the sibling `../codex-motion/SKILL.md` before directing a film. Use its `scripts/codex-artifact.mjs` entry point for create, native open, check, checkpoints, comments and worker coordination. The director adds no separate artwork type, player or format.",
+  "- New films default to the native global library through the Motion creation command; keep its exact root and native appUrl. Reuse existing films and explicit user folders. Open the same native Motion artwork Tab from the first script draft; HTTP preview is only for an explicit standalone-browser request.",
+  "- Retain Motion's local voice, alignment, synchronization, frame inspection, sound analysis, recording and requested export commands. Use the sibling `codex-dataviz` skill for chart guidance; do not create duplicate chart tooling."
+]);
   else lines.push(...[
   "- Run the palette validator using its absolute installed path: `node \"<this skill folder>/scripts/validate_palette.js\" ...`."
 ]);
-  lines.push('- **Verification:** ' + (editor ? verification : paletteVerification), '- Use the bundled local commands and available Codex tools.', '', '## Local format and workflow', '');
+  lines.push('- **Verification:** ' + (editor || director ? verification : paletteVerification), '- Use the bundled local commands and available Codex tools.', '', '## Local format and workflow', '');
   return lines.join('\n') + '\n';
 }
 async function markdownFiles(root) {
@@ -56,6 +63,8 @@ function adaptMarkdown(text) {
     .replaceAll('claude-dashboard', 'codex-dashboard')
     .replaceAll('claude-slides', 'codex-slides')
     .replaceAll('claude-design', 'codex-design')
+    .replaceAll('claude-motion', 'codex-motion')
+    .replaceAll('motion-director', 'codex-motion-director')
     .replaceAll('artifact.mjs', 'codex-artifact.mjs')
     .replaceAll('Node 20+', 'Node 22+')
     .replace(/\*\*NEVER VERIFY UNLESS THE USER ASKED\*\*[\s\S]*?Need one\? ASK first, and wait\./g, `**Verification:** ${verification}`)
@@ -123,7 +132,7 @@ function replaceWorkflowSection(text, heading, replacement) {
 }
 
 function adaptNativeDelivery(text, name, relative) {
-  if (!editors.includes(name)) return text;
+  if (!editors.includes(name) && name !== 'codex-motion-director') return text;
   let adapted = text;
   if (relative === 'SKILL.md') {
     adapted = adapted
@@ -134,9 +143,12 @@ function adaptNativeDelivery(text, name, relative) {
       .replace(/If no canvas exists yet: `<root>` = a new folder `designs\/<slug>\/`[\s\S]*?goes in `title`\./, 'If no canvas exists yet, use the Codex execution `create` command and retain its exact `root` and native `appUrl`, unless the user explicitly named an output folder. The canvas\'s name (REQUIRED; as the user says it, not “Design” or “Untitled”) goes in `title`.')
       .replace(/No system yet\?\n`<root>` = a new folder `designs\/<slug>\/`[\s\S]*?Never make a second one\./, 'No system yet? Use the Codex execution `create` command and retain its exact `root` and native `appUrl`, unless the user explicitly named an output folder. Its name goes in the index\'s `title`. Never make a second one.')
       .replace(/A dashboard is a folder, `<root>`: `designs\/<slug>\/`[\s\S]*?The first `write-db` or\n`upload` creates it\./, 'A dashboard lives in the exact `root` returned by the Codex execution `create` command; retain its native `appUrl` for delivery. Reuse an existing dashboard or a user\'s explicit output folder instead of creating another.')
+      .replace(/A film is a folder, `<root>`: `designs\/<slug>\/`[\s\S]*?The first `write-db` or `upload` creates\nit\./, 'A film lives in the exact `root` returned by the Codex execution `create` command; retain its native `appUrl` for delivery. Reuse an existing film or a user\'s explicit output folder instead of creating another.')
       .replace('Work in ONE folder, `<root>` (make it first)', 'Work in ONE folder, `<root>` (the creation result\'s root or the user\'s explicit folder)')
       .replace(/^- `open <root>` →[^\n]+$/m, nativeOpenCall + '\n' + explicitPreviewCall)
       .replace(/^\| `node \$A open <root>[^\n]+$/m, '| `node $A open <root>` | Requests this artwork\'s existing Codex Design Tab and returns `{appUrl, navigationRequested, renderVerified, …}`. Deliver `appUrl`; navigation acceptance is not a render check. |\n| `node $A preview <root> [--port n]` | Standalone HTTP preview only when the user explicitly requests an independent browser page; returns its preview `url`. |')
+      .replace(/^- `ds-sync <root>[^\n]+$/m, '- `ds-sync <root> [namespace] --check` → lists each installed copy\'s `changed` and `removed` files, source and `confirmationToken`. It changes no artwork content; the short-lived confirmation receipt is saved in library state. Exit 1 means a source difference was found, including a removed source file. Review the exact file list and overwrite implications before applying.\n- `ds-sync <root> --confirm <confirmationToken>` → applies only the reviewed existing-file differences after checking source/copy/index hashes, refusing active or pending worker jobs, and saving a recovery point. It stamps `copiedAt`; source-only additions are not copied and files removed from the source remain in the installed copy. Tokens are bound to one artwork, expire after five minutes and can be used once. A bare sync or `--from` override is refused. The native Theme Sync action uses the same review/confirm workflow.')
+      .replace('Update (the reference\'s "Update" paragraph) → `ds-sync <root> <folder>` copies what changed in one call and stamps the record;', 'Update (the reference\'s "Update" paragraph) → first run `ds-sync <root> <folder> --check`, review its exact diff, then apply the approved `confirmationToken` with `ds-sync <root> --confirm <confirmationToken>`;')
       .replace("Naming slide 7 to the user? Link it too: `open`'s `url` + `#slide-7` (number, not id).", 'Naming slide 7 to the user? Link the artwork\'s native `appUrl` and write “Slide 7” beside it. Native slide-specific URL anchors are not implemented; do not construct a localhost `#slide-7` link.')
       .replace(/run `open` and give the user its `url` once, so they can watch the (slides|artboards) arrive\./g, 'run `open <root>` through the Codex wrapper and give the returned native `appUrl` once, so they can watch the $1 arrive in the same Codex Design artwork Tab.')
       .replace('then the folder and the link.', 'then the saved root and the native `appUrl` link.')
@@ -159,14 +171,48 @@ function adaptNativeDelivery(text, name, relative) {
       .replace(/^\| `node \$A serve <root>[^\n]*\n/gm, '')
       .replace(/^- The Theme tab links to a read-only page of the system in use,[^\n]*$/m,
         '- The Theme tab opens the read-only design-system copy under `project/ds/<folder>/` carried by this artwork. Use the existing editor action to inspect its tokens, type, components and guide. It changes only when this copy is explicitly updated; it does not edit the source system or other artwork. Do not construct a standalone browser link for native delivery.')
-      .replace(/the open threads, numbered like (?:the editor's|the page's) pins \(`n`\),/g,
+      .replace(/the open threads, numbered like (?:the editor's|the page's|the player's) pins \(`n`\),/g,
         'the open threads, with diagnostic list order `n` (separate from the author-avatar pin label),');
     adapted = replaceWorkflowSection(adapted, 'Sharing', localSharing);
     adapted = replaceWorkflowSection(adapted, 'History', localHistory);
     adapted = replaceWorkflowSection(adapted, 'Keeping it in git', localGit);
   }
+  if (name === 'codex-motion' || name === 'codex-motion-director') adapted = adaptMotionDelivery(adapted, name, relative);
   if (name === 'codex-dashboard' && relative === 'artifact-type/reference/design-defaults.md') {
     adapted = adapted.replace('### Handing over\n\n', '### Handing over\n\nUse the native `appUrl` from `create` or `open <root>` to deliver the existing Codex Design artwork Tab, alongside its saved root. A standalone HTTP `preview` link is only for a user\'s explicit browser-preview request.\n\n');
+  }
+  return adapted;
+}
+
+function adaptMotionDelivery(text, name, relative) {
+  let adapted = text
+    .replaceAll('../dataviz', '../codex-dataviz')
+    .replaceAll('the dataviz skill', 'the codex-dataviz skill')
+    .replaceAll("the player's url", "the artwork's native appUrl")
+    .replaceAll('with the player showing in your built-in browser if you have one', 'with the film showing in its native Codex Design artwork Tab')
+    .replaceAll('its url is how they comment', 'its native appUrl opens the same artwork for comments')
+    .replaceAll('the `url` and the folder', 'the native `appUrl` and the saved root')
+    .replaceAll('the `url` and one line', 'the native `appUrl` and one line')
+    .replaceAll('give the user the `url`', 'give the user the native `appUrl`')
+    .replaceAll('then the `url` and the folder', 'then the native `appUrl` and the saved root')
+    .replaceAll('`share` on the local network, `archive` as one zip.', 'the native library content export and Save As, without comments or runtime state.')
+    .replace(/Then `open <root>`\. If you have a built-in browser or preview pane\nthat can show a url beside the chat, whichever agent you are: open the `url` there now, before anything else, unasked\./g, 'Then run `open <root>` through the Codex wrapper to open this film in its native Codex Design artwork Tab, before writing the remaining scenes.')
+    .replace('`open <root>` again, shown in your built-in browser the same way.', '`open <root>` again through the Codex wrapper to reopen the same native artwork Tab.')
+    .replace(/then `open`, shown at once in your built-in browser if you have one/, 'then `open <root>` through the Codex Motion wrapper, shown at once in its native artwork Tab')
+    .replace('Not open: `open <root>` and give the link', 'Not open: use the Codex wrapper\'s `open <root>` and give its native `appUrl`')
+    .replace('it is part of the folder, so `open`, `archive` and a shared link', 'it is part of the film content, so native open and content export')
+    .replace('It is part of the folder, so `open`, `archive` and a shared link', 'It is part of the film content, so native open and content export')
+    .replace(/- The film's `url`, the type's link, `type_url`, `auto_open`: the folder is the\n  film, and its first `write-db` creates it\./, '- The native `appUrl` from `create` or `open` opens the film\'s existing Codex Design artwork Tab. Its saved root holds the film; do not create a second folder from a hosted type URL.')
+    .replace(/- render-offline\.md's step 1 \(the player's three files\): copy[\s\S]*?(?=\n- sound\.md)/, '- For offline frame inspection, use the bundled `stills <root>` command and the local `render-offline.md` guidance. Do not copy or install a separate player driver.');
+  if (name === 'codex-motion' && relative === 'artifact-type/reference/film-api.md') {
+    adapted = adapted.replace(/## 6\. The scripts \(run where you work, not in the page\)[\s\S]*$/,
+      '## 6. Local commands\n\nUse this skill\'s bundled `scripts/codex-artifact.mjs` with the saved film root; do not install dependencies into the plugin or invoke unbundled TypeScript scripts.\n\n- `check <root>` validates stored documents and syntax; it does not render or prove determinism.\n- `stills <root> --at 0,3.5` renders the player\'s actual export frames for visual inspection. Use `--scenes` or `--every <seconds>` when useful.\n- `score <root> --levels` reports sound and loudness; `export <root> --audio-only` produces requested sound output.\n- `export <root> [--out <file.mp4>]` produces the requested video; `captions` exports subtitles. Chrome is required for rendering; ffmpeg is required for recording and supported audio conversions.\n\nThese local checks have their documented limits; never claim the hosted check.ts determinism, live-diff or raster-safety suite ran when only the local structural check ran.\n');
+  }
+  if (name === 'codex-motion' && relative === 'SKILL.md') {
+    adapted = adapted.replace(/\| `write-db`, `read-db`, `upload`, `check`, `captions`, `beats`, `sync`, `comments`, `share`, `archive`, `open` \|/,
+      '| `write-db`, `read-db`, `upload`, `check`, `captions`, `beats`, `sync`, `comments`, `open` |');
+    adapted = adapted.replace(/wait for comments \(Comments, below: `comments <root> --wait` prints it under[\s\S]*?(?=\n\n)/,
+      'use the native Comments / Add to chat workflow below. A user-sent request is read, accepted and dispatched by the native parent; the registered native worker handles it serially.');
   }
   return adapted;
 }
@@ -205,6 +251,13 @@ If one authorized retrieval can produce the complete result, prefer it over a de
 `;
 
 function adaptLocalMarkdown(text, name, relative) {
+  if (name === 'codex-motion' || name === 'codex-motion-director') text = text
+    .replaceAll('claude.ai', 'the hosted editor')
+    .replaceAll('Claude Code', 'a local coding agent')
+    .replace(/Claude is far better at recreating an interface\s+from/, 'Code and design context provide more precise interface reconstruction than screenshots; work from');
+  if (name === 'codex-motion' && relative === 'artifact-type/reference/render-offline.md') {
+    return '# Rendering local Motion frames\n\nUse the installed Motion wrapper `scripts/codex-artifact.mjs`; the player and its headless drivers are already bundled. Read the film\'s current documents and uploaded pictures as SKILL.md requires before rendering received work. Do not run scripts or install dependencies from an untrusted film folder.\n\n- `stills <root> --at 0,3.5,s01+1.2` renders selected moments as PNG files through the actual player without opening a separate editor page. `--scenes` selects scene middles and `--every <seconds>` selects intervals.\n- `score <root> --levels` inspects the score and levels; `export <root> --audio-only` renders requested audio for listening.\n- `check <root>` checks stored data and syntax, not rendered geometry or pixels. Inspect the returned stills when visual verification is needed and state what actually ran.\n- `export <root>` creates a video only when requested. Chrome or Chromium is required for headless rendering; ffmpeg is required for recording and the documented audio conversions. Keep missing requirements explicit.\n\nUse the native artwork appUrl for delivery. An explicit standalone-browser preview uses `preview <root>`; a headless frame check does not open an HTTP editor tab.\n';
+  }
   if (name === 'codex-slides' && relative.endsWith('artifact-type/reference/deck-files.md')) return localDeckFiles;
   if (name === 'codex-dashboard' && relative.endsWith('artifact-type/reference/sources.md')) return localSources;
   if (name === 'codex-dashboard' && relative.endsWith('artifact-type/reference/admin-setup.md')) return localAdmin;
@@ -220,6 +273,7 @@ function adaptLocalMarkdown(text, name, relative) {
     .replace(/This skill is a local build of the claude\.ai [\s\S]*?\(The calls\)\./g, `This skill provides the local Codex Design ${name.replace(/^codex-/, '')} format. Use files on disk and this skill's \`scripts/codex-artifact.mjs\` for the local commands below.`)
     .replaceAll("claude.ai's calls", 'the upstream hosted calls')
     .replaceAll('the claude.ai Artifact tool', 'a hosted Artifact tool')
+    .replaceAll('a system installed from claude.ai has none', 'a system installed from a hosted editor has none')
     .replaceAll(', and those in `$CLAUDE_DESIGN_SYSTEMS`', '')
     .replaceAll('`${CLAUDE_SKILL_DIR}`', 'the upstream skill-directory variable')
     .replaceAll('(Claude Code, Codex, …; a re-sync: its source)', '(Codex; a re-sync: its source)')
@@ -272,8 +326,9 @@ function adaptLocalMarkdown(text, name, relative) {
   if (name === 'codex-dashboard' && relative.endsWith('artifact-type/reference/features.md')) {
     adapted = adapted.replace(/### Certified queries[\s\S]*$/, '### Local file sources\n\nThe local editor uses uploaded file datasets. Certified-query administration is not bundled; prepare approved data with existing tools, attach the file, and record its origin and update time.\n');
   }
+  adapted = adaptNativeDelivery(adapted, name, relative);
   if (/claude/i.test(adapted)) throw new Error(`Unadapted host wording remains in ${name}/${relative}: ${adapted.split('\n').filter((line) => /claude/i.test(line)).join(' | ')}`);
-  return adaptNativeDelivery(adapted, name, relative);
+  return adapted;
 }
 
 export function adaptSkillMarkdown(original, name, relative) {
@@ -285,14 +340,14 @@ export function adaptSkillMarkdown(original, name, relative) {
     adapted = `${adapted.slice(0, start)}${synchronizedSystem}`;
   }
   if (relative === 'SKILL.md') {
-    const upstreamName = name === 'codex-dataviz' ? 'dataviz' : name.replace(/^codex-/, 'claude-');
+    const upstreamName = name === 'codex-dataviz' ? 'dataviz' : name === 'codex-motion-director' ? 'motion-director' : name.replace(/^codex-/, 'claude-');
     const expectedName = `name: ${upstreamName}\n`;
     if (!original.includes(expectedName)) throw new Error(`Unexpected upstream skill name: ${name}`);
     adapted = adapted.replace(/^name: [^\n]+$/m, `name: ${name}`);
     if (adapted.includes('## Codex execution')) throw new Error(`Refusing to adapt an already adapted skill: ${name}`);
     const heading = /(^# [^\n]+\n\n)/m;
     if (!heading.test(adapted)) throw new Error(`Missing title in upstream skill: ${name}`);
-    adapted = adapted.replace(heading, title => `${title}${codexInstructions(editors.includes(name))}`);
+    adapted = adapted.replace(heading, title => `${title}${codexInstructions(name)}`);
   }
   return adaptLocalMarkdown(adapted, name, relative).replace(/\n+$/, '\n');
 }

@@ -1,6 +1,8 @@
 const FORMAT = 'codex-design-artifact';
-const KINDS = new Set(['slides', 'design', 'design-system', 'dashboard']);
+const KINDS = new Set(['slides', 'design', 'design-system', 'dashboard', 'motion']);
 export const MAX_UI_BUNDLE_BYTES = 16 * 1024 * 1024;
+export const MAX_NATIVE_BUNDLE_BYTES = 180 * 1024 * 1024;
+const UPLOAD_CHUNK_BYTES = 768 * 1024;
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const bytes = value => new TextEncoder().encode(value).byteLength;
 
@@ -12,6 +14,7 @@ function contentPath(kind, relative) {
     || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw fail('INVALID_BUNDLE', 'The package contains an unsafe path.');
   if (parts.some(part => ['comments.json', 'node_modules', '_state', '_trash'].includes(part)
     || part.startsWith('.') && part !== '.image-slots.state.json')) return false;
+  if (kind === 'motion') return /^db\/(?:film|modules|assets)\/[A-Za-z0-9][A-Za-z0-9_.~\-]{0,99}\.json$/.test(relative) || /^_blobs\/[a-f0-9]{32}(?:\.json)?$/.test(relative) || /^src\/.+\.(?:[cm]?js|jsx|tsx?|css|html?|json|md|txt|svg|csv|tsv)$/i.test(relative);
   if (kind !== 'dashboard') return parts[0] === 'project' && parts.length > 1;
   return parts[0] === '_blobs' && parts.length === 2
     || parts[0] === 'db' && parts.length >= 3 && ['files', 'datasets'].includes(parts[1])
@@ -43,7 +46,7 @@ export function portableBundle(input, { maxBytes = MAX_UI_BUNDLE_BYTES } = {}) {
     seen.add(key);
     const size = file.data.length * 3 / 4 - (file.data.endsWith('==') ? 2 : file.data.endsWith('=') ? 1 : 0);
     totalBytes += size;
-    if (size > 32 * 1024 * 1024 || totalBytes > 128 * 1024 * 1024) throw fail('TRANSFER_TOO_LARGE', 'The artwork package exceeds the transfer size limit.');
+    if (size > (bundle.kind === 'motion' ? 64 : 32) * 1024 * 1024 || totalBytes > 128 * 1024 * 1024) throw fail('TRANSFER_TOO_LARGE', 'The artwork package exceeds the transfer size limit.');
     files.push({ path: file.path, encoding: 'base64', data: file.data });
   }
   const portable = { format: FORMAT, version: 1, kind: bundle.kind, title: bundle.title.trim(), files };
@@ -53,7 +56,9 @@ export function portableBundle(input, { maxBytes = MAX_UI_BUNDLE_BYTES } = {}) {
 }
 
 export function packageFilename(title) {
-  let stem = String(title || 'Artwork').normalize('NFC').replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, '_').trim().replace(/[. ]+$/g, '').slice(0, 100);
+  let stem = Array.from(String(title || 'Artwork').normalize('NFC').replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, '_').trim().replace(/[. ]+$/g, '')).slice(0, 100).join('');
+  while (bytes(stem + '.codexdesign.json') > 220) stem = Array.from(stem).slice(0, -1).join('');
+  stem = stem.replace(/[. ]+$/g, '');
   if (!stem || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) stem = 'Artwork';
   return stem + '.codexdesign.json';
 }
@@ -86,15 +91,43 @@ export async function downloadArtwork({ filename, text }, { document = globalThi
 }
 
 /** UI-owned transfer controller: no file paths, chat messages, or model calls. */
-export function createLibraryTransfer({ invoke, pickFile = pickArtworkFile, download = downloadArtwork,
-  onImported, onRestored, maxBundleBytes = MAX_UI_BUNDLE_BYTES } = {}) {
+export function createLibraryTransfer({ invoke, pickFile = pickArtworkFile, download = downloadArtwork, downloadResource,
+  onImported, onRestored, maxBundleBytes = MAX_UI_BUNDLE_BYTES,
+  maxImportBytes = maxBundleBytes === MAX_UI_BUNDLE_BYTES ? MAX_NATIVE_BUNDLE_BYTES : maxBundleBytes } = {}) {
   if (typeof invoke !== 'function') throw new TypeError('A library invocation function is required.');
+  const upload = async file => {
+    let transferId;
+    try {
+      const started = await invoke('library.transfer', { operation: 'start', bytes: file.size });
+      transferId = started?.transferId;
+      if (typeof transferId !== 'string' || !/^[0-9a-f-]{36}$/i.test(transferId) || started.offset !== 0) throw fail('FILE_READ_FAILED', 'The package upload could not be started.');
+      for (let offset = 0; offset < file.size;) {
+        const chunk = new Uint8Array(await file.slice(offset, Math.min(file.size, offset + UPLOAD_CHUNK_BYTES)).arrayBuffer());
+        if (!chunk.byteLength || chunk.byteLength > UPLOAD_CHUNK_BYTES) throw fail('FILE_READ_FAILED', 'The selected package could not be read completely.');
+        let binary = '';
+        for (let at = 0; at < chunk.length; at += 16_384) binary += String.fromCharCode(...chunk.subarray(at, at + 16_384));
+        const written = await invoke('library.transfer', { operation: 'write', transferId, offset, base64: btoa(binary) });
+        offset += chunk.byteLength;
+        if (written?.transferId !== transferId || written.offset !== offset) throw fail('FILE_READ_FAILED', 'The package upload offset could not be confirmed.');
+      }
+      return await invoke('library.transfer', { operation: 'finish', transferId });
+    } catch (error) {
+      if (transferId) await invoke('library.transfer', { operation: 'cancel', transferId }).catch(() => {});
+      throw error;
+    }
+  };
   return {
     async importArtifact(file) {
       file ??= await pickFile();
       if (!file) return null;
       if (typeof file.text !== 'function' || !Number.isFinite(file.size) || file.size < 0) throw fail('FILE_READ_FAILED', 'The selected file could not be read.');
-      if (file.size > maxBundleBytes) throw fail('TRANSFER_TOO_LARGE', 'The artwork package exceeds the transfer size limit.');
+      if (file.size > maxImportBytes) throw fail('TRANSFER_TOO_LARGE', 'The artwork package exceeds the transfer size limit.');
+      if (file.size > maxBundleBytes) {
+        if (typeof file.slice !== 'function') throw fail('TRANSFER_TOO_LARGE', 'This host cannot upload a large artwork package.');
+        const artifact = await upload(file);
+        await onImported?.(artifact);
+        return artifact;
+      }
       let text;
       try { text = await file.text(); } catch { throw fail('FILE_READ_FAILED', 'The selected file could not be read.'); }
       const bundle = portableBundle(text, { maxBytes: maxBundleBytes });
@@ -102,7 +135,15 @@ export function createLibraryTransfer({ invoke, pickFile = pickArtworkFile, down
       await onImported?.(artifact);
       return artifact;
     },
-    async exportArtifact(id, title) {
+    async exportArtifact(id, title, { kind } = {}) {
+      if (kind === 'motion' && typeof downloadResource === 'function') {
+        const resource = await invoke('library.exportArtifact', { id, asFile: true });
+        if (!resource || resource.artifactId !== id || resource.mimeType !== 'application/json' || typeof resource.exportToken !== 'string'
+          || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1 || resource.bytes > maxImportBytes) throw fail('INVALID_BUNDLE', 'The exported artwork package could not be confirmed.');
+        const saved = await downloadResource(resource);
+        if (saved?.saved !== true || typeof saved.path !== 'string' || !saved.path) throw fail('DOWNLOAD_UNCONFIRMED', 'The package save result could not be confirmed.');
+        return { filename: saved.filename || resource.filename, bytes: resource.bytes, path: saved.path };
+      }
       const bundle = portableBundle(await invoke('library.exportArtifact', { id }), { maxBytes: maxBundleBytes });
       const text = JSON.stringify(bundle), filename = packageFilename(title || bundle.title);
       const saved = await download({ filename, text });

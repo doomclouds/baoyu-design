@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { LibraryError, UUID, artifactId, relativePath, safePath, readBytes, readJson, atomicJson, locked, statOrNull } from './safety.mjs';
 import { INDEX_FILES, contentPath } from './content.mjs';
+import { motionCommentLocation } from './motion-location.mjs';
 import { BINDING_FILE, normalizeEvent } from '../scripts/bridge-core.mjs';
 import { WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOCK_FILE, userRevisionHash } from '../scripts/worker-core.mjs';
 import { getWorkerStatus } from '../scripts/worker-client.mjs';
@@ -23,6 +24,11 @@ export const REQUEST_URI = requestUri;
 
 function eventFor(thread, kind) {
   const event = normalizeEvent(thread);
+  if (kind === 'motion') {
+    if (typeof thread.anchor === 'string' && thread.anchor.length <= 1024) event.data.anchor = thread.anchor;
+    const location = motionCommentLocation(thread.anchor);
+    if (location) { event.data.anchor = thread.anchor; event.data.file = location.file; event.data.location = location; }
+  }
   const canonicalFile = value => {
     relativePath(value);
     // Dashboard annotations name logical DB documents (for example index.html),
@@ -30,6 +36,7 @@ function eventFor(thread, kind) {
     if (kind === 'dashboard' && !contentPath(kind, value) && !value.startsWith('db/') && !value.startsWith('_blobs/')) {
       return /^(?:files|datasets)\//.test(value) ? `db/${value}.json` : `db/files/${value}.json`;
     }
+    if (kind === 'motion' && !contentPath(kind, value) && /^(?:film|modules|assets)\//.test(value)) return `db/${value}.json`;
     return value;
   };
   if (event.data.file !== undefined) event.data.file = canonicalFile(event.data.file);

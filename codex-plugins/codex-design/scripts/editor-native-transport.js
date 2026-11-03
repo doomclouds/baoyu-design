@@ -60,6 +60,9 @@ export function installNativeEditorTransport(configuration, target, installPrevi
   const assetCache = new Map();
   const assetAliases = new Map();
   const assetIds = new Set();
+  const motionJobs = new Set();
+  const maxAssetBytes = (configuration.kind === 'motion' ? 64 : 32) * 1024 * 1024;
+  const maxCachedAssetBytes = (configuration.kind === 'motion' ? 128 : 64) * 1024 * 1024;
   let assetBytes = 0;
   if (target.crypto && typeof target.crypto.randomUUID !== 'function' && typeof target.crypto.getRandomValues === 'function') {
     const randomUUID = () => {
@@ -111,9 +114,9 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     let timer;
     const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); pending.delete(requestId); };
     const abort = () => { cleanup(); reject(signal.reason || new DOMException('Aborted', 'AbortError')); };
-    // A human Save As dialog owns its lifetime. Timing it out here could leave
-    // an apparently failed request that writes a file after the user confirms.
-    if (action !== 'editor.download') timer = setTimeout(() => { cleanup(); reject(Object.assign(new Error('The artwork editor connection timed out.'), { code: 'EDITOR_TRANSPORT_TIMEOUT' })); }, 45_000);
+    // Human confirmation dialogs own their lifetime. A transport timeout could
+    // report failure while a later confirmation still writes the selected file.
+    if (!['editor.download', 'editor.systemSync'].includes(action)) timer = setTimeout(() => { cleanup(); reject(Object.assign(new Error('The artwork editor connection timed out.'), { code: 'EDITOR_TRANSPORT_TIMEOUT' })); }, 45_000);
     pending.set(requestId, { resolve: value => { cleanup(); resolve(value); }, reject: error => { cleanup(); reject(error); } });
     signal?.addEventListener('abort', abort, { once: true });
     target.parent.postMessage({ type: 'codex-design:editor-request', channel, requestId, action, payload }, '*');
@@ -126,13 +129,23 @@ export function installNativeEditorTransport(configuration, target, installPrevi
         // SHA-384 SRI; content-addressed native assets continue to use SHA-256.
         if (name !== 'SHA-256' && name !== 'SHA-384') throw new DOMException('Only SHA-256 and SHA-384 are available in this isolated editor.', 'NotSupportedError');
         const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
-        if (bytes.byteLength > 32 * 1024 * 1024) throw new DOMException('The digest input exceeds the transfer limit.', 'OperationError');
+        if (bytes.byteLength > maxAssetBytes) throw new DOMException('The digest input exceeds the transfer limit.', 'OperationError');
         const result = await rpc('editor.digest', { algorithm: name, base64: bytesToBase64(bytes) });
         return base64ToBytes(result.base64).buffer;
       },
     } });
   }
   const downloads = { async save({ filename, data }) {
+    if (data && typeof data === 'object' && typeof data.exportToken === 'string') {
+      if (readOnly || configuration.kind !== 'motion' || data.artifactId !== configuration.artifactId) throw Object.assign(new Error('The rendered film belongs to a different artwork.'), { code: 'INVALID_DOWNLOAD' });
+      try {
+        return await rpc('editor.download', { filename: filename || data.filename, mimeType: data.mimeType,
+          exportToken: data.exportToken, artifactId: configuration.artifactId });
+      } catch (error) {
+        if (error.code === 'DOWNLOAD_CANCELLED') error.code = 'declined';
+        throw error;
+      }
+    }
     const blob = data instanceof Blob ? data : new Blob([data]);
     try {
       return await rpc('editor.download', { filename: filename || 'download', mimeType: blob.type || 'application/octet-stream', base64: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) });
@@ -415,6 +428,42 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     await Promise.all([...pendingWrites]);
     return true;
   };
+  if (configuration.kind === 'motion' && !readOnly) {
+    target.__CODEX_DESIGN_MOTION_EXPORT__ = async (request, progress, signal) => {
+      if (request?.format !== 'mp4') throw new TypeError('Only the native MP4 renderer is available.');
+      if (signal?.aborted) throw signal.reason || new DOMException('Export cancelled', 'AbortError');
+      await flushEditor();
+      // Always receive the job identity before observing cancellation; otherwise
+      // an aborted start request could leave a renderer with no cancellation id.
+      const options = {};
+      for (const key of ['height', 'fps', 'quality', 'supersample']) if (request.options?.[key] !== undefined) options[key] = request.options[key];
+      const started = await rpc('editor.motionExport', { operation: 'start', format: 'mp4', options });
+      if (typeof started?.jobId !== 'string' || !/^[0-9a-f-]{36}$/i.test(started.jobId)) throw new Error('The Motion export job could not be confirmed.');
+      const jobId = started.jobId;
+      motionJobs.add(jobId);
+      try {
+        for (;;) {
+          if (signal?.aborted) throw signal.reason || new DOMException('Export cancelled', 'AbortError');
+          const result = await rpc('editor.motionExport', { operation: 'status', jobId }, signal);
+          if (result.status === 'completed') {
+            const resource = result.resource;
+            if (!resource || resource.exportToken !== jobId || resource.artifactId !== configuration.artifactId
+              || typeof resource.filename !== 'string' || resource.mimeType !== 'video/mp4'
+              || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1) throw new Error('The rendered MP4 file could not be confirmed.');
+            return resource;
+          }
+          if (result.status === 'failed' || result.status === 'cancelled') throw Object.assign(new Error(result.error?.message || 'The film export did not complete.'), { code: result.error?.code || 'MOTION_EXPORT_FAILED' });
+          if (result.status !== 'running') throw new Error('The film export returned an unknown job state.');
+          if (typeof progress === 'function') progress(result.progress && typeof result.progress === 'object'
+            ? result.progress : { done: 0, total: 1, phase: 'frames' });
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        await rpc('editor.motionExport', { operation: 'cancel', jobId }).catch(() => {});
+        throw error;
+      } finally { motionJobs.delete(jobId); }
+    };
+  }
   target.addEventListener('message', event => {
     const message = event.data;
     if (disposed || event.source !== target.parent || message?.channel !== channel) return;
@@ -489,7 +538,7 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     // strings: upload ids are the first 32 hex digits of their SHA-256 content.
     for (const embedded of new Set(text.match(/data:[a-z0-9.+\/-]+;base64,[A-Za-z0-9+/]+={0,2}/gi) || [])) {
       const base64 = embedded.slice(embedded.indexOf(',') + 1);
-      if (base64.length > 44_739_244) continue;
+      if (base64.length > Math.ceil(maxAssetBytes / 3) * 4) continue;
       const digest = await rpc('editor.digest', { algorithm: 'SHA-256', base64 });
       const id = Array.from(base64ToBytes(digest.base64), value => (value + 256).toString(16).slice(1)).join('').slice(0, 32);
       if (assetIds.has(id)) text = text.split(embedded).join('/_blob/' + id);
@@ -524,6 +573,18 @@ export function installNativeEditorTransport(configuration, target, installPrevi
     if (path === null) return originalFetch(input, init);
     const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
     if (readOnly && !['GET', 'HEAD'].includes(request.method)) throw Object.assign(new Error('Earlier versions are read-only.'), { code: 'EDITOR_PREVIEW_READ_ONLY' });
+    let route;
+    try { route = decodeURIComponent(path.split('?')[0]); } catch { /* The scoped server validates other malformed requests. */ }
+    const systemSync = request.method === 'POST' && /^__ds-sync\/([a-z0-9][a-z0-9_-]{0,63})$/.exec(route || '');
+    if (systemSync) {
+      if (!['slides', 'design'].includes(configuration.kind)) throw Object.assign(new Error('Only slides and canvases install design systems.'), { code: 'SYSTEM_SYNC_UNAVAILABLE' });
+      if (request.signal.aborted) throw request.signal.reason || new DOMException('Aborted', 'AbortError');
+      await flushEditor();
+      const synced = await rpc('editor.systemSync', { namespace: systemSync[1] });
+      const response = new Response(JSON.stringify(synced), { status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+      Object.defineProperty(response, 'url', { value: url });
+      return response;
+    }
     // History remains open while the user edits. Flush again at the actual
     // destructive action, before this restore joins the pending-write barrier.
     if (!['GET', 'HEAD'].includes(request.method) && /^__history\/(?:\d+\/restore|notice\/[^/?]+\/recover)(?:\?|$)/.test(path)) await flushEditor();
@@ -566,13 +627,13 @@ export function installNativeEditorTransport(configuration, target, installPrevi
         const response = await target.fetch(key);
         if (!response.ok) throw new Error('The artwork image or font could not be loaded.');
         const bytes = new Uint8Array(await response.arrayBuffer());
-        if (bytes.byteLength > 32 * 1024 * 1024) throw new Error('The artwork asset exceeds its transfer limit.');
+        if (bytes.byteLength > maxAssetBytes) throw new Error('The artwork asset exceeds its transfer limit.');
         const url = 'data:' + (response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream') + ';base64,' + bytesToBase64(bytes);
         entry.size = bytes.byteLength; entry.ready = true; entry.url = url; assetBytes += entry.size;
         assetIds.add(id);
         assetAliases.set(url, '/_blob/' + id);
         for (const [oldKey, old] of assetCache) {
-          if (assetCache.size <= 128 && assetBytes <= 64 * 1024 * 1024) break;
+          if (assetCache.size <= 128 && assetBytes <= maxCachedAssetBytes) break;
           if (oldKey === key || !old.ready) continue;
           assetCache.delete(oldKey); assetBytes -= old.size; assetAliases.delete(old.url);
         }
@@ -732,12 +793,15 @@ export function installNativeEditorTransport(configuration, target, installPrevi
   }
   target.addEventListener('unload', () => {
     for (const source of sources) source.close();
+    for (const jobId of motionJobs) void rpc('editor.motionExport', { operation: 'cancel', jobId }).catch(() => {});
+    motionJobs.clear();
     disposed = true;
     target.document?.removeEventListener?.('DOMContentLoaded', startPreviews);
     hostTheme.dispose();
     previews?.dispose?.();
     target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
     if (readOnly) delete target.__CODEX_DESIGN_PREVIEW_CLOSE__;
+    if (configuration.kind === 'motion') delete target.__CODEX_DESIGN_MOTION_EXPORT__;
     for (const call of [...pending.values()]) call.reject(Object.assign(new Error('The artwork editor has closed.'), { code: 'EDITOR_CLOSED' }));
   });
   target.addEventListener('error', event => {

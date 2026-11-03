@@ -17,6 +17,8 @@ const skillSources = {
   'codex-design': 'claude-design',
   'codex-design-system': 'claude-design-system',
   'codex-dashboard': 'claude-dashboard',
+  'codex-motion': 'claude-motion',
+  'codex-motion-director': 'motion-director',
   'codex-dataviz': 'dataviz',
 };
 const checkOnly = process.argv.slice(2).includes('--check');

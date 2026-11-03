@@ -68,18 +68,18 @@ function reapDeadReaper(directory, initializationGraceMs) {
   const names = fs.readdirSync(directory);
   const markers = names.filter((name) => name === "owner.json" || /^owner-[A-Za-z0-9-]+\.json$/.test(name));
   if (names.length !== markers.length || markers.length > 1) return;
-  const marker9 = markers[0];
+  const marker10 = markers[0];
   let owner;
-  if (marker9) {
+  if (marker10) {
     try {
-      owner = readJson(path.join(directory, marker9));
+      owner = readJson(path.join(directory, marker10));
     } catch (error3) {
       if (error3.code !== "INVALID_BRIDGE_STATE") throw error3;
     }
   }
   const valid = owner && Number.isInteger(owner.pid) && typeof owner.token === "string" && Number.isFinite(owner.at);
   if (valid ? alive(owner.pid) : Date.now() - stat.mtimeMs <= initializationGraceMs) return;
-  if (marker9) fs.rmSync(path.join(directory, marker9), { force: true });
+  if (marker10) fs.rmSync(path.join(directory, marker10), { force: true });
   try {
     fs.rmdirSync(directory);
   } catch (error3) {
@@ -88,12 +88,12 @@ function reapDeadReaper(directory, initializationGraceMs) {
 }
 function tryReaper(directory, initializationGraceMs) {
   const token = randomUUID();
-  const marker9 = `owner-${token}.json`;
+  const marker10 = `owner-${token}.json`;
   const staging = `${directory}.${process.pid}.${token}.initializing`;
   fs.mkdirSync(staging);
   let published = false;
   try {
-    fs.writeFileSync(path.join(staging, marker9), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
+    fs.writeFileSync(path.join(staging, marker10), JSON.stringify({ pid: process.pid, token, at: Date.now() }), { mode: 384 });
     if (fs.existsSync(directory)) reapDeadReaper(directory, initializationGraceMs);
     if (fs.existsSync(directory)) return null;
     try {
@@ -104,7 +104,7 @@ function tryReaper(directory, initializationGraceMs) {
       throw error3;
     }
     return () => {
-      fs.rmSync(path.join(directory, marker9), { force: true });
+      fs.rmSync(path.join(directory, marker10), { force: true });
       try {
         fs.rmdirSync(directory);
       } catch (error3) {
@@ -113,7 +113,7 @@ function tryReaper(directory, initializationGraceMs) {
     };
   } finally {
     if (!published) {
-      fs.rmSync(path.join(staging, marker9), { force: true });
+      fs.rmSync(path.join(staging, marker10), { force: true });
       try {
         fs.rmdirSync(staging);
       } catch (error3) {
@@ -351,7 +351,7 @@ var init_safety = __esm({
       }
     };
     UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    KINDS = Object.freeze(["slides", "design", "design-system", "dashboard"]);
+    KINDS = Object.freeze(["slides", "design", "design-system", "dashboard", "motion"]);
     cursorFor = (root, parts) => within(root, path2.join(root, ...parts));
   }
 });
@@ -364,16 +364,18 @@ function contentPath(kind, relative) {
   artifactKind(kind);
   const parts = relative.split("/");
   if (parts.some(forbidden)) return false;
+  if (kind === "motion") return /^db\/(?:film|modules|assets)\/[A-Za-z0-9][A-Za-z0-9_.~\-]{0,99}\.json$/.test(relative) || /^_blobs\/[a-f0-9]{32}(?:\.json)?$/.test(relative) || /^src\/.+\.(?:[cm]?js|jsx|tsx?|css|html?|json|md|txt|svg|csv|tsv)$/i.test(relative);
   if (kind !== "dashboard") return parts[0] === "project" && parts.length > 1;
   return parts[0] === "_blobs" && parts.length === 2 || parts[0] === "db" && parts.length >= 3 && ["files", "datasets"].includes(parts[1]) || /^db\/dash\/(?:meta|params|look)\.json$/.test(relative);
 }
 function contentType(relative) {
   const ext = path3.extname(relative).toLowerCase();
-  return { ".html": "text/html", ".md": "text/markdown", ".json": "application/json", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".txt": "text/plain", ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".pdf": "application/pdf" }[ext] || "application/octet-stream";
+  return { ".html": "text/html", ".md": "text/markdown", ".json": "application/json", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".txt": "text/plain", ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf", ".pdf": "application/pdf", ".mp4": "video/mp4", ".webm": "video/webm", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".srt": "application/x-subrip", ".vtt": "text/vtt" }[ext] || "application/octet-stream";
 }
 async function collectContent(root, kind, limits = DEFAULT_LIMITS, { includeBytes = true } = {}) {
   const found = [];
   let total = 0;
+  const maxFileBytes = contentFileLimit(kind, limits);
   const walk = async (relative) => {
     const absolute = await safePath(root, relative, { mustExist: false });
     const info = await statOrNull(absolute);
@@ -388,12 +390,13 @@ async function collectContent(root, kind, limits = DEFAULT_LIMITS, { includeByte
         await walk(child);
       }
     } else if (info.isFile() && contentPath(kind, relative)) {
-      if (info.size > limits.maxFileBytes || total + info.size > limits.maxTotalBytes || found.length >= limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "The artifact exceeds the configured content limits.");
+      if (info.size > maxFileBytes || total + info.size > limits.maxTotalBytes || found.length >= limits.maxFiles) throw new LibraryError("LIMIT_EXCEEDED", "The artifact exceeds the configured content limits.");
       total += info.size;
-      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), modifiedAt: info.mtime.toISOString(), ...includeBytes ? { data: (await readBytes(root, relative, limits.maxFileBytes)).toString("base64"), encoding: "base64" } : {} });
+      found.push({ path: relative, bytes: info.size, contentType: contentType(relative), modifiedAt: info.mtime.toISOString(), ...includeBytes ? { data: (await readBytes(root, relative, maxFileBytes)).toString("base64"), encoding: "base64" } : {} });
     } else if (!info.isFile()) throw new LibraryError("INVALID_CONTENT", "Only regular files are accepted as content.");
   };
-  for (const start of kind === "dashboard" ? ["db/files", "db/datasets", "db/dash/meta.json", "db/dash/params.json", "db/dash/look.json", "_blobs"] : ["project"]) await walk(start);
+  const roots = kind === "motion" ? ["db/film", "db/modules", "db/assets", "_blobs", "src"] : kind === "dashboard" ? ["db/files", "db/datasets", "db/dash/meta.json", "db/dash/params.json", "db/dash/look.json", "_blobs"] : ["project"];
+  for (const start of roots) await walk(start);
   return found;
 }
 function validateFiles(kind, files) {
@@ -411,8 +414,8 @@ function validateFiles(kind, files) {
   };
   const index = json(INDEX_FILES[kind]);
   if (typeof index.title !== "string" || !index.title.trim()) throw new LibraryError("INVALID_CONTENT", "The native index needs a title.");
-  const blobExists = (id) => kind === "dashboard" ? byPath.has("_blobs/" + id) : [...byPath.keys()].some((name) => name.startsWith((kind === "design-system" ? "project/_blobs/" : "project/assets/") + id + "."));
-  for (const file of files) if (/\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path)) {
+  const blobExists = (id) => ["dashboard", "motion"].includes(kind) ? byPath.has("_blobs/" + id) : [...byPath.keys()].some((name) => name.startsWith((kind === "design-system" ? "project/_blobs/" : "project/assets/") + id + "."));
+  for (const file of files) if (/\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) && !(kind === "motion" && file.path.startsWith("src/"))) {
     const text = Buffer.from(file.data, "base64").toString("utf8");
     for (const match of text.matchAll(/\/_blob\/([a-f0-9]{32})\b/g)) if (!blobExists(match[1])) throw new LibraryError("MISSING_CONTENT", "An artwork material referenced by the content is missing.", { path: file.path, blobId: match[1] });
   }
@@ -434,6 +437,15 @@ function validateFiles(kind, files) {
       const name = "project/" + relativePath(font.file);
       if (!byPath.has(name)) throw new LibraryError("MISSING_CONTENT", "A design-system font file is missing.", { path: name });
     }
+  } else if (kind === "motion") {
+    if (index.v !== 1 || Array.from(index.title).length > 120) throw new LibraryError("INVALID_CONTENT", "A Motion film needs v: 1 and a title of at most 120 characters.");
+    const script = json("db/film/script.json");
+    if (typeof script.code !== "string" || !script.code.trim()) throw new LibraryError("INVALID_CONTENT", "A Motion film needs film/script code.");
+    for (const file of files.filter((file2) => /^db\/(?:modules|assets)\//.test(file2.path))) {
+      const document2 = json(file.path);
+      if (file.path.startsWith("db/modules/") && (typeof document2.text !== "string" || document2.kind !== void 0 && !["css", "html", "js", "json", "text"].includes(document2.kind))) throw new LibraryError("INVALID_CONTENT", "A Motion module needs text and a supported kind.", { path: file.path });
+      if (file.path.startsWith("db/assets/") && (typeof document2.ref !== "string" || typeof document2.mime !== "string")) throw new LibraryError("INVALID_CONTENT", "A Motion asset needs a ref and mime.", { path: file.path });
+    }
   } else {
     const page = json("db/files/index.html.json");
     if (typeof page.text !== "string") throw new LibraryError("INVALID_CONTENT", "A dashboard needs files/index.html text.");
@@ -454,23 +466,25 @@ async function writeContent(root, files) {
   }
 }
 function blankContent(kind, title, at2) {
-  const marker9 = { v: 1, at: at2 };
-  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker9, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
-  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker9, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
+  const marker10 = { v: 1, at: at2 };
+  if (kind === "motion") return [entry("db/film/meta.json", { v: 1, title, updatedAt: at2 }), entry("db/film/script.json", { code: 'window.CUT = { width: 1280, height: 720, fps: 30, duration: 3, background: "#fafaf8", init() {}, render() {} };\n' })];
+  if (kind === "slides") return [entry("project/deck.json", { v: 4, createdOnFiles: marker10, lists: "css", title, order: ["cover"], cover: "cover", sections: {}, faces: {}, designSystems: [] }), entry("project/slides/cover.html", '<section id="cover" style="background:#ffffff;color:#20211f;font-family:Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px"></section>\n')];
+  if (kind === "design") return [entry("project/canvas.json", { v: 3, createdOnFiles: marker10, title, launch: { view: "canvas" }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] })];
   if (kind === "design-system") return [
-    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker9, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
+    entry("project/design-system.json", { v: 3, layout: "files", createdOnFiles: marker10, title, namespace: "DesignSystem", libraries: [], sections: {}, groups: [], assetGroups: {}, blobs: {}, docs: { readme: "project/README.md", sections: [] } }),
     entry("project/tokens.json", { name: title, version: 1, color: { themes: [{ id: "light", name: "Light" }], tokens: [] }, type: { fonts: [], families: { sans: "Arial, sans-serif" }, groups: [] }, spacing: { tokens: [] }, radius: { tokens: [] } }),
     entry("project/README.md", "# " + title + "\n"),
     entry("project/components/Cover/preview.html", '<!-- @dsCard group="Overview" height=160 -->\n<div style="min-height:120px"></div>\n')
   ];
   return [entry("db/dash/meta.json", { title }), entry("db/dash/params.json", {}), entry("db/files/index.html.json", { text: '<meta name="dash-one-writer"><style>#dash-root{color:#20211f;background:#fafaf8;font-family:Arial,sans-serif}#dash-root .library-blank-title{color:#20211f;font-size:28px;font-weight:500}</style><h1 class="library-blank-title">' + escape(title) + "</h1>" })];
 }
-var INDEX_FILES, DEFAULT_LIMITS, forbidden, entry, escape;
+var INDEX_FILES, DEFAULT_LIMITS, contentFileLimit, forbidden, entry, escape;
 var init_content = __esm({
   "source/library/content.mjs"() {
     init_safety();
-    INDEX_FILES = Object.freeze({ slides: "project/deck.json", design: "project/canvas.json", "design-system": "project/design-system.json", dashboard: "db/dash/meta.json" });
-    DEFAULT_LIMITS = Object.freeze({ maxFiles: 2048, maxFileBytes: 32 * 1024 * 1024, maxTotalBytes: 128 * 1024 * 1024, maxBundleBytes: 180 * 1024 * 1024 });
+    INDEX_FILES = Object.freeze({ slides: "project/deck.json", design: "project/canvas.json", "design-system": "project/design-system.json", dashboard: "db/dash/meta.json", motion: "db/film/meta.json" });
+    DEFAULT_LIMITS = Object.freeze({ maxFiles: 2048, maxFileBytes: 32 * 1024 * 1024, maxMotionFileBytes: 64 * 1024 * 1024, maxTotalBytes: 128 * 1024 * 1024, maxBundleBytes: 180 * 1024 * 1024 });
+    contentFileLimit = (kind, limits) => kind === "motion" ? limits.maxMotionFileBytes ?? limits.maxFileBytes : limits.maxFileBytes;
     forbidden = (part) => ["comments.json", "node_modules", "_state", "_trash"].includes(part) || part.startsWith(".") && part !== ".image-slots.state.json";
     entry = (file, value) => ({ path: file, encoding: "base64", data: Buffer.from(typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n").toString("base64") });
     escape = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -590,6 +604,7 @@ var init_library = __esm({
         this.root = path5.resolve(root);
         this.isBusy = isBusy;
         this.limits = { ...DEFAULT_LIMITS, ...limits };
+        if (Object.hasOwn(limits, "maxFileBytes") && !Object.hasOwn(limits, "maxMotionFileBytes")) this.limits.maxMotionFileBytes = limits.maxFileBytes;
         if (Object.values(this.limits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new LibraryError("INVALID_OPTION", "Content limits must be positive integers.");
       }
       async initialize() {
@@ -684,10 +699,10 @@ var init_library = __esm({
           const listed = await collectContent(root, record.kind, this.limits, { includeBytes: false });
           const needed = /* @__PURE__ */ new Set([INDEX_FILES[record.kind], "project/tokens.json", "db/files/index.html.json"]);
           const files = [];
-          for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, this.limits.maxFileBytes)).toString("base64") : "" });
-          const native8 = validateFiles(record.kind, files);
+          for (const file of listed) files.push({ ...file, data: needed.has(file.path) || /\.(?:html|css|js|mjs|json|md|svg)$/i.test(file.path) ? (await readBytes(root, file.path, contentFileLimit(record.kind, this.limits))).toString("base64") : "" });
+          const native9 = validateFiles(record.kind, files);
           const changedAt = listed.reduce((latest, file) => file.modifiedAt > latest ? file.modifiedAt : latest, manifest.updatedAt);
-          Object.assign(result, manifest, { title: native8.title, updatedAt: changedAt });
+          Object.assign(result, manifest, { title: native9.title, updatedAt: changedAt });
         } catch (error3) {
           result.contentStatus = ["NOT_FOUND", "MISSING_CONTENT"].includes(error3.code) ? "missing" : "invalid";
           result.contentError = { code: error3.code || "INVALID_CONTENT", message: error3.message };
@@ -795,8 +810,8 @@ var init_library = __esm({
         await this._busy(record);
         const root = await this._artifactPath(record);
         const files = await collectContent(root, record.kind, this.limits);
-        const native8 = validateFiles(record.kind, files);
-        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native8.title, files: files.map(({ path: path14, encoding, data }) => ({ path: path14, encoding, data })) };
+        const native9 = validateFiles(record.kind, files);
+        const bundle = { format: BUNDLE_FORMAT, version: 1, kind: record.kind, title: native9.title, files: files.map(({ path: path17, encoding, data }) => ({ path: path17, encoding, data })) };
         if (Buffer.byteLength(JSON.stringify(bundle)) > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds the configured export limit.");
         return bundle;
       }
@@ -834,17 +849,17 @@ var init_library = __esm({
           if (keys.has(key)) throw new LibraryError("INVALID_BUNDLE", "Duplicate or case-colliding bundle path.");
           keys.add(key);
           if (!contentPath(bundle.kind, relative)) continue;
-          if (file.encoding !== "base64" || typeof file.data !== "string" || file.data.length > Math.ceil(this.limits.maxFileBytes / 3) * 4 || file.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file.data)) throw new LibraryError("INVALID_BUNDLE", "Invalid or oversized base64 file.");
+          if (file.encoding !== "base64" || typeof file.data !== "string" || file.data.length > Math.ceil(contentFileLimit(bundle.kind, this.limits) / 3) * 4 || file.data.length % 4 || /[^A-Za-z0-9+/=]/.test(file.data)) throw new LibraryError("INVALID_BUNDLE", "Invalid or oversized base64 file.");
           const padding = file.data.indexOf("=");
           if (padding >= 0 && (padding < file.data.length - 2 || !/^={1,2}$/.test(file.data.slice(padding)))) throw new LibraryError("INVALID_BUNDLE", "Invalid base64 padding.");
-          const bytes = Buffer.from(file.data, "base64");
+          const bytes2 = Buffer.from(file.data, "base64");
           encoded += file.data.length;
-          total += bytes.length;
-          if (bytes.toString("base64") !== file.data || bytes.length > this.limits.maxFileBytes || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
+          total += bytes2.length;
+          if (bytes2.toString("base64") !== file.data || bytes2.length > contentFileLimit(bundle.kind, this.limits) || total > this.limits.maxTotalBytes || encoded > this.limits.maxBundleBytes) throw new LibraryError("LIMIT_EXCEEDED", "The native bundle exceeds content limits.");
           files.push({ path: relative, encoding: "base64", data: file.data });
         }
-        const native8 = validateFiles(bundle.kind, files);
-        return { kind: bundle.kind, title: native8.title, files };
+        const native9 = validateFiles(bundle.kind, files);
+        return { kind: bundle.kind, title: native9.title, files };
       }
       async _source(sourcePath, kind) {
         if (typeof sourcePath !== "string" || !path5.isAbsolute(sourcePath)) throw new LibraryError("INVALID_PATH", "Choose an absolute source path explicitly.");
@@ -866,8 +881,8 @@ var init_library = __esm({
         const busy = await this.isBusy({ id: null, kind, path: sourcePath });
         if (busy === true || busy?.busy) throw new LibraryError("ARTIFACT_BUSY", "The import source has an active task.");
         const files = await collectContent(sourcePath, kind, this.limits);
-        const native8 = validateFiles(kind, files);
-        return { kind, title: native8.title, files };
+        const native9 = validateFiles(kind, files);
+        return { kind, title: native9.title, files };
       }
       async importArtifact({ bundle, sourcePath, kind, title } = {}) {
         await this._checkRoot();
@@ -891,14 +906,14 @@ var init_library = __esm({
         relativePath(relative);
         if (!contentPath(record.kind, relative)) throw new LibraryError("CONTENT_ONLY", "This route exposes only artwork and material files, not comments, chats, tasks, or runtime bindings.");
         if (!["utf8", "base64"].includes(encoding)) throw new LibraryError("INVALID_OPTION", "Unsupported file encoding.");
-        const root = await this._artifactPath(record), bytes = await readBytes(root, relative, this.limits.maxFileBytes), type = contentType(relative);
+        const root = await this._artifactPath(record), bytes2 = await readBytes(root, relative, contentFileLimit(record.kind, this.limits)), type = contentType(relative);
         if (encoding === "utf8" && !/^(?:text\/|application\/json|image\/svg)/.test(type)) throw new LibraryError("BINARY_ENCODING_REQUIRED", "Read binary material using base64.");
         return {
           path: relative,
           contentType: type,
-          bytes: bytes.length,
-          revision: { sha256: createHash3("sha256").update(bytes).digest("hex"), observedAt: at() },
-          ...encoding === "base64" ? { encoding, data: bytes.toString("base64") } : { text: bytes.toString("utf8") }
+          bytes: bytes2.length,
+          revision: { sha256: createHash3("sha256").update(bytes2).digest("hex"), observedAt: at() },
+          ...encoding === "base64" ? { encoding, data: bytes2.toString("base64") } : { text: bytes2.toString("utf8") }
         };
       }
       async trash(id) {
@@ -962,8 +977,8 @@ var init_library = __esm({
       }
       async _purgeNativeIdle(record, root) {
         const inspected = record.title ? await this._inspect(record) : { ...record, path: root, deleted: true, contentStatus: "missing" };
-        const native8 = await nativeTrashActivity({ ...inspected, path: root });
-        if (native8?.busy) throw new LibraryError("ARTIFACT_BUSY", native8.reason);
+        const native9 = await nativeTrashActivity({ ...inspected, path: root });
+        if (native9?.busy) throw new LibraryError("ARTIFACT_BUSY", native9.reason);
         const external = await this.isBusy(inspected);
         if (external === true || external?.busy) throw new LibraryError("ARTIFACT_BUSY", external?.reason || "An external artwork task still owns this trash item.");
       }
@@ -1373,17 +1388,294 @@ var init_design_system_search = __esm({
   }
 });
 
-// source/library/edit-requests.mjs
+// source/server/design-system-sync.mjs
 import fs5 from "node:fs/promises";
 import path7 from "node:path";
 import { createHash as createHash4, randomUUID as randomUUID4 } from "node:crypto";
+async function assertIdle(root) {
+  const jobs = await readJson2(root, WORKER_JOBS_FILE, { version: 1, jobs: {}, order: [] });
+  if (jobs.version !== 1 || !jobs.jobs || typeof jobs.jobs !== "object" || Array.isArray(jobs.jobs) || !Array.isArray(jobs.order) || Object.values(jobs.jobs).some((job) => !job || !["pending", "active", "completed", "failed", "superseded"].includes(job.status))) {
+    throw fail("DS_SYNC_WORKER_STATE_INVALID", "The artwork task journal cannot be verified; no design-system files were changed.");
+  }
+  const worker = await readJson2(root, WORKER_FILE, null);
+  if (worker && (worker.version !== 1 || !["waiting", "paused", "active"].includes(worker.status))) {
+    throw fail("DS_SYNC_WORKER_STATE_INVALID", "The artwork worker state cannot be verified.");
+  }
+  if (worker?.activeJobId || worker?.status === "active" || Object.values(jobs.jobs).some((job) => ["pending", "active"].includes(job.status))) {
+    throw fail("ARTIFACT_BUSY", "Finish or coordinate the artwork’s active and pending native jobs before syncing its design system.");
+  }
+}
+async function sourceProject(artifact, root, cwd) {
+  if (typeof artifact !== "string" || !artifact) {
+    throw Object.assign(fail("DS_SYNC_SOURCE_UNAVAILABLE", "This installed design system does not name a local source folder."), { reason: "none" });
+  }
+  if (artifact.length > 32e3 || /[\u0000-\u001f\u007f]/.test(artifact)) {
+    throw fail("DS_SYNC_SOURCE_UNAVAILABLE", "This installed design system does not name a local source folder.");
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(artifact)) {
+    throw Object.assign(fail("DS_SYNC_SOURCE_UNAVAILABLE", "This installed design system names a remote source rather than a local folder."), { reason: "remote" });
+  }
+  const candidates = path7.isAbsolute(artifact) ? [artifact] : [path7.resolve(cwd, artifact), path7.resolve(root, artifact), path7.resolve(root, "..", artifact)];
+  if (!path7.isAbsolute(artifact)) {
+    for (let parent = path7.dirname(root); ; parent = path7.dirname(parent)) {
+      candidates.push(path7.resolve(parent, artifact));
+      if (path7.dirname(parent) === parent) break;
+    }
+  }
+  for (const candidate of [...new Set(candidates)]) {
+    const project = path7.basename(candidate) === "project" ? candidate : path7.join(candidate, "project");
+    const info = await statOrNull(project);
+    if (!info || !info.isDirectory() || info.isSymbolicLink()) continue;
+    const canonical = await fs5.realpath(project);
+    const index = await statOrNull(await safePath(canonical, "design-system.json", { mustExist: false }));
+    if (index?.isFile()) return canonical;
+  }
+  throw Object.assign(fail("DS_SYNC_SOURCE_UNAVAILABLE", "The source folder recorded by this installed design system was not found."), { reason: "not-found" });
+}
+async function installedFiles(root, namespace) {
+  const base = `project/ds/${namespace}`;
+  await safePath(root, base, { type: "directory" });
+  const files = [];
+  const walk = async (relative) => {
+    const directory = await safePath(root, relative, { type: "directory" });
+    for (const entry2 of (await fs5.readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const child = `${relative}/${entry2.name}`;
+      relativePath(child);
+      if (entry2.isSymbolicLink()) throw fail("SYMLINK_REFUSED", "Design-system synchronization does not follow symbolic links.");
+      if (entry2.isDirectory()) await walk(child);
+      else if (entry2.isFile()) {
+        if (files.length >= MAX_FILES) throw fail("DS_SYNC_LIMIT_EXCEEDED", "The installed design system exceeds the 2000-file comparison limit.");
+        files.push(child.slice(base.length + 1));
+      } else throw fail("DS_SYNC_INVALID_FILE", "The installed design system contains a nonregular file.");
+    }
+  };
+  await walk(base);
+  return files.sort();
+}
+async function inspect(record, namespace, cwd, capture = false) {
+  if (typeof namespace !== "string" || !NAMESPACE.test(namespace)) throw fail("DS_SYNC_INVALID_NAMESPACE", "Select one installed design-system namespace.");
+  const indexFile = INDEX[record.kind];
+  const indexBytes = await readBytes(record.path, indexFile, 2 * 1024 * 1024);
+  let index;
+  try {
+    index = JSON.parse(indexBytes.toString("utf8"));
+  } catch {
+    throw fail("DS_SYNC_INVALID_INDEX", "The artwork index is not valid JSON.");
+  }
+  if (!index || typeof index !== "object" || Array.isArray(index)) throw fail("DS_SYNC_INVALID_INDEX", "The artwork index must be a JSON object.");
+  const installed = recordsOf(index).filter((item) => item?.namespace === namespace);
+  if (installed.length !== 1) throw fail("DS_SYNC_INVALID_NAMESPACE", "The artwork must contain exactly one record for the selected design-system namespace.");
+  const selected = installed[0];
+  const project = await sourceProject(selected.artifact, record.path, cwd);
+  const sourceIndex = await readBytes(project, "design-system.json", 2 * 1024 * 1024);
+  const changed = [], removed = [], revisions = [], replacements = [];
+  let destinationBytes = 0, sourceBytes = 0;
+  for (const relative of await installedFiles(record.path, namespace)) {
+    const destination = `project/ds/${namespace}/${relative}`;
+    const before = await readBytes(record.path, destination, MAX_FILE_BYTES);
+    destinationBytes += before.length;
+    const sourceFile = await safePath(project, relative, { mustExist: false });
+    const info = await statOrNull(sourceFile);
+    if (info && !info.isFile()) throw fail("DS_SYNC_INVALID_FILE", "A source file changed into a nonregular path.");
+    const after = info ? await readBytes(project, relative, MAX_FILE_BYTES) : null;
+    sourceBytes += after?.length || 0;
+    if (destinationBytes > MAX_TOTAL_BYTES || sourceBytes > MAX_TOTAL_BYTES) throw fail("DS_SYNC_LIMIT_EXCEEDED", "The design-system comparison exceeds the 128 MiB content limit.");
+    const oldHash = sha(before), newHash = after === null ? null : sha(after);
+    revisions.push([relative, oldHash, newHash]);
+    if (after === null) removed.push(relative);
+    else if (oldHash !== newHash) {
+      changed.push(relative);
+      if (capture) replacements.push({ destination, before, after, oldHash, newHash });
+    }
+  }
+  const fingerprint4 = sha(JSON.stringify({ index: sha(indexBytes), sourceIndex: sha(sourceIndex), project, revisions }));
+  return {
+    namespace,
+    source: path7.dirname(project),
+    title: typeof selected.title === "string" ? selected.title : namespace,
+    state: changed.length ? "behind" : "current",
+    changed,
+    removed,
+    fingerprint: fingerprint4,
+    indexFile,
+    indexBytes,
+    index,
+    selected,
+    replacements
+  };
+}
+async function replaceBytes(root, relative, bytes2) {
+  const file = await safePath(root, relative, { type: "file" });
+  const temporary = `${file}.${randomUUID4()}.ds-sync.tmp`;
+  try {
+    await fs5.writeFile(temporary, bytes2, { flag: "wx", mode: (await fs5.stat(file)).mode & 511 });
+    await safePath(root, relative, { type: "file" });
+    await fs5.rename(temporary, file);
+  } finally {
+    await fs5.rm(temporary, { force: true });
+  }
+}
+function createDesignSystemSync({ store, cwd = process.cwd(), now: now3 = Date.now, ttlMs = 5 * 60 * 1e3 } = {}) {
+  if (!store || typeof store.get !== "function" || typeof store.snapshot !== "function") throw new TypeError("A design library store is required.");
+  if (!path7.isAbsolute(cwd) || typeof now3 !== "function" || !Number.isFinite(ttlMs) || ttlMs <= 0) throw new TypeError("Use an absolute resolution directory and a positive confirmation lifetime.");
+  const current = async (supplied) => {
+    await store.initialize();
+    if (!supplied || !UUID.test(supplied.id || "") || !INDEX[supplied.kind] || typeof supplied.path !== "string") throw fail("DS_SYNC_INVALID_ARTIFACT", "Design-system sync requires an existing Slides or Canvas artwork.");
+    const record = await store.get(supplied.id);
+    if (record.deleted || record.kind !== supplied.kind || record.contentStatus !== "ok" || !samePath2(await fs5.realpath(record.path), await fs5.realpath(supplied.path))) throw fail("DS_SYNC_INVALID_ARTIFACT", "The artwork identity or content changed.");
+    return { ...record, path: await fs5.realpath(record.path) };
+  };
+  const lock = async (supplied, action) => {
+    const record = await current(supplied);
+    const lockPath = await safePath(record.path, WORKER_LOCK_FILE, { mustExist: false });
+    return withLock(lockPath, async () => {
+      const fresh = await current(record);
+      await assertIdle(fresh.path);
+      return action(fresh);
+    }, { timeoutMs: 1e4, staleMs: 0 });
+  };
+  const tokenFile = (token) => {
+    if (typeof token !== "string" || !UUID.test(token)) throw fail("DS_SYNC_INVALID_TOKEN", "An explicit design-system confirmation token is required.");
+    return `${TOKEN_DIR}/${token.toLowerCase()}.json`;
+  };
+  return {
+    async status(supplied, namespace) {
+      const record = await current(supplied);
+      try {
+        const diff = await inspect(record, namespace, cwd);
+        return { state: diff.state, changed: diff.changed.length, removed: diff.removed.length, canSync: true };
+      } catch (error3) {
+        if (error3.code === "DS_SYNC_SOURCE_UNAVAILABLE" && ["none", "remote", "not-found"].includes(error3.reason)) {
+          return { state: "unknown", changed: 0, removed: 0, reason: error3.reason };
+        }
+        throw error3;
+      }
+    },
+    async prepare(supplied, namespace) {
+      return lock(supplied, async (record) => {
+        const diff = await inspect(record, namespace, cwd);
+        const confirmationToken = randomUUID4();
+        await atomicJson2(store.root, tokenFile(confirmationToken), {
+          version: 1,
+          artifactId: record.id,
+          kind: record.kind,
+          root: record.path,
+          namespace,
+          cwd,
+          fingerprint: diff.fingerprint,
+          expiresAt: now3() + ttlMs
+        });
+        return { confirmationToken, namespace, changed: diff.changed, removed: diff.removed, source: diff.source, title: diff.title, state: diff.state, canSync: true };
+      });
+    },
+    async apply(supplied, confirmationToken) {
+      return lock(supplied, async (record) => {
+        const relative = tokenFile(confirmationToken);
+        let token;
+        try {
+          token = JSON.parse((await readBytes(store.root, relative, 1024 * 1024)).toString("utf8"));
+        } catch (cause) {
+          if (cause.code === "SYMLINK_REFUSED") throw cause;
+          throw fail("DS_SYNC_INVALID_TOKEN", "The confirmation is missing, invalid or already used. Prepare the changes again.");
+        }
+        if (token?.version !== 1 || token.artifactId !== record.id || token.kind !== record.kind || token.root !== record.path || !NAMESPACE.test(token.namespace || "") || typeof token.cwd !== "string" || !path7.isAbsolute(token.cwd) || !/^[a-f0-9]{64}$/.test(token.fingerprint || "") || !Number.isFinite(token.expiresAt)) throw fail("DS_SYNC_INVALID_TOKEN", "The confirmation does not belong to this artwork.");
+        await fs5.rm(await safePath(store.root, relative, { type: "file" }));
+        if (token.expiresAt <= now3()) throw fail("DS_SYNC_CONFIRMATION_EXPIRED", "The design-system confirmation expired. Review the current changes again.");
+        const diff = await inspect(record, token.namespace, token.cwd, true);
+        if (diff.fingerprint !== token.fingerprint) throw fail("DS_SYNC_STALE", "The source, installed copy or artwork index changed after review. Prepare and confirm the new diff.");
+        if (!diff.changed.length) return { copied: 0, state: diff.state, changed: 0, removed: diff.removed.length, canSync: true, snapshotId: null };
+        const snapshot = await store.snapshot(record.id, { label: `Before design-system sync: ${token.namespace}` });
+        const written = [];
+        try {
+          await assertIdle(record.path);
+          if ((await inspect(record, token.namespace, token.cwd)).fingerprint !== token.fingerprint) throw fail("DS_SYNC_STALE", "The design-system files changed while the recovery point was saved. Review again.");
+          for (const replacement of diff.replacements) {
+            if (sha(await readBytes(record.path, replacement.destination, MAX_FILE_BYTES)) !== replacement.oldHash) throw fail("DS_SYNC_STALE", "An installed file changed before it could be replaced. Review again.");
+            await replaceBytes(record.path, replacement.destination, replacement.after);
+            written.push(replacement);
+          }
+          if (sha(await readBytes(record.path, diff.indexFile, 2 * 1024 * 1024)) !== sha(diff.indexBytes)) throw fail("DS_SYNC_STALE", "The artwork index changed before synchronization finished.");
+          diff.selected.copiedAt = new Date(now3()).toISOString();
+          const original = diff.indexBytes.toString("utf8");
+          const indent = /^\{\n/.test(original) ? /\n( +|\t)"/.exec(original)?.[1] ?? 2 : void 0;
+          await replaceBytes(record.path, diff.indexFile, Buffer.from(JSON.stringify(diff.index, null, indent) + (original.endsWith("\n") ? "\n" : "")));
+        } catch (cause) {
+          for (const replacement of written.reverse()) {
+            try {
+              if (sha(await readBytes(record.path, replacement.destination, MAX_FILE_BYTES)) === replacement.newHash) await replaceBytes(record.path, replacement.destination, replacement.before);
+            } catch {
+            }
+          }
+          throw Object.assign(fail(cause.code || "DS_SYNC_APPLY_FAILED", `Design-system synchronization did not complete. The pre-sync recovery point is ${snapshot.id}. ${cause.message}`), { snapshotId: snapshot.id });
+        }
+        return { copied: diff.changed.length, state: "current", changed: 0, removed: diff.removed.length, canSync: true, snapshotId: snapshot.id };
+      });
+    }
+  };
+}
+var INDEX, NAMESPACE, TOKEN_DIR, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, sha, fail, samePath2, recordsOf;
+var init_design_system_sync = __esm({
+  "source/server/design-system-sync.mjs"() {
+    init_safety();
+    init_bridge_core();
+    init_worker_core();
+    INDEX = { slides: "project/deck.json", design: "project/canvas.json" };
+    NAMESPACE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+    TOKEN_DIR = "_state/design-system-sync";
+    MAX_FILES = 2e3;
+    MAX_FILE_BYTES = 64 * 1024 * 1024;
+    MAX_TOTAL_BYTES = 128 * 1024 * 1024;
+    sha = (value) => createHash4("sha256").update(value).digest("hex");
+    fail = (code, message) => new LibraryError(code, message);
+    samePath2 = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+    recordsOf = (index) => Array.isArray(index.designSystems) ? index.designSystems : index.designSystems && typeof index.designSystems === "object" ? Object.values(index.designSystems) : [];
+  }
+});
+
+// source/library/motion-location.mjs
+function motionCommentLocation(anchor) {
+  if (typeof anchor !== "string" || anchor.length > 1024) return null;
+  const match = /^animation-v1:nth-of-type\(1\) > at-(\d{1,9})ms:nth-of-type\(1\) > (?:to-(\d{1,9})ms:nth-of-type\(1\)|x(\d{4})-y(\d{4}):nth-of-type\(1\)(?: > w(\d{4})-h(\d{4}):nth-of-type\(1\))?)$/.exec(anchor);
+  if (!match) return null;
+  const [, start, end, x, y, width, height] = match;
+  const values = [start, x, y, end, width, height].filter((value) => value !== void 0).map(Number);
+  if (values.some((value) => !Number.isSafeInteger(value)) || end !== void 0 && Number(end) - Number(start) < 200) return null;
+  return {
+    file: "db/film/script.json",
+    anchor,
+    coordinateSpace: "authored",
+    time: Number(start) / 1e3,
+    ...x === void 0 ? {} : { x: Number(x) / 1e4, y: Number(y) / 1e4 },
+    ...end === void 0 ? {} : { timeEnd: Number(end) / 1e3 },
+    ...width === void 0 ? {} : { width: Math.min(1 - Number(x) / 1e4, Number(width) / 1e4), height: Math.min(1 - Number(y) / 1e4, Number(height) / 1e4) }
+  };
+}
+var init_motion_location = __esm({
+  "source/library/motion-location.mjs"() {
+  }
+});
+
+// source/library/edit-requests.mjs
+import fs6 from "node:fs/promises";
+import path8 from "node:path";
+import { createHash as createHash5, randomUUID as randomUUID5 } from "node:crypto";
 function eventFor(thread, kind) {
   const event = normalizeEvent(thread);
+  if (kind === "motion") {
+    if (typeof thread.anchor === "string" && thread.anchor.length <= 1024) event.data.anchor = thread.anchor;
+    const location = motionCommentLocation(thread.anchor);
+    if (location) {
+      event.data.anchor = thread.anchor;
+      event.data.file = location.file;
+      event.data.location = location;
+    }
+  }
   const canonicalFile = (value) => {
     relativePath(value);
     if (kind === "dashboard" && !contentPath(kind, value) && !value.startsWith("db/") && !value.startsWith("_blobs/")) {
       return /^(?:files|datasets)\//.test(value) ? `db/${value}.json` : `db/files/${value}.json`;
     }
+    if (kind === "motion" && !contentPath(kind, value) && /^(?:film|modules|assets)\//.test(value)) return `db/${value}.json`;
     return value;
   };
   if (event.data.file !== void 0) event.data.file = canonicalFile(event.data.file);
@@ -1523,7 +1815,7 @@ function createEditRequestStore({ store } = {}) {
     if (!await statOrNull(directory)) return [];
     await safePath(store.root, DIRECTORY, { type: "directory" });
     const records = [];
-    for (const entry2 of await fs5.readdir(directory)) if (/^[0-9a-f-]{36}\.json$/i.test(entry2)) records.push(await load(entry2.slice(0, -5)));
+    for (const entry2 of await fs6.readdir(directory)) if (/^[0-9a-f-]{36}\.json$/i.test(entry2)) records.push(await load(entry2.slice(0, -5)));
     return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   };
   const current = async (record) => {
@@ -1582,20 +1874,20 @@ function createEditRequestStore({ store } = {}) {
             fileRevisions.push({ path: relative, missing: true, observedAt });
             continue;
           }
-          const bytes = await readBytes(found.root, relative, store.limits.maxFileBytes);
-          fileRevisions.push({ path: relative, sha256: sha(bytes), bytes: bytes.length, observedAt });
+          const bytes2 = await readBytes(found.root, relative, store.limits.maxFileBytes);
+          fileRevisions.push({ path: relative, sha256: sha2(bytes2), bytes: bytes2.length, observedAt });
         }
         const artifact = { id, kind: found.record.kind, title: found.record.title };
         const record = {
           version: 1,
-          id: randomUUID4(),
+          id: randomUUID5(),
           artifactId: id,
           commentId: idOfComment,
           artifact,
           event,
           commentRevision,
           fileRevisions,
-          artifactRevision: sha(JSON.stringify({ artifact, files: fileRevisions.map(({ observedAt: _at, ...file }) => file) })),
+          artifactRevision: sha2(JSON.stringify({ artifact, files: fileRevisions.map(({ observedAt: _at, ...file }) => file) })),
           createdAt: observedAt,
           status: "draft_ready"
         };
@@ -1659,7 +1951,7 @@ function createEditRequestStore({ store } = {}) {
       await ready();
       if (!canonicalSnapshot || !Array.isArray(canonicalSnapshot.threads)) throw new LibraryError("INVALID_COMMENT", "Expected a canonical comment snapshot.");
       const found = await location(id);
-      const lockPath = path7.join(found.root, WORKER_LOCK_FILE);
+      const lockPath = path8.join(found.root, WORKER_LOCK_FILE);
       if ((await statOrNull(lockPath))?.isSymbolicLink()) throw new LibraryError("SYMLINK_REFUSED", "The worker lock must be a real directory.");
       let worker, rawJobs = {};
       try {
@@ -1690,11 +1982,12 @@ function createEditRequestStore({ store } = {}) {
   };
   return api;
 }
-var DIRECTORY, NATIVE_BINDING_FILE2, MAX_COMMENTS_BYTES, MAX_REQUEST_BYTES, MAX_EVENT_BYTES, sha, now2, requestId, commentId, errorSummary, requestUri;
+var DIRECTORY, NATIVE_BINDING_FILE2, MAX_COMMENTS_BYTES, MAX_REQUEST_BYTES, MAX_EVENT_BYTES, sha2, now2, requestId, commentId, errorSummary, requestUri;
 var init_edit_requests = __esm({
   "source/library/edit-requests.mjs"() {
     init_safety();
     init_content();
+    init_motion_location();
     init_bridge_core();
     init_worker_core();
     init_worker_client();
@@ -1703,7 +1996,7 @@ var init_edit_requests = __esm({
     MAX_COMMENTS_BYTES = 4 * 1024 * 1024;
     MAX_REQUEST_BYTES = 512 * 1024;
     MAX_EVENT_BYTES = 256 * 1024;
-    sha = (value) => createHash4("sha256").update(value).digest("hex");
+    sha2 = (value) => createHash5("sha256").update(value).digest("hex");
     now2 = () => (/* @__PURE__ */ new Date()).toISOString();
     requestId = (value) => {
       if (typeof value !== "string" || !UUID.test(value)) throw new LibraryError("INVALID_ID", "Expected an edit request UUID.");
@@ -1735,29 +2028,47 @@ var init_edit_request_dispatch = __esm({
 
 // source/scripts/artifact-command.mjs
 async function verifyEditorInstance(state, root, kind) {
-  const fail4 = (reason) => Object.assign(new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually."), reason ? { reason } : {});
-  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail4();
+  const fail7 = (reason) => Object.assign(new BridgeError("EDITOR_IDENTITY_UNVERIFIED", "The recorded PID was not confirmed by this plugin editor’s live session endpoint. No process was stopped and its records were preserved; inspect the existing editor/process manually."), reason ? { reason } : {});
+  if (!state || !alive(state.pid) || state.kind !== kind || !samePath(state.root, root)) throw fail7();
   let url;
   try {
     const base = new URL(state.url);
-    if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith("/")) throw fail4();
+    if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith("/")) throw fail7();
     url = new URL("__codex/editor-session", base);
   } catch {
-    throw fail4();
+    throw fail7();
   }
   let response;
   try {
     response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
   } catch (error3) {
-    throw fail4(refusedConnection(error3) ? "SESSION_CONNECTION_REFUSED" : void 0);
+    throw fail7(refusedConnection(error3) ? "SESSION_CONNECTION_REFUSED" : void 0);
   }
   try {
-    if (!response.ok) throw fail4();
+    if (!response.ok) throw fail7();
     const session = await response.json();
-    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail4();
+    if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail7();
     return session;
   } catch {
-    throw fail4();
+    throw fail7();
+  }
+}
+async function editorInstanceStopped(state, root, kind) {
+  if (!state || state.kind !== kind || !samePath(state.root, root)) return false;
+  if (!alive(state.pid)) return true;
+  let url;
+  try {
+    const base = new URL(state.url);
+    if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith("/")) return false;
+    url = new URL("__codex/editor-session", base);
+  } catch {
+    return false;
+  }
+  try {
+    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(2e3), headers: { Accept: "application/json" } });
+    return response.status === 404 || response.status === 410;
+  } catch (error3) {
+    return refusedConnection(error3);
   }
 }
 function refusedConnection(error3, seen = /* @__PURE__ */ new Set()) {
@@ -1773,6 +2084,7 @@ var init_artifact_command = __esm({
     init_worker_client();
     init_design_system_search();
     init_library();
+    init_design_system_sync();
     init_safety();
     init_worker_core();
     init_artifact_delivery();
@@ -1783,9 +2095,9 @@ var init_artifact_command = __esm({
 // source/scripts/library-preview.mjs
 init_library();
 init_safety();
-import fs9 from "node:fs";
-import path13 from "node:path";
-import { spawn as spawn3 } from "node:child_process";
+import fs12 from "node:fs";
+import path16 from "node:path";
+import { spawn as spawn4 } from "node:child_process";
 import { fileURLToPath as fileURLToPath4, pathToFileURL } from "node:url";
 
 // source/server/http-preview.mjs
@@ -1793,24 +2105,24 @@ init_library();
 init_safety();
 init_worker_client();
 import http from "node:http";
-import fs8 from "node:fs/promises";
-import path12 from "node:path";
-import { randomBytes, randomUUID as randomUUID8 } from "node:crypto";
+import fs11 from "node:fs/promises";
+import path15 from "node:path";
+import { randomBytes, randomUUID as randomUUID11 } from "node:crypto";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // source/server/service.mjs
 init_bridge_core();
 init_artifact_command();
-import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash9 } from "node:crypto";
+import { spawn as spawn3 } from "node:child_process";
+import { createHash as createHash12 } from "node:crypto";
 import { readFile, lstat } from "node:fs/promises";
-import path11 from "node:path";
+import path14 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // source/library/thumbnail.mjs
 init_safety();
-import path8 from "node:path";
-import { createHash as createHash5 } from "node:crypto";
+import path9 from "node:path";
+import { createHash as createHash6 } from "node:crypto";
 var LIMITS = { maxSourceBytes: 512 * 1024, maxAssetBytes: 2 * 1024 * 1024, maxTotalBytes: 4 * 1024 * 1024, maxDocumentBytes: 6 * 1024 * 1024 };
 var escape2 = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 var decode = (value) => String(value).replace(/&(?:#(x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (match, number) => {
@@ -2053,7 +2365,7 @@ async function createArtifactThumbnail(store, id, options = {}) {
   const record = await store.get(id);
   if (record.contentStatus !== "ok") throw new LibraryError(record.contentError?.code || "ARTIFACT_CONTENT_UNAVAILABLE", "Artwork content is unavailable for a real preview.");
   const listed = await store.listFiles(id), files = new Map(listed.map((file) => [file.path, file]));
-  const hash = createHash5("sha256");
+  const hash = createHash6("sha256");
   hash.update(JSON.stringify({ artifactId: record.id, kind: record.kind, title: record.title, files: listed.map((file) => ({ path: file.path, bytes: file.bytes })).sort((a, b) => a.path < b.path ? -1 : 1) }));
   const read = /* @__PURE__ */ new Map(), assets = /* @__PURE__ */ new Map(), visiting = /* @__PURE__ */ new Set(), notes = [];
   let total = 0;
@@ -2078,13 +2390,13 @@ async function createArtifactThumbnail(store, id, options = {}) {
     resolve(value, base) {
       value = decode(value).trim();
       if (files.has(value)) return value;
-      const blob = /^\/_blob\/([a-f0-9]{32})$/.exec(value)?.[1];
+      const blob = /^\/?_blob\/([a-f0-9]{32})$/.exec(value)?.[1];
       if (blob) {
-        if (record.kind === "dashboard") return files.has("_blobs/" + blob) ? "_blobs/" + blob : null;
+        if (record.kind === "dashboard" || record.kind === "motion") return files.has("_blobs/" + blob) ? "_blobs/" + blob : null;
         return [...files.keys()].find((file) => file.startsWith((record.kind === "design-system" ? "project/_blobs/" : "project/assets/") + blob + ".")) || null;
       }
       if (!value || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(value) || /[\\\u0000-\u001f]/.test(value)) return null;
-      const relative = path8.posix.normalize(path8.posix.join(path8.posix.dirname(base), value.split(/[?#]/)[0]));
+      const relative = path9.posix.normalize(path9.posix.join(path9.posix.dirname(base), value.split(/[?#]/)[0]));
       return files.has(relative) ? relative : null;
     },
     async asset(value, base, purpose) {
@@ -2108,7 +2420,15 @@ async function createArtifactThumbnail(store, id, options = {}) {
         context.note("A recursive image reference was omitted.");
         return null;
       }
-      const info = files.get(file), mime2 = info.contentType || "application/octet-stream";
+      const info = files.get(file);
+      let mime2 = info.contentType || "application/octet-stream";
+      if (record.kind === "motion" && /^_blobs\/[a-f0-9]{32}$/.test(file) && files.has(file + ".json")) {
+        try {
+          const metadata2 = JSON.parse(await context.text(file + ".json"));
+          if (/^(?:image\/(?:png|jpeg|webp|gif|svg\+xml)|font\/(?:woff2?|ttf|otf))$/.test(metadata2.contentType || "")) mime2 = metadata2.contentType;
+        } catch {
+        }
+      }
       if (!(mime2.startsWith("image/") || purpose === "style" && mime2.startsWith("font/")) || info.bytes > limits.maxAssetBytes || total + info.bytes > limits.maxTotalBytes) {
         context.note("An unsupported or large material was omitted.");
         return null;
@@ -2169,6 +2489,37 @@ async function createArtifactThumbnail(store, id, options = {}) {
       fidelity = "content-reference";
       context.note("The design system has no static Cover HTML; this preview quotes actual content.");
     }
+  } else if (record.kind === "motion") {
+    sourceFile = "db/film/meta.json";
+    const meta = await json(sourceFile);
+    if (files.has("db/modules/scenes.json.json")) {
+      const module = await json("db/modules/scenes.json.json");
+      try {
+        const scenes = JSON.parse(module.text);
+        width = dimension(scenes.width ?? scenes.w ?? scenes.size?.width ?? scenes.size?.[0], 1280);
+        height = dimension(scenes.height ?? scenes.h ?? scenes.size?.height ?? scenes.size?.[1], 720);
+      } catch {
+      }
+    }
+    const candidates = [];
+    if (typeof meta.poster === "string") candidates.push({ value: meta.poster, file: sourceFile });
+    if (typeof meta.thumbnail === "string") candidates.push({ value: meta.thumbnail, file: sourceFile });
+    for (const file of [...files.keys()].filter((file2) => /^db\/assets\/(?:poster|thumbnail|cover)(?:\.[A-Za-z0-9]+)?\.json$/i.test(file2)).sort()) {
+      const asset = await json(file);
+      if (typeof asset.ref === "string" && /^image\//.test(asset.mime || "")) candidates.push({ value: asset.ref, file });
+    }
+    for (const file of [...files.keys()].filter((file2) => /^exports\/stills\/[^/]+\.(?:png|jpe?g|webp)$/i.test(file2)).sort()) candidates.push({ value: file, file });
+    let image;
+    for (const candidate of candidates) {
+      image = await context.asset(candidate.value, candidate.file, "image");
+      if (image) {
+        sourceFile = candidate.file;
+        break;
+      }
+    }
+    fidelity = "content-reference";
+    raw = image ? `<div style="width:${width}px;height:${height}px;background:#171717"><img src="${escape2(image)}" alt="${escape2(record.title)}" style="width:100%;height:100%;object-fit:contain"></div>` : `<div style="width:${width}px;height:${height}px;box-sizing:border-box;padding:64px;display:flex;flex-direction:column;justify-content:center;background:#171717;color:#fafaf8;font-family:system-ui"><p style="font-size:20px;color:#b8b8b0">Motion · Title reference</p><h1 style="font-size:58px;line-height:1.25;font-weight:500">${escape2(meta.title || record.title)}</h1><p style="font-size:23px;color:#b8b8b0">No stored poster or still frame</p></div>`;
+    context.note(image ? "This is a stored poster or previously generated still. Film code was not executed or rendered again." : "No stored film frame is available. This cover shows the title only; film code was not executed.");
   } else {
     const page = await json("db/files/index.html.json");
     sourceFile = "db/files/index.html.json";
@@ -2195,68 +2546,69 @@ init_edit_requests();
 
 // source/library/export-store.mjs
 init_safety();
-import fs6 from "node:fs/promises";
+import fs7 from "node:fs/promises";
 import { constants as constants2 } from "node:fs";
 import os2 from "node:os";
-import path9 from "node:path";
-import { createHash as createHash6, randomUUID as randomUUID5 } from "node:crypto";
+import path10 from "node:path";
+import { createHash as createHash7, randomUUID as randomUUID6 } from "node:crypto";
 var MAX_BYTES = 128 * 1024 * 1024;
 var PAGE_SIZE = 200;
 var MAX_ENTRIES = 2e4;
 var TOKEN_MS = 30 * 60 * 1e3;
 var preferenceFile = "_state/export-location.json";
-var sha2 = (value) => createHash6("sha256").update(value).digest("hex");
-var fail = (code, message) => new LibraryError(code, message);
-var samePath2 = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+var sha3 = (value) => createHash7("sha256").update(value).digest("hex");
+var fail2 = (code, message) => new LibraryError(code, message);
+var samePath3 = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 var fingerprint = (stat) => ["dev", "ino", "size", "mode", "mtimeNs", "ctimeNs", "birthtimeNs"].map((key) => String(stat[key])).join(":");
 function absoluteDirectory(value) {
-  if (typeof value !== "string" || !value || value.length > 32e3 || /[\u0000-\u001f\u007f]/.test(value) || !path9.isAbsolute(value)) {
-    throw fail("EXPORT_INVALID_DIRECTORY", "Choose an existing absolute folder path.");
+  if (typeof value !== "string" || !value || value.length > 32e3 || /[\u0000-\u001f\u007f]/.test(value) || !path10.isAbsolute(value)) {
+    throw fail2("EXPORT_INVALID_DIRECTORY", "Choose an existing absolute folder path.");
   }
-  return path9.resolve(value);
+  return path10.resolve(value);
 }
 function exportInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input) || typeof input.requestId !== "string" || !UUID.test(input.requestId)) {
-    throw fail("EXPORT_INVALID_REQUEST", "A unique export request ID is required.");
+    throw fail2("EXPORT_INVALID_REQUEST", "A unique export request ID is required.");
   }
   const filename = input.filename;
   if (typeof filename !== "string" || !filename || filename.length > 240 || process.platform !== "win32" && Buffer.byteLength(filename) > 240 || filename === "." || filename === ".." || /[\u0000-\u001f\u007f<>:"/\\|?*]/.test(filename) || filename.trim() !== filename || /[. ]$/.test(filename) || /^(?:con|conin\$|conout\$|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(filename)) {
-    throw fail("EXPORT_INVALID_FILENAME", "Use a safe filename without path separators or reserved characters.");
+    throw fail2("EXPORT_INVALID_FILENAME", "Use a safe filename without path separators or reserved characters.");
   }
   if (typeof input.mimeType !== "string" || input.mimeType.length > 200 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:;[a-z0-9= -]+)?$/i.test(input.mimeType)) {
-    throw fail("EXPORT_INVALID_CONTENT", "The export file type is invalid.");
+    throw fail2("EXPORT_INVALID_CONTENT", "The export file type is invalid.");
   }
   const hasText = Object.hasOwn(input, "text"), hasBase64 = Object.hasOwn(input, "base64");
-  if (hasText === hasBase64) throw fail("EXPORT_INVALID_CONTENT", "Provide exactly one text or base64 export payload.");
-  let bytes;
+  if (hasText === hasBase64) throw fail2("EXPORT_INVALID_CONTENT", "Provide exactly one text or base64 export payload.");
+  let bytes2;
   if (hasText) {
     if (typeof input.text !== "string" || input.text.length > MAX_BYTES || Buffer.byteLength(input.text) > MAX_BYTES) {
-      throw fail("EXPORT_LIMIT_EXCEEDED", "The export exceeds the 128 MiB save limit.");
+      throw fail2("EXPORT_LIMIT_EXCEEDED", "The export exceeds the 128 MiB save limit.");
     }
-    bytes = Buffer.from(input.text, "utf8");
+    bytes2 = Buffer.from(input.text, "utf8");
   } else {
     if (typeof input.base64 !== "string" || input.base64.length > Math.ceil(MAX_BYTES / 3) * 4 || input.base64.length % 4 || /[^A-Za-z0-9+/=]/.test(input.base64)) {
-      throw fail("EXPORT_INVALID_CONTENT", "The export payload is not bounded, valid base64.");
+      throw fail2("EXPORT_INVALID_CONTENT", "The export payload is not bounded, valid base64.");
     }
     const padding = input.base64.endsWith("==") ? 2 : input.base64.endsWith("=") ? 1 : 0;
     const firstPadding = input.base64.indexOf("=");
-    if (firstPadding !== -1 && firstPadding !== input.base64.length - padding) throw fail("EXPORT_INVALID_CONTENT", "The export padding is invalid.");
-    bytes = Buffer.from(input.base64, "base64");
-    if (bytes.length > MAX_BYTES || bytes.toString("base64") !== input.base64) throw fail("EXPORT_INVALID_CONTENT", "The export payload is not canonical base64.");
+    if (firstPadding !== -1 && firstPadding !== input.base64.length - padding) throw fail2("EXPORT_INVALID_CONTENT", "The export padding is invalid.");
+    bytes2 = Buffer.from(input.base64, "base64");
+    if (bytes2.length > MAX_BYTES || bytes2.toString("base64") !== input.base64) throw fail2("EXPORT_INVALID_CONTENT", "The export payload is not canonical base64.");
   }
   if (input.overwriteToken !== void 0 && (typeof input.overwriteToken !== "string" || !UUID.test(input.overwriteToken))) {
-    throw fail("EXPORT_INVALID_CONFIRMATION", "An explicit overwrite confirmation token is required.");
+    throw fail2("EXPORT_INVALID_CONFIRMATION", "An explicit overwrite confirmation token is required.");
   }
   return {
     requestId: input.requestId.toLowerCase(),
     filename,
     mimeType: input.mimeType,
-    bytes,
+    bytes: bytes2,
+    size: bytes2.length,
     directory: absoluteDirectory(input.directory),
     overwriteToken: input.overwriteToken
   };
 }
-function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6, now: now3 = Date.now, beforeCommit } = {}) {
+function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs7, now: now3 = Date.now, beforeCommit, resolveSource } = {}) {
   if (!store || typeof store.initialize !== "function" || typeof store._checkRoot !== "function") throw new TypeError("A LibraryStore is required.");
   const io = fsImpl;
   const ready = async () => {
@@ -2274,29 +2626,29 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
   const directoryInfo = async (input) => {
     const requested = absoluteDirectory(input), canonical = await io.realpath(requested);
     const stat = await io.lstat(canonical, { bigint: true });
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail("EXPORT_INVALID_DIRECTORY", "The selected location is not a real folder.");
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail2("EXPORT_INVALID_DIRECTORY", "The selected location is not a real folder.");
     return { requested, canonical, identity: `${stat.dev}:${stat.ino}`, stat };
   };
   const assertDirectory = async (info) => {
     const current = await directoryInfo(info.requested);
-    if (!samePath2(current.canonical, info.canonical) || current.identity !== info.identity) {
-      throw fail("EXPORT_DIRECTORY_CHANGED", "The selected folder moved or changed. Choose it again before saving.");
+    if (!samePath3(current.canonical, info.canonical) || current.identity !== info.identity) {
+      throw fail2("EXPORT_DIRECTORY_CHANGED", "The selected folder moved or changed. Choose it again before saving.");
     }
   };
   const targetInfo = async (target) => {
     const stat = await statOrNull2(target);
     if (!stat) return null;
-    if (stat.isSymbolicLink() || !stat.isFile()) throw fail("EXPORT_UNSAFE_TARGET", "The destination must be a regular file, not a link or folder.");
+    if (stat.isSymbolicLink() || !stat.isFile()) throw fail2("EXPORT_UNSAFE_TARGET", "The destination must be a regular file, not a link or folder.");
     return { fingerprint: fingerprint(stat), size: Number(stat.size), modifiedAt: new Date(Number(stat.mtimeMs)).toISOString() };
   };
   const matchesPayload = async (target, request, contentHash) => {
     const info = await targetInfo(target);
-    if (!info || info.size !== request.bytes.length) return false;
+    if (!info || info.size !== request.size) return false;
     const handle = await io.open(target, constants2.O_RDONLY | (constants2.O_NOFOLLOW || 0));
     try {
       const opened = await handle.stat({ bigint: true });
       if (!opened.isFile() || fingerprint(opened) !== info.fingerprint) return false;
-      const hash = createHash6("sha256").update(request.mimeType + "\0");
+      const hash = createHash7("sha256").update(request.mimeType + "\0");
       const buffer = Buffer.alloc(64 * 1024);
       for (let position = 0; position < info.size; ) {
         const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, info.size - position), position);
@@ -2317,8 +2669,9 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
       status: "confirmation",
       target,
       contentHash,
+      ...request.sourceBinding ? { sourceBinding: request.sourceBinding } : {},
       existingFingerprint: existing.fingerprint,
-      overwriteToken: randomUUID5(),
+      overwriteToken: randomUUID6(),
       expiresAt: now3() + TOKEN_MS
     };
     await atomicJson2(store.root, receiptPath(request.requestId), receipt);
@@ -2330,20 +2683,35 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
       existing: { size: existing.size, modifiedAt: existing.modifiedAt }
     };
   };
+  const recover = async (previous, request, target, contentHash, folder) => {
+    if (previous?.status === "saved") {
+      if (previous.result?.saved !== true || previous.result.path !== target || previous.result.filename !== request.filename || previous.result.bytes !== request.size) throw fail2("EXPORT_INVALID_STATE", "The saved export receipt cannot be verified.");
+      if (!await matchesPayload(target, request, contentHash)) throw fail2("EXPORT_RESULT_CHANGED", "This export was saved earlier, but the destination has since changed. Start a new export before choosing whether to replace it.");
+      return { ...previous.result, duplicate: true };
+    }
+    if (previous?.status === "committing" && await matchesPayload(target, request, contentHash)) {
+      const result = { saved: true, path: target, filename: request.filename, bytes: request.size };
+      await atomicJson2(store.root, receiptPath(request.requestId), { ...previous, status: "saved", result, savedAt: new Date(now3()).toISOString() });
+      await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
+      });
+      return { ...result, duplicate: true };
+    }
+    return null;
+  };
   const api = {
     async locations() {
       await ready();
       const candidates = [
         ["home", "Home", homeDirectory],
-        ["desktop", "Desktop", path9.join(homeDirectory, "Desktop")],
-        ["documents", "Documents", path9.join(homeDirectory, "Documents")],
-        ["downloads", "Downloads", path9.join(homeDirectory, "Downloads")]
+        ["desktop", "Desktop", path10.join(homeDirectory, "Desktop")],
+        ["documents", "Documents", path10.join(homeDirectory, "Documents")],
+        ["downloads", "Downloads", path10.join(homeDirectory, "Downloads")]
       ];
       const locations = [];
       for (const [id, label, candidate] of candidates) {
         try {
           const folder = await directoryInfo(candidate);
-          if (!locations.some((item) => samePath2(item.path, folder.canonical))) locations.push({ id, label, path: folder.canonical });
+          if (!locations.some((item) => samePath3(item.path, folder.canonical))) locations.push({ id, label, path: folder.canonical });
         } catch (error3) {
           if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EXPORT_INVALID_DIRECTORY"].includes(error3.code)) throw error3;
         }
@@ -2365,7 +2733,7 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
     },
     async listDirectory({ path: selected, cursor } = {}) {
       await ready();
-      const folder = await directoryInfo(selected), key = sha2(folder.canonical), revision = `${folder.stat.ino}:${folder.stat.mtimeNs}`;
+      const folder = await directoryInfo(selected), key = sha3(folder.canonical), revision = `${folder.stat.ino}:${folder.stat.mtimeNs}`;
       let offset = 0;
       if (cursor !== void 0) {
         let value;
@@ -2373,10 +2741,10 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
           if (typeof cursor !== "string" || cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error("cursor");
           value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
         } catch {
-          throw fail("EXPORT_INVALID_CURSOR", "The folder page cursor is invalid.");
+          throw fail2("EXPORT_INVALID_CURSOR", "The folder page cursor is invalid.");
         }
         if (value.key !== key || value.revision !== revision || !Number.isSafeInteger(value.offset) || value.offset < 0 || value.offset > MAX_ENTRIES) {
-          throw fail("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
+          throw fail2("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
         }
         offset = value.offset;
       }
@@ -2384,13 +2752,13 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
       let count = 0;
       const directory = await io.opendir(folder.canonical);
       for await (const entry2 of directory) {
-        if (++count > MAX_ENTRIES) throw fail("EXPORT_DIRECTORY_TOO_LARGE", "This folder contains too many items. Enter a more specific folder path.");
-        if (entry2.isDirectory() && !entry2.isSymbolicLink()) entries.push({ name: entry2.name, path: path9.join(folder.canonical, entry2.name) });
+        if (++count > MAX_ENTRIES) throw fail2("EXPORT_DIRECTORY_TOO_LARGE", "This folder contains too many items. Enter a more specific folder path.");
+        if (entry2.isDirectory() && !entry2.isSymbolicLink()) entries.push({ name: entry2.name, path: path10.join(folder.canonical, entry2.name) });
       }
       entries.sort((a, b) => a.name.localeCompare(b.name, "en"));
       await assertDirectory(folder);
-      if ((await directoryInfo(folder.requested)).stat.mtimeNs !== folder.stat.mtimeNs) throw fail("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
-      const parentPath = path9.dirname(folder.canonical);
+      if ((await directoryInfo(folder.requested)).stat.mtimeNs !== folder.stat.mtimeNs) throw fail2("EXPORT_DIRECTORY_CHANGED", "The folder changed. Refresh it before continuing.");
+      const parentPath = path10.dirname(folder.canonical);
       return {
         path: folder.canonical,
         parent: parentPath === folder.canonical ? null : parentPath,
@@ -2399,43 +2767,64 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
       };
     },
     async save(input) {
-      const request = exportInput(input);
+      const fileSource = input && Object.hasOwn(input, "exportToken");
+      if (fileSource && (!UUID.test(input.exportToken ?? "") || !UUID.test(input.artifactId ?? "") || Object.hasOwn(input, "text") || Object.hasOwn(input, "base64") || typeof resolveSource !== "function")) throw fail2("EXPORT_INVALID_CONTENT", "The rendered export reference is invalid.");
+      const request = exportInput(fileSource ? { ...input, base64: "" } : input);
       await ready();
       return locked(store.root, async () => {
-        const folder = await directoryInfo(request.directory), target = path9.join(folder.canonical, request.filename);
-        const contentHash = createHash6("sha256").update(request.mimeType + "\0").update(request.bytes).digest("hex");
+        const folder = await directoryInfo(request.directory), target = path10.join(folder.canonical, request.filename);
         const previous = await readJson2(store.root, receiptPath(request.requestId), null);
-        if (previous && (previous.version !== 1 || previous.requestId !== request.requestId || !["confirmation", "committing", "saved"].includes(previous.status) || typeof previous.target !== "string" || !path9.isAbsolute(previous.target) || !/^[a-f0-9]{64}$/.test(previous.contentHash ?? "") || previous.status === "confirmation" && (!UUID.test(previous.overwriteToken ?? "") || !Number.isSafeInteger(previous.expiresAt) || typeof previous.existingFingerprint !== "string" || previous.existingFingerprint.length > 1e3))) {
-          throw fail("EXPORT_INVALID_STATE", "The previous export receipt cannot be verified.");
+        if (previous && (previous.version !== 1 || previous.requestId !== request.requestId || !["confirmation", "committing", "saved"].includes(previous.status) || typeof previous.target !== "string" || !path10.isAbsolute(previous.target) || !/^[a-f0-9]{64}$/.test(previous.contentHash ?? "") || previous.status === "confirmation" && (!UUID.test(previous.overwriteToken ?? "") || !Number.isSafeInteger(previous.expiresAt) || typeof previous.existingFingerprint !== "string" || previous.existingFingerprint.length > 1e3))) {
+          throw fail2("EXPORT_INVALID_STATE", "The previous export receipt cannot be verified.");
         }
-        if (previous && (!samePath2(previous.target, target) || previous.contentHash !== contentHash)) {
-          throw fail("EXPORT_REQUEST_CONFLICT", "This export ID already belongs to different content or a different destination.");
+        if (fileSource && previous?.sourceBinding) {
+          const binding = previous.sourceBinding;
+          if (binding.exportToken !== input.exportToken || binding.artifactId !== input.artifactId || binding.mimeType !== request.mimeType || !Number.isSafeInteger(binding.size) || binding.size < 1 || binding.size > 2 * 1024 * 1024 * 1024 || !samePath3(previous.target, target)) throw fail2("EXPORT_REQUEST_CONFLICT", "This export ID belongs to a different rendered file or destination.");
+          request.size = binding.size;
+          const restored2 = await recover(previous, request, target, previous.contentHash, folder);
+          if (restored2) return restored2;
         }
-        if (previous?.status === "saved") {
-          if (previous.result?.saved !== true || previous.result.path !== target || previous.result.filename !== request.filename || previous.result.bytes !== request.bytes.length) {
-            throw fail("EXPORT_INVALID_STATE", "The saved export receipt cannot be verified.");
-          }
-          if (!await matchesPayload(target, request, contentHash)) throw fail("EXPORT_RESULT_CHANGED", "This export was saved earlier, but the destination has since changed. Start a new export before choosing whether to replace it.");
-          return { ...previous.result, duplicate: true };
+        if (fileSource) {
+          const source = await resolveSource(input.exportToken, input.artifactId);
+          if (!source || !path10.isAbsolute(source.path ?? "") || source.mimeType !== request.mimeType || !Number.isSafeInteger(source.size) || source.size < 1 || source.size > 2 * 1024 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(source.contentHash ?? "") || typeof source.fingerprint !== "string") throw fail2("EXPORT_INVALID_CONTENT", "The rendered export could not be verified.");
+          request.source = source;
+          request.size = source.size;
+          request.sourceBinding = { exportToken: input.exportToken, artifactId: input.artifactId, mimeType: request.mimeType, size: source.size };
         }
-        if (previous?.status === "committing" && await matchesPayload(target, request, contentHash)) {
-          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
-          await atomicJson2(store.root, receiptPath(request.requestId), { ...previous, status: "saved", result, savedAt: new Date(now3()).toISOString() });
-          await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
-          });
-          return { ...result, duplicate: true };
+        const contentHash = request.source?.contentHash ?? createHash7("sha256").update(request.mimeType + "\0").update(request.bytes).digest("hex");
+        if (previous && (!samePath3(previous.target, target) || previous.contentHash !== contentHash)) {
+          throw fail2("EXPORT_REQUEST_CONFLICT", "This export ID already belongs to different content or a different destination.");
         }
+        const restored = await recover(previous, request, target, contentHash, folder);
+        if (restored) return restored;
         let existing = await targetInfo(target);
         if (existing) {
           if (!request.overwriteToken || previous?.status !== "confirmation" || previous.overwriteToken !== request.overwriteToken || previous.expiresAt < now3() || previous.existingFingerprint !== existing.fingerprint) {
             return collision(request, target, contentHash, existing);
           }
         }
-        const temporary = path9.join(folder.canonical, `.codex-export-${randomUUID5()}.tmp`);
+        const temporary = path10.join(folder.canonical, `.codex-export-${randomUUID6()}.tmp`);
         let handle;
         try {
           handle = await io.open(temporary, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL | (constants2.O_NOFOLLOW || 0), 384);
-          await handle.writeFile(request.bytes);
+          if (request.source) {
+            const source = await io.open(request.source.path, constants2.O_RDONLY | (constants2.O_NOFOLLOW || 0));
+            try {
+              if (fingerprint(await source.stat({ bigint: true })) !== request.source.fingerprint) throw fail2("EXPORT_SOURCE_CHANGED", "The rendered movie changed. Render it again before saving.");
+              const hash = createHash7("sha256").update(request.mimeType + "\0"), buffer = Buffer.alloc(64 * 1024);
+              for (let position = 0; position < request.size; ) {
+                const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, request.size - position), position);
+                if (!bytesRead) throw fail2("EXPORT_SOURCE_CHANGED", "The rendered movie is incomplete.");
+                const chunk = buffer.subarray(0, bytesRead);
+                hash.update(chunk);
+                await handle.writeFile(chunk);
+                position += bytesRead;
+              }
+              if (hash.digest("hex") !== contentHash || fingerprint(await source.stat({ bigint: true })) !== request.source.fingerprint) throw fail2("EXPORT_SOURCE_CHANGED", "The rendered movie changed while saving.");
+            } finally {
+              await source.close();
+            }
+          } else await handle.writeFile(request.bytes);
           await handle.sync();
           await handle.close();
           handle = null;
@@ -2444,10 +2833,10 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
           const latest = await targetInfo(target);
           if (existing && (!latest || latest.fingerprint !== existing.fingerprint)) {
             if (latest) return collision(request, target, contentHash, latest);
-            throw fail("EXPORT_TARGET_CHANGED", "The file changed before replacement. Choose the destination again.");
+            throw fail2("EXPORT_TARGET_CHANGED", "The file changed before replacement. Choose the destination again.");
           }
           if (!existing && latest) return collision(request, target, contentHash, latest);
-          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "committing", target, contentHash });
+          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "committing", target, contentHash, ...request.sourceBinding ? { sourceBinding: request.sourceBinding } : {} });
           if (existing) await io.rename(temporary, target);
           else {
             try {
@@ -2461,8 +2850,8 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
               } else throw error3;
             }
           }
-          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
-          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "saved", target, contentHash, result, savedAt: new Date(now3()).toISOString() });
+          const result = { saved: true, path: target, filename: request.filename, bytes: request.size };
+          await atomicJson2(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: "saved", target, contentHash, result, savedAt: new Date(now3()).toISOString(), ...request.sourceBinding ? { sourceBinding: request.sourceBinding } : {} });
           await atomicJson2(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {
           });
           return result;
@@ -2487,7 +2876,7 @@ function createExportStore({ store, homeDirectory = os2.homedir(), fsImpl = fs6,
 init_safety();
 
 // source/server/editor-transport.mjs
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 
 // source/scripts/base64.mjs
 function isValidBase64(value) {
@@ -2497,46 +2886,46 @@ function isValidBase64(value) {
 }
 
 // source/server/editor-transport.mjs
-var fail2 = (code, message) => Object.assign(new Error(message), { code });
+var fail3 = (code, message) => Object.assign(new Error(message), { code });
 var METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
 var REQUEST_HEADERS = /* @__PURE__ */ new Set(["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename", "x-deck-client"]);
 var RESPONSE_HEADERS = ["content-type", "content-disposition", "etag", "last-modified", "cache-control", "content-security-policy", "referrer-policy", "x-content-type-options"];
 var MAX_BODY = 32 * 1024 * 1024;
 var MAX_RESPONSE = 64 * 1024 * 1024;
-function validateEditorRequest(request = {}) {
-  if (!request || typeof request !== "object" || Array.isArray(request)) throw fail2("INVALID_EDITOR_REQUEST", "An editor request object is required.");
+function validateEditorRequest(request = {}, { maxBodyBytes = MAX_BODY } = {}) {
+  if (!request || typeof request !== "object" || Array.isArray(request)) throw fail3("INVALID_EDITOR_REQUEST", "An editor request object is required.");
   const method = String(request.method || "GET").toUpperCase();
-  if (!METHODS.has(method)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
+  if (!METHODS.has(method)) throw fail3("INVALID_EDITOR_REQUEST", "Unsupported editor request method.");
   const headers = new Headers();
-  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
+  if (request.headers && (typeof request.headers !== "object" || Array.isArray(request.headers))) throw fail3("INVALID_EDITOR_REQUEST", "Invalid editor request headers.");
   for (const [name, value] of Object.entries(request.headers || {})) {
-    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail2("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
-    if (name.toLowerCase() === "x-deck-client" && !/^[A-Za-z0-9_-]{8,64}$/.test(value)) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor client identity.");
+    if (!REQUEST_HEADERS.has(name.toLowerCase()) || typeof value !== "string" || value.length > 4096 || /[\r\n]/.test(value)) throw fail3("INVALID_EDITOR_REQUEST", "Unsupported editor request header.");
+    if (name.toLowerCase() === "x-deck-client" && !/^[A-Za-z0-9_-]{8,64}$/.test(value)) throw fail3("INVALID_EDITOR_REQUEST", "Invalid editor client identity.");
     headers.set(name, value);
   }
   let body;
   if (request.body !== void 0) {
-    if (typeof request.body !== "string" || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    if (typeof request.body !== "string" || request.body.length > Math.ceil(maxBodyBytes / 3) * 4 || !isValidBase64(request.body)) throw fail3("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
     body = Buffer.from(request.body, "base64");
-    if (body.length > MAX_BODY || method === "GET" || method === "HEAD") throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
+    if (body.length > maxBodyBytes || method === "GET" || method === "HEAD") throw fail3("INVALID_EDITOR_REQUEST", "Invalid editor request body.");
   }
   return { method, headers, body };
 }
 function editorRequestUrl(base, relative) {
   const root = new URL(base);
-  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail2("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
-  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail2("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
-  const path14 = relative.split(/[?#]/, 1)[0];
+  if (root.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(root.hostname) || root.username || root.password || !root.pathname.endsWith("/")) throw fail3("INVALID_EDITOR_URL", "An authenticated local editor session is required.");
+  if (typeof relative !== "string" || relative.length > 4096 || /[\\\u0000-\u0020]/.test(relative) || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) throw fail3("INVALID_EDITOR_REQUEST", "Only a request inside this artwork editor is accepted.");
+  const path17 = relative.split(/[?#]/, 1)[0];
   let decoded;
   try {
-    decoded = decodeURIComponent(path14);
+    decoded = decodeURIComponent(path17);
   } catch {
-    throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
+    throw fail3("INVALID_EDITOR_REQUEST", "Invalid editor request encoding.");
   }
-  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded) || decoded.split("/").some((part) => part === "." || part === "..") || /%2f|%5c|%2e/i.test(decoded)) throw fail3("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
   const target = new URL(relative, root);
-  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail2("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
-  if (decoded.split("/").filter(Boolean)[0] === "__share") throw fail2("EDITOR_NETWORK_SHARING_UNAVAILABLE", "Network sharing and raw folder archives are not available through this native editor.");
+  if (target.origin !== root.origin || !target.pathname.startsWith(root.pathname) || target.hash) throw fail3("INVALID_EDITOR_REQUEST", "Editor requests cannot escape their artwork session.");
+  if (decoded.split("/").filter(Boolean)[0] === "__share") throw fail3("EDITOR_NETWORK_SHARING_UNAVAILABLE", "Network sharing and raw folder archives are not available through this native editor.");
   return target;
 }
 async function limitedBody(response, limit) {
@@ -2545,7 +2934,7 @@ async function limitedBody(response, limit) {
   let size = 0;
   for await (const chunk of response.body) {
     size += chunk.byteLength;
-    if (size > limit) throw fail2("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
+    if (size > limit) throw fail3("EDITOR_RESPONSE_TOO_LARGE", "The editor response exceeds the transfer limit.");
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, size);
@@ -2555,8 +2944,8 @@ function previewReadUrl(editor, url, method) {
   const relative = url.pathname.slice(root.pathname.length);
   const preview = /^v\/([1-9][0-9]{0,8})\/(.*)$/.exec(relative);
   if (!preview) return url;
-  if (!["GET", "HEAD"].includes(method)) throw fail2("EDITOR_PREVIEW_READ_ONLY", "Earlier versions are read-only.");
-  if (editor.kind !== "dashboard") return url;
+  if (!["GET", "HEAD"].includes(method)) throw fail3("EDITOR_PREVIEW_READ_ONLY", "Earlier versions are read-only.");
+  if (!["dashboard", "motion"].includes(editor.kind)) return url;
   const translated = editorRequestUrl(root.href, preview[2] + url.search);
   translated.searchParams.set("at", preview[1]);
   return translated;
@@ -2602,7 +2991,7 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
     try {
       for await (const chunk of stream.response.body) {
         buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
-        if (buffer.length > 4 * 1024 * 1024) throw fail2("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
+        if (buffer.length > 4 * 1024 * 1024) throw fail3("EDITOR_EVENT_TOO_LARGE", "The editor event exceeds the transfer limit.");
         let end;
         while ((end = buffer.indexOf("\n\n")) >= 0) {
           record(buffer.slice(0, end));
@@ -2620,21 +3009,21 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
   return {
     async request(id, request = {}) {
       const { url: granted, editor } = await get(id, request.path);
-      const { method, headers, body } = validateEditorRequest(request);
+      const { method, headers, body } = validateEditorRequest(request, { maxBodyBytes: editor.kind === "motion" ? 64 * 1024 * 1024 : MAX_BODY });
       const url = previewReadUrl(editor, granted, method);
       headers.set("origin", url.origin);
       const response = await fetcher(url, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(3e4) });
       if (response.headers.get("content-type")?.includes("text/event-stream")) {
         await response.body?.cancel();
-        throw fail2("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
+        throw fail3("INVALID_EDITOR_REQUEST", "Use the editor event subscription for a live stream.");
       }
-      const bytes = await limitedBody(response, MAX_RESPONSE);
-      return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes.toString("base64") };
+      const bytes2 = await limitedBody(response, MAX_RESPONSE);
+      return { status: response.status, statusText: response.statusText, headers: Object.fromEntries(RESPONSE_HEADERS.flatMap((name) => response.headers.has(name) ? [[name, response.headers.get(name)]] : [])), body: bytes2.toString("base64") };
     },
-    async openEvents(id, path14) {
-      const { url: granted, editor } = await get(id, path14);
+    async openEvents(id, path17) {
+      const { url: granted, editor } = await get(id, path17);
       const url = previewReadUrl(editor, granted, "GET");
-      if (!/(?:^|\/)events$/.test(url.pathname)) throw fail2("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
+      if (!/(?:^|\/)events$/.test(url.pathname)) throw fail3("INVALID_EDITOR_REQUEST", "Only editor event endpoints can be subscribed.");
       const abort = new AbortController();
       let response;
       const startup = setTimeout(() => abort.abort(), 1e4);
@@ -2645,9 +3034,9 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
       }
       if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
         abort.abort();
-        throw fail2("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
+        throw fail3("EDITOR_EVENTS_FAILED", "The local editor did not open its event stream.");
       }
-      const stream = { id: randomUUID6(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
+      const stream = { id: randomUUID7(), artifactId: id, response, abort, events: [], cursor: 0, waiters: /* @__PURE__ */ new Set(), closed: false, ended: false };
       streams.set(stream.id, stream);
       touch(stream);
       void pump(stream);
@@ -2655,8 +3044,8 @@ function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 12e4 } = {
     },
     async pollEvents(id, subscriptionId, cursor = 0) {
       const stream = streams.get(subscriptionId);
-      if (!stream || stream.artifactId !== id || stream.closed) throw fail2("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
-      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail2("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
+      if (!stream || stream.artifactId !== id || stream.closed) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "The editor event subscription has closed.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail3("INVALID_EDITOR_REQUEST", "Invalid editor event cursor.");
       touch(stream);
       if (!stream.ended && stream.cursor <= cursor) await new Promise((resolve) => {
         const wake = () => {
@@ -2901,8 +3290,8 @@ function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
     if (action === "editor.digest") {
       const text = payload.base64;
       if (payload.algorithm !== "SHA-256" || typeof text !== "string" || text.length > 44739244 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text)) throw failure3("PREVIEW_READ_ONLY", "Only a bounded SHA-256 digest is available.");
-      const bytes = target.atob(text);
-      if (bytes.length > 32 * 1024 * 1024 || target.btoa(bytes) !== text) throw failure3("PREVIEW_READ_ONLY", "Invalid preview digest payload.");
+      const bytes2 = target.atob(text);
+      if (bytes2.length > 32 * 1024 * 1024 || target.btoa(bytes2) !== text) throw failure3("PREVIEW_READ_ONLY", "Invalid preview digest payload.");
       return { algorithm: "SHA-256", base64: text };
     }
     if (action === "editor.events.open") return { path: historyPath(entry2, payload.path, true) };
@@ -2961,12 +3350,12 @@ function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
   };
   const resultFor = (entry2, id, cached, answer) => {
     if (!alive3(entry2)) return answer;
-    const bytes = new TextEncoder().encode(JSON.stringify(answer)).byteLength;
-    if (bytes > MAX_CACHE_BYTES) throw failure3("PREVIEW_TOO_LARGE", "The preview response exceeds its transfer limit.");
-    trimCache(entry2, bytes, id);
-    if (entry2.cacheBytes + bytes <= MAX_CACHE_BYTES) {
-      cached.bytes += bytes;
-      entry2.cacheBytes += bytes;
+    const bytes2 = new TextEncoder().encode(JSON.stringify(answer)).byteLength;
+    if (bytes2 > MAX_CACHE_BYTES) throw failure3("PREVIEW_TOO_LARGE", "The preview response exceeds its transfer limit.");
+    trimCache(entry2, bytes2, id);
+    if (entry2.cacheBytes + bytes2 <= MAX_CACHE_BYTES) {
+      cached.bytes += bytes2;
+      entry2.cacheBytes += bytes2;
     } else cached.evictWhenSettled = true;
     return answer;
   };
@@ -2999,25 +3388,25 @@ function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
     try {
       const payload = validate(entry2, message.action, message.payload);
       const signature = message.action + ":" + JSON.stringify(payload);
-      const bytes = new TextEncoder().encode(signature).byteLength;
-      if (bytes > MAX_PENDING_BYTES) throw failure3("PREVIEW_BUSY", "The preview request exceeds its transfer limit.");
+      const bytes2 = new TextEncoder().encode(signature).byteLength;
+      if (bytes2 > MAX_PENDING_BYTES) throw failure3("PREVIEW_BUSY", "The preview request exceeds its transfer limit.");
       let cached = entry2.requests.get(message.requestId);
       if (cached && cached.signature !== signature) throw failure3("PREVIEW_REQUEST_CONFLICT", "A preview request identifier was reused with different content.");
       if (!cached) {
-        if (entry2.pending >= MAX_PENDING || entry2.pendingBytes + bytes > MAX_PENDING_BYTES) throw failure3("PREVIEW_BUSY", "The preview has too many pending reads.");
-        trimCache(entry2, bytes);
-        if (entry2.requests.size >= MAX_CACHE || entry2.cacheBytes + bytes > MAX_CACHE_BYTES) throw failure3("PREVIEW_BUSY", "The preview request cache is full.");
-        cached = { signature, settled: false, bytes };
+        if (entry2.pending >= MAX_PENDING || entry2.pendingBytes + bytes2 > MAX_PENDING_BYTES) throw failure3("PREVIEW_BUSY", "The preview has too many pending reads.");
+        trimCache(entry2, bytes2);
+        if (entry2.requests.size >= MAX_CACHE || entry2.cacheBytes + bytes2 > MAX_CACHE_BYTES) throw failure3("PREVIEW_BUSY", "The preview request cache is full.");
+        cached = { signature, settled: false, bytes: bytes2 };
         entry2.pending++;
-        entry2.pendingBytes += bytes;
-        entry2.cacheBytes += bytes;
+        entry2.pendingBytes += bytes2;
+        entry2.cacheBytes += bytes2;
         cached.promise = Promise.resolve().then(() => execute(entry2, message.action, payload)).then((result) => {
           if (message.action === "editor.events.open" && UUID3.test(result?.subscriptionId || "")) cached.subscriptionId = result.subscriptionId;
           return resultFor(entry2, message.requestId, cached, { result });
         }).catch((error3) => resultFor(entry2, message.requestId, cached, { error: detail2(error3) })).finally(() => {
           cached.settled = true;
           entry2.pending--;
-          entry2.pendingBytes -= bytes;
+          entry2.pendingBytes -= bytes2;
           if (cached.evictWhenSettled || !alive3(entry2)) forget(entry2, message.requestId, cached);
         });
         entry2.requests.set(message.requestId, cached);
@@ -3043,10 +3432,10 @@ function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
         if (!alive3(entry2)) return false;
         if (!response.ok || !/^text\/html(?:;|$)/i.test(response.headers.get("content-type") || "")) throw failure3("PREVIEW_UNAVAILABLE", `The design system reference could not be loaded (HTTP ${response.status}).`);
         if (Number(response.headers.get("content-length")) > PASSIVE_LIMIT) throw failure3("PREVIEW_TOO_LARGE", "The design system reference exceeds its preview limit.");
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        const bytes2 = new Uint8Array(await response.arrayBuffer());
         if (!alive3(entry2)) return false;
-        if (bytes.byteLength > PASSIVE_LIMIT) throw failure3("PREVIEW_TOO_LARGE", "The design system reference exceeds its preview limit.");
-        const html = passiveHtml(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+        if (bytes2.byteLength > PASSIVE_LIMIT) throw failure3("PREVIEW_TOO_LARGE", "The design system reference exceeds its preview limit.");
+        const html = passiveHtml(new TextDecoder("utf-8", { fatal: true }).decode(bytes2));
         if (!alive3(entry2)) return false;
         const url = target.URL.createObjectURL(new Blob([html], { type: "text/html" }));
         entry2.urls.add(url);
@@ -3128,15 +3517,15 @@ function installNativePreviews({ target, baseUrl, rpc, flush } = {}) {
 }
 
 // source/server/native-comments.mjs
-import { createHash as createHash7, randomUUID as randomUUID7 } from "node:crypto";
-var fail3 = (code, message) => Object.assign(new Error(message), { code });
+import { createHash as createHash8, randomUUID as randomUUID8 } from "node:crypto";
+var fail4 = (code, message) => Object.assign(new Error(message), { code });
 var encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64");
 var jsonResult = (value, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Accepted", headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, body: encode(value) });
 var parseResult = (result) => {
   try {
     return JSON.parse(Buffer.from(result.body, "base64").toString("utf8"));
   } catch {
-    throw fail3("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
+    throw fail4("INVALID_COMMENT_RESPONSE", "The comment service did not return valid JSON.");
   }
 };
 function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, idleMs = 12e4 } = {}) {
@@ -3145,8 +3534,8 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     const editor = await editorFor(id);
     const url = editorRequestUrl(editor.url, relative);
     const base = new URL(editor.url);
-    const path14 = decodeURIComponent(url.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
-    return { editor, path: path14, url };
+    const path17 = decodeURIComponent(url.pathname.slice(base.pathname.length)).split("/").filter(Boolean).join("/");
+    return { editor, path: path17, url };
   };
   const project = async (id, snapshot2) => {
     const value = await requests.project(id, snapshot2);
@@ -3161,7 +3550,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
   };
   const snapshot = async (id) => {
     const result = await transport.request(id, { path: "__comments", method: "GET" });
-    if (result.status < 200 || result.status >= 300) throw fail3("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
+    if (result.status < 200 || result.status >= 300) throw fail4("COMMENTS_UNAVAILABLE", "The artwork comments could not be loaded.");
     return project(id, parseResult(result));
   };
   const prepared = async (id, threadId, response) => {
@@ -3175,7 +3564,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     }
     return { ...response, body: encode(body), nativeDraft: {
       requestId: request.id,
-      attemptId: randomUUID7(),
+      attemptId: randomUUID8(),
       savedCommentId: threadId,
       artifactId: id,
       uri: request.requestUri,
@@ -3194,35 +3583,35 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
   };
   return {
     async request(id, request) {
-      const { path: path14 } = await route(id, request.path);
-      const { method, body } = validateEditorRequest(request);
-      if (path14 === "__comments" && ["GET", "HEAD"].includes(method)) {
+      const { path: path17, editor } = await route(id, request.path);
+      const { method, body } = validateEditorRequest(request, { maxBodyBytes: editor.kind === "motion" ? 64 * 1024 * 1024 : 32 * 1024 * 1024 });
+      if (path17 === "__comments" && ["GET", "HEAD"].includes(method)) {
         const result = jsonResult(await snapshot(id));
         return method === "HEAD" ? { ...result, body: "" } : result;
       }
-      const send = /^__comments\/([^/]+)\/send$/.exec(path14);
+      const send = /^__comments\/([^/]+)\/send$/.exec(path17);
       if (send && method === "POST") {
         const current = await snapshot(id);
         const matches = current.threads.filter((item) => item.id === send[1]);
         if (!matches.length && send[1].length >= 3) matches.push(...current.threads.filter((item) => item.id.startsWith(send[1])));
-        if (matches.length !== 1) throw fail3(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
+        if (matches.length !== 1) throw fail4(matches.length ? "AMBIGUOUS_COMMENT" : "COMMENT_NOT_FOUND", "Select one existing comment before adding it to chat.");
         const thread = matches[0];
         return prepared(id, thread.id, jsonResult({ thread }));
       }
-      const mutation = path14 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path14) && ["POST", "PATCH"].includes(method);
-      const adHoc = path14 === "__comments/agent/requests" && method === "POST";
+      const mutation = path17 === "__comments" && method === "POST" || /^__comments\/[^/]+\/messages(?:\/[^/]+)?$/.test(path17) && ["POST", "PATCH"].includes(method);
+      const adHoc = path17 === "__comments/agent/requests" && method === "POST";
       if ((mutation || adHoc) && body) {
-        if (body.length > 256 * 1024) throw fail3("INVALID_COMMENT", "The comment exceeds its transfer limit.");
+        if (body.length > 256 * 1024) throw fail4("INVALID_COMMENT", "The comment exceeds its transfer limit.");
         let input;
         try {
           input = JSON.parse(body.toString("utf8"));
         } catch {
-          throw fail3("INVALID_COMMENT", "The comment request is not valid JSON.");
+          throw fail4("INVALID_COMMENT", "The comment request is not valid JSON.");
         }
-        if (!input || typeof input !== "object" || Array.isArray(input)) throw fail3("INVALID_COMMENT", "Expected a comment object.");
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw fail4("INVALID_COMMENT", "Expected a comment object.");
         if (input.send === true || adHoc) {
           const normal = adHoc ? {
-            anchor: "request:" + randomUUID7(),
+            anchor: "request:" + randomUUID8(),
             label: input.label || "Artwork request",
             text: input.text,
             ...input.selection ? { detail: input.selection } : {},
@@ -3231,16 +3620,16 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
           const result = await transport.request(id, { ...request, path: adHoc ? "__comments" : request.path, body: encode(normal) });
           if (result.status < 200 || result.status >= 300) return result;
           const saved = parseResult(result);
-          if (!saved.thread?.id) throw fail3("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
+          if (!saved.thread?.id) throw fail4("INVALID_COMMENT_RESPONSE", "The saved comment has no identity.");
           return prepared(id, saved.thread.id, adHoc ? { ...result, body: encode({ ...saved, request: { id: saved.thread.id } }) } : result);
         }
       }
       return transport.request(id, request);
     },
-    async openEvents(id, path14) {
-      const found = await route(id, path14);
-      if (found.path !== "__comments/events") return transport.openEvents(id, path14);
-      const stream = { id: randomUUID7(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
+    async openEvents(id, path17) {
+      const found = await route(id, path17);
+      if (found.path !== "__comments/events") return transport.openEvents(id, path17);
+      const stream = { id: randomUUID8(), artifactId: id, cursor: 0, events: [], fingerprint: null, lastPoll: 0 };
       streams.set(stream.id, stream);
       touch(stream);
       return { subscriptionId: stream.id, cursor: 0 };
@@ -3248,16 +3637,16 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     async pollEvents(id, subscriptionId, cursor = 0) {
       const stream = streams.get(subscriptionId);
       if (!stream) return transport.pollEvents(id, subscriptionId, cursor);
-      if (stream.artifactId !== id) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
-      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail3("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
+      if (stream.artifactId !== id) throw fail4("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > stream.cursor) throw fail4("INVALID_EDITOR_REQUEST", "Invalid comment event cursor.");
       touch(stream);
       const delay = Math.max(0, pollMs - (Date.now() - stream.lastPoll));
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       if (!streams.has(subscriptionId)) return { events: [], cursor: stream.cursor, ended: true };
       const value = await snapshot(id);
-      const data = JSON.stringify(value), fingerprint2 = createHash7("sha256").update(data).digest("hex");
-      if (fingerprint2 !== stream.fingerprint) {
-        stream.fingerprint = fingerprint2;
+      const data = JSON.stringify(value), fingerprint4 = createHash8("sha256").update(data).digest("hex");
+      if (fingerprint4 !== stream.fingerprint) {
+        stream.fingerprint = fingerprint4;
         stream.events.push({ cursor: ++stream.cursor, event: "comments", data });
         if (stream.events.length > 128) stream.events.shift();
       }
@@ -3267,7 +3656,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
     async closeEvents(id, subscriptionId) {
       const stream = streams.get(subscriptionId);
       if (!stream) return transport.closeEvents(id, subscriptionId);
-      if (stream.artifactId !== id) throw fail3("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
+      if (stream.artifactId !== id) throw fail4("EDITOR_SUBSCRIPTION_UNAVAILABLE", "This comment stream belongs to another artwork.");
       close(stream);
       return { closed: true };
     },
@@ -3278,7 +3667,7 @@ function createNativeComments({ requests, transport, editorFor, pollMs = 1e3, id
 }
 
 // source/server/editor-document.mjs
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 
 // source/scripts/comment-toolbar-adapter.mjs
 var native = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
@@ -3374,7 +3763,7 @@ function definitionFor(source, property) {
 function adaptEditorExportFallbacks(source) {
   if (source.includes(marker2) || !source.includes('"saveThroughHost"')) return source;
   const part = definitionFor(source, "saveThroughHost");
-  const replaceOnce = (text, expression, transform) => {
+  const replaceOnce2 = (text, expression, transform) => {
     let count = 0;
     const replacement = text.replace(expression, (...values) => {
       count++;
@@ -3383,12 +3772,12 @@ function adaptEditorExportFallbacks(source) {
     if (count !== 1) throw new Error("The canonical Canvas save error handler changed; native export recovery was refused.");
     return replacement;
   };
-  let save = replaceOnce(
+  let save = replaceOnce2(
     part.text,
     /catch\(([\w$]+)\)\{let ([\w$]+)=([\w$]+)\(\1\);return\{outcome:\2==="declined"\?"declined":"unsupported",code:\2\}/g,
     (match, error3, code) => match.replace(";return", `;if(${native2}&&${code}!=="declined")__codexThrowNativeExportFailure(${error3},${code});return`)
   );
-  save = replaceOnce(
+  save = replaceOnce2(
     save,
     /if\(([\w$]+)===null\)return\{outcome:"unsupported",code:"no_shell_save"\}/g,
     (match, capability) => `if(${capability}===null){if(${native2})__codexThrowNativeExportFailure(new Error("Save As is unavailable in this editor."),"no_shell_save");return{outcome:"unsupported",code:"no_shell_save"}}`
@@ -3408,14 +3797,14 @@ function adaptEditorExportFallbacks(source) {
   const producerText = producer.text.slice(0, deliveryStart) + "try{" + producer.text.slice(deliveryStart, -1) + catchDelivery + "}";
   source = source.slice(0, producer.start) + producerText + source.slice(producer.end);
   const image = definitionFor(source, "exportArtboardImage");
-  const imageText = replaceOnce(
+  const imageText = replaceOnce2(
     image.text,
     /&&\(\(0,e\.triggerBrowserDownload\)\(/g,
     () => `&&(!${native2}&&(0,e.triggerBrowserDownload)(`
   );
   source = source.slice(0, image.start) + imageText + source.slice(image.end);
   const pdf = definitionFor(source, "exportPdf");
-  const pdfText = replaceOnce(
+  const pdfText = replaceOnce2(
     pdf.text,
     /(if\([\w$]+==="unsupported"\)\{)try\{(?=let [\w$]+=document\.createElement\("a"\))/g,
     (match, condition) => `${condition}if(!${native2})try{`
@@ -3918,7 +4307,7 @@ function isEditorResourceData(source) {
   try {
     const value = JSON.parse(text.slice(0, -1));
     const messages = value?.resources?.en?.editor;
-    return ["slides", "design", "design-system", "dashboard"].includes(value?.kind) && value.language === "en" && messages !== null && typeof messages === "object" && !Array.isArray(messages);
+    return ["slides", "design", "design-system", "dashboard", "motion"].includes(value?.kind) && value.language === "en" && messages !== null && typeof messages === "object" && !Array.isArray(messages);
   } catch {
     return false;
   }
@@ -3959,6 +4348,13 @@ function adaptAgentDrafts(source) {
     for (const property of ["deliverClaudeRequest", "deliverClaudePrompt"]) insert(property, objectResult, true);
     insert("claudeSendResultMessage", message, true);
     insert("claudeDeliveryStatusMessage", ([status]) => `const message=__codexNativeAgentMessage(${status},"",__codexNativeAgentDraft.lastError);if(message!==null)return message;`, true);
+  } else if (source.includes('"stagePromptInClaude"') && source.includes('"MotionApp"')) {
+    kind = "motion";
+    insert("stagePromptInClaude", stringResult, true);
+    insert("deliverPromptToClaude", stringResult, true);
+    insert("suggestOrCopyPrompt", stringResult, true);
+    insert("getPromptDeliveryMessage", message, true);
+    insert("sendExportProblemToClaude", ([problem, title, , context]) => `return __codexNativeAgentDraft({label:"Motion export problem",request:(0,e.buildExportProblemPrompt)(${problem},${title},${context})});`, true);
   } else if (source.includes('"sendSelectionToClaude"')) {
     kind = "dashboard";
     insert("sendSelectionToClaude", stringResult, true);
@@ -4129,6 +4525,125 @@ function adaptNativeEditorLanguage(source) {
   return marker8 + "\n" + source.slice(0, selector.index) + replacement + source.slice(selector.index + selector[0].length);
 }
 
+// source/scripts/motion-player-adapter.mjs
+var native8 = "globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__";
+var marker9 = "/* codex-design:native-motion-player */";
+var escape10 = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var refused = (message) => Object.assign(new Error(message), { code: "MOTION_PLAYER_ADAPTER_UNSUPPORTED" });
+function bindNativeMotionDocument(document2, target = globalThis) {
+  const flush = async () => {
+    await document2.save();
+    document2.flushNow();
+    const deadline = Date.now() + 8e3;
+    while (true) {
+      const detail2 = document2.syncDetail();
+      if (document2.saveState().status === "error") throw new Error("The film still has unsaved changes.");
+      if (!document2.dirty() && detail2.pending === 0 && detail2.flights === 0) return true;
+      if (Date.now() >= deadline) throw new Error("The film still has unsaved changes.");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  target.__CODEX_DESIGN_EDITOR_FLUSH__ = flush;
+  const dispose = document2.dispose.bind(document2);
+  document2.dispose = () => {
+    if (target.__CODEX_DESIGN_EDITOR_FLUSH__ === flush) delete target.__CODEX_DESIGN_EDITOR_FLUSH__;
+    return dispose();
+  };
+  return document2;
+}
+function bindNativeMotionPlayer(host, authoredTime, target = globalThis) {
+  target.__CODEX_DESIGN_MOTION_PLAYER__ = {
+    state: () => host.state,
+    authoredTime: () => authoredTime(host.state.meta?.parts, host.state.t),
+    seek: (seconds) => host.seek(seconds)
+  };
+}
+function definition(source, property) {
+  const matches = [...source.matchAll(new RegExp(`\\ba\\(e,"${escape10(property)}",\\(\\)=>(${String.raw`[\w$]+`})(?=[,)])`, "g"))];
+  if (matches.length !== 1) throw refused(`The canonical Motion ${property} export changed.`);
+  const match = matches[0], start = source.lastIndexOf("function " + match[1] + "(", match.index);
+  if (start < 0) throw refused(`The canonical Motion ${property} declaration changed.`);
+  const part = readCommentComponent(source.slice(start), new RegExp(`^function ${escape10(match[1])}\\(([^)]*)\\)\\{`));
+  if (!part) throw refused(`The canonical Motion ${property} signature changed.`);
+  return { ...part, start, end: start + part.end, parameters: part.match[1].split(",") };
+}
+function replaceOnce(source, pattern, replacement, label) {
+  let count = 0;
+  const result = source.replace(pattern, (...values) => {
+    count++;
+    return typeof replacement === "function" ? replacement(...values) : replacement;
+  });
+  if (count !== 1) throw refused(`The canonical Motion ${label} changed.`);
+  return result;
+}
+function adaptNativeMotionPlayer(source) {
+  if (source.includes(marker9)) return source;
+  if (!source.includes('"MotionApp"')) {
+    if (!source.includes("globalThis.claude=") || !source.includes("async customAnchors(")) return source;
+    const local = replaceOnce(
+      source,
+      /([\w$]+)\(\{base:"\/",modeShortcut:null,header:!0,pinSide:([\w$]+)\}\)/g,
+      (_, factory2, side) => `${factory2}({base:"/",modeShortcut:null,header:${native8}?!1:!0,pinSide:${side}})`,
+      "local comment header"
+    );
+    return marker9 + "\n" + local;
+  }
+  const updates = [];
+  const document2 = definition(source, "createLiveFilmDocument");
+  const documentText = replaceOnce(
+    document2.text,
+    /return\(0,e\.watchThumbnailDocumentLoad\)\(([\w$]+),/g,
+    (_, doc) => `if(${native8})__codexBindMotionDocument(${doc});return(0,e.watchThumbnailDocumentLoad)(${doc},`,
+    "live-store save barrier"
+  );
+  updates.push({ ...document2, replacement: documentText });
+  const app = definition(source, "MotionApp");
+  const appText = replaceOnce(
+    app.text,
+    /([\w$]+)=e\.ReactReactRuntime\.useSyncExternalStore\(([\w$]+)\.subscribe,\(\)=>\2\.state\)/g,
+    (_, state, host) => `${state}=(${native8}&&__codexBindMotionPlayer(${host},e.playedTimeToAuthoredTime),e.ReactReactRuntime.useSyncExternalStore(${host}.subscribe,()=>${host}.state))`,
+    "player state binding"
+  );
+  updates.push({ ...app, replacement: appText });
+  const engine = definition(source, "createVideoExportEngine");
+  let engineText = replaceOnce(
+    engine.text,
+    /async format\(\)\{/g,
+    `async format(){if(${native8}&&globalThis.__CODEX_DESIGN_MOTION_EXPORT__)return{label:"MP4 · Local renderer"};`,
+    "native MP4 capability"
+  );
+  engineText = replaceOnce(
+    engineText,
+    /async estimate\(([\w$]+),([\w$]+)\)\{(?=let [\w$]+=[\w$]+\.state\.meta,[\w$]+=await )/g,
+    (match) => `${match}if(${native8}&&globalThis.__CODEX_DESIGN_MOTION_EXPORT__)return null;`,
+    "native MP4 estimate"
+  );
+  engineText = replaceOnce(
+    engineText,
+    /async run\(([\w$]+),([\w$]+),([\w$]+)\)\{(?=let [\w$]+=[\w$]+\.state\.meta;if\([\w$]+===null\)throw new e\.FilmGoneError\("No animation is loaded\."\);let [\w$]+=await )/g,
+    (match, options, progress, signal) => `${match}if(${native8}&&globalThis.__CODEX_DESIGN_MOTION_EXPORT__){const resource=await globalThis.__CODEX_DESIGN_MOTION_EXPORT__({format:"mp4",options:${options}},${progress},${signal});return{blob:{...resource,size:resource.bytes??resource.size??0},filename:resource.filename,mime:resource.mimeType}}`,
+    "native MP4 encoder"
+  );
+  updates.push({ ...engine, replacement: engineText });
+  const save = definition(source, "saveHostDownload");
+  const [data, filename] = save.parameters;
+  let saveText = save.text.replace(save.match[0], save.match[0] + `if(${native8}&&${data}&&typeof ${data}.exportToken==="string"){try{const saved=await globalThis.claude.downloads.save({filename:${filename},data:${data}});return{outcome:"saved",code:"",...saved?.path?{path:saved.path}:{}}}catch(error){return{outcome:error.code==="declined"?"declined":"failed",code:error.code||"EXPORT_FAILED"}}}`);
+  saveText = replaceOnce(
+    saveText,
+    /catch\(([\w$]+)\)\{let ([\w$]+)=([\w$]+)\(\1\);return\{outcome:\2==="declined"\?"declined":"unsupported",code:\2\}\}/g,
+    (_, error3, code, classify) => `catch(${error3}){let ${code}=${classify}(${error3});return{outcome:${code}==="declined"?"declined":${native8}?"failed":"unsupported",code:${code}}}`,
+    "Save As error handling"
+  );
+  updates.push({ ...save, replacement: saveText });
+  const outcome = definition(source, "getSaveResultAction");
+  const [status] = outcome.parameters;
+  updates.push({ ...outcome, replacement: outcome.text.replace(outcome.match[0], outcome.match[0] + `if(${native8})return ${status}==="saved"?"saved":${status}==="declined"?"keep":"failed";`) });
+  const exports = definition(source, "createHostExportEntries");
+  updates.push({ ...exports, replacement: exports.text.replace(exports.match[0], exports.match[0] + `if(${native8})return null;`) });
+  for (const part of updates.sort((a, b) => b.start - a.start)) source = source.slice(0, part.start) + part.replacement + source.slice(part.end);
+  return marker9 + "\nconst __codexBindMotionDocument=" + bindNativeMotionDocument.toString() + ";\nconst __codexBindMotionPlayer=" + bindNativeMotionPlayer.toString() + ";\n" + source;
+}
+
 // source/server/editor-document.mjs
 var error = (code, message) => Object.assign(new Error(message), { code });
 var scriptText = (value) => value.replace(/<\/script/gi, "<\\/script");
@@ -4144,6 +4659,9 @@ async function replaceAsync2(source, expression, transform) {
   return source;
 }
 function adaptInlineEditorScript(source, scriptUrl) {
+  if (source.startsWith("(function(BASE){\nvar P=location.protocol") && source.includes("window.EventSource=S;") && source.includes("'baoyu-sse'")) {
+    source = source.replace("(function(BASE){", "(function(BASE){if(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__)return;");
+  }
   if (new URL(scriptUrl).pathname.endsWith("/__codex/history-ui.js")) return adaptNativeHistoryUi(source);
   source = adaptNativeEditorLanguage(source);
   source = repairEditorRuntime(source);
@@ -4151,6 +4669,7 @@ function adaptInlineEditorScript(source, scriptUrl) {
   source = adaptCommentDrafts(source);
   source = adaptCommentViewport(source);
   source = adaptAgentDrafts(source);
+  source = adaptNativeMotionPlayer(source);
   source = source.replace(/\bwindow\.parent===window\b/g, "(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)");
   source = source.replace(
     /function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
@@ -4220,7 +4739,7 @@ async function buildEditorDocument({ baseUrl, fetchLocal, config = {}, maxBytes 
     }
     return url;
   };
-  const bytes = (value, relative) => {
+  const bytes2 = (value, relative) => {
     const url = resolveLocal(value, relative);
     if (!requests.has(url.href)) requests.set(url.href, (async () => {
       const response = await fetchLocal(url.href);
@@ -4236,14 +4755,14 @@ async function buildEditorDocument({ baseUrl, fetchLocal, config = {}, maxBytes 
   };
   const dataUrl = async (value, relative) => {
     const url = resolveLocal(value, relative);
-    const data = await bytes(url.href);
+    const data = await bytes2(url.href);
     return `data:${mime(url.pathname)};base64,${data.toString("base64")}`;
   };
   const script = (value, relative, chain = []) => {
     const url = resolveLocal(value, relative);
     if (chain.includes(url.href)) throw error("EDITOR_MODULE_CYCLE", "The editor module graph needs a prebuilt native bundle.");
     if (!scripts.has(url.href)) scripts.set(url.href, (async () => {
-      let code = (await bytes(url.href)).toString("utf8");
+      let code = (await bytes2(url.href)).toString("utf8");
       const virtualScript = new URL(url.pathname.slice(base.pathname.length), virtual).href;
       code = adaptInlineEditorScript(code, virtualScript);
       code = await replaceAsync2(code, /\bimport\(\s*(["'])(\.[^"']+)\1\s*\)/g, async (match) => {
@@ -4256,14 +4775,14 @@ async function buildEditorDocument({ baseUrl, fetchLocal, config = {}, maxBytes 
   };
   const css = async (value, relative) => {
     const url = resolveLocal(value, relative);
-    let code = (await bytes(url.href)).toString("utf8");
+    let code = (await bytes2(url.href)).toString("utf8");
     code = await replaceAsync2(code, /url\(\s*(["']?)([^"')]+)\1\s*\)/g, async (match) => {
       if (/^(?:data:|blob:|#)/i.test(match[2])) return match[0];
       return `url("${await dataUrl(match[2], url)}")`;
     });
     return code;
   };
-  let html = (await bytes(base.href)).toString("utf8");
+  let html = (await bytes2(base.href)).toString("utf8");
   if (!/<head\b[^>]*>/i.test(html)) throw error("EDITOR_INVALID_DOCUMENT", "The editor did not return an HTML document.");
   if (config.nativeHistory === true) {
     html = html.replace(/<script\b[^>]*\bsrc\s*=\s*(["'])\/__share\/(?:boot|ui)\.js(?:\?[^"']*)?\1[^>]*>\s*<\/script>/gi, "");
@@ -4296,7 +4815,7 @@ ${scriptText(body)}
 <script>${scriptText(bootstrap)}</script>`);
   const outputBytes = Buffer.byteLength(html);
   if (outputBytes > maxBytes) throw error("EDITOR_DOCUMENT_TOO_LARGE", "The assembled native editor exceeds its content limit.");
-  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash8("sha256").update(html).digest("hex"), virtualBase: virtual.href };
+  return { html, bytes: outputBytes, assetCount: requests.size, sha256: createHash9("sha256").update(html).digest("hex"), virtualBase: virtual.href };
 }
 
 // source/scripts/editor-native-transport.js
@@ -4379,15 +4898,18 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
   const assetCache = /* @__PURE__ */ new Map();
   const assetAliases = /* @__PURE__ */ new Map();
   const assetIds = /* @__PURE__ */ new Set();
+  const motionJobs = /* @__PURE__ */ new Set();
+  const maxAssetBytes = (configuration.kind === "motion" ? 64 : 32) * 1024 * 1024;
+  const maxCachedAssetBytes = (configuration.kind === "motion" ? 128 : 64) * 1024 * 1024;
   let assetBytes = 0;
   if (target.crypto && typeof target.crypto.randomUUID !== "function" && typeof target.crypto.getRandomValues === "function") {
-    const randomUUID9 = () => {
-      const bytes = target.crypto.getRandomValues(new Uint8Array(16));
-      bytes[6] = bytes[6] & 15 | 64;
-      bytes[8] = bytes[8] & 63 | 128;
-      return Array.from(bytes, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
+    const randomUUID12 = () => {
+      const bytes2 = target.crypto.getRandomValues(new Uint8Array(16));
+      bytes2[6] = bytes2[6] & 15 | 64;
+      bytes2[8] = bytes2[8] & 63 | 128;
+      return Array.from(bytes2, (value, index) => ([4, 6, 8, 10].includes(index) ? "-" : "") + (value + 256).toString(16).slice(1)).join("");
     };
-    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID9, configurable: true });
+    Object.defineProperty(target.crypto, "randomUUID", { value: randomUUID12, configurable: true });
   }
   const originalFetch = target.fetch.bind(target);
   let sequence = 0;
@@ -4424,9 +4946,9 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     if (typeof target.dispatchEvent === "function") target.dispatchEvent(new (target.Event || Event)("codex-design:comment-viewport-changed"));
   };
   target.__CODEX_DESIGN_EDITOR_I18N__ = { preference: configuration.language || "system", systemLocale: configuration.locale };
-  const bytesToBase64 = (bytes) => {
+  const bytesToBase64 = (bytes2) => {
     let value = "";
-    for (let offset = 0; offset < bytes.length; offset += 16384) value += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
+    for (let offset = 0; offset < bytes2.length; offset += 16384) value += String.fromCharCode(...bytes2.subarray(offset, offset + 16384));
     return target.btoa(value);
   };
   const base64ToBytes = (text) => Uint8Array.from(target.atob(text), (character) => character.charCodeAt(0));
@@ -4450,7 +4972,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       cleanup();
       reject(signal.reason || new DOMException("Aborted", "AbortError"));
     };
-    if (action !== "editor.download") timer = setTimeout(() => {
+    if (!["editor.download", "editor.systemSync"].includes(action)) timer = setTimeout(() => {
       cleanup();
       reject(Object.assign(new Error("The artwork editor connection timed out."), { code: "EDITOR_TRANSPORT_TIMEOUT" }));
     }, 45e3);
@@ -4469,14 +4991,28 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       async digest(algorithm, data) {
         const name = String(typeof algorithm === "object" ? algorithm?.name : algorithm).toUpperCase();
         if (name !== "SHA-256" && name !== "SHA-384") throw new DOMException("Only SHA-256 and SHA-384 are available in this isolated editor.", "NotSupportedError");
-        const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
-        if (bytes.byteLength > 32 * 1024 * 1024) throw new DOMException("The digest input exceeds the transfer limit.", "OperationError");
-        const result = await rpc("editor.digest", { algorithm: name, base64: bytesToBase64(bytes) });
+        const bytes2 = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
+        if (bytes2.byteLength > maxAssetBytes) throw new DOMException("The digest input exceeds the transfer limit.", "OperationError");
+        const result = await rpc("editor.digest", { algorithm: name, base64: bytesToBase64(bytes2) });
         return base64ToBytes(result.base64).buffer;
       }
     } });
   }
   const downloads = { async save({ filename, data }) {
+    if (data && typeof data === "object" && typeof data.exportToken === "string") {
+      if (readOnly || configuration.kind !== "motion" || data.artifactId !== configuration.artifactId) throw Object.assign(new Error("The rendered film belongs to a different artwork."), { code: "INVALID_DOWNLOAD" });
+      try {
+        return await rpc("editor.download", {
+          filename: filename || data.filename,
+          mimeType: data.mimeType,
+          exportToken: data.exportToken,
+          artifactId: configuration.artifactId
+        });
+      } catch (error3) {
+        if (error3.code === "DOWNLOAD_CANCELLED") error3.code = "declined";
+        throw error3;
+      }
+    }
     const blob = data instanceof Blob ? data : new Blob([data]);
     try {
       return await rpc("editor.download", { filename: filename || "download", mimeType: blob.type || "application/octet-stream", base64: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) });
@@ -4774,6 +5310,40 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     await Promise.all([...pendingWrites]);
     return true;
   };
+  if (configuration.kind === "motion" && !readOnly) {
+    target.__CODEX_DESIGN_MOTION_EXPORT__ = async (request, progress, signal) => {
+      if (request?.format !== "mp4") throw new TypeError("Only the native MP4 renderer is available.");
+      if (signal?.aborted) throw signal.reason || new DOMException("Export cancelled", "AbortError");
+      await flushEditor();
+      const options = {};
+      for (const key of ["height", "fps", "quality", "supersample"]) if (request.options?.[key] !== void 0) options[key] = request.options[key];
+      const started = await rpc("editor.motionExport", { operation: "start", format: "mp4", options });
+      if (typeof started?.jobId !== "string" || !/^[0-9a-f-]{36}$/i.test(started.jobId)) throw new Error("The Motion export job could not be confirmed.");
+      const jobId = started.jobId;
+      motionJobs.add(jobId);
+      try {
+        for (; ; ) {
+          if (signal?.aborted) throw signal.reason || new DOMException("Export cancelled", "AbortError");
+          const result = await rpc("editor.motionExport", { operation: "status", jobId }, signal);
+          if (result.status === "completed") {
+            const resource = result.resource;
+            if (!resource || resource.exportToken !== jobId || resource.artifactId !== configuration.artifactId || typeof resource.filename !== "string" || resource.mimeType !== "video/mp4" || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1) throw new Error("The rendered MP4 file could not be confirmed.");
+            return resource;
+          }
+          if (result.status === "failed" || result.status === "cancelled") throw Object.assign(new Error(result.error?.message || "The film export did not complete."), { code: result.error?.code || "MOTION_EXPORT_FAILED" });
+          if (result.status !== "running") throw new Error("The film export returned an unknown job state.");
+          if (typeof progress === "function") progress(result.progress && typeof result.progress === "object" ? result.progress : { done: 0, total: 1, phase: "frames" });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      } catch (error3) {
+        await rpc("editor.motionExport", { operation: "cancel", jobId }).catch(() => {
+        });
+        throw error3;
+      } finally {
+        motionJobs.delete(jobId);
+      }
+    };
+  }
   target.addEventListener("message", (event) => {
     const message = event.data;
     if (disposed || event.source !== target.parent || message?.channel !== channel) return;
@@ -4856,19 +5426,19 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     for (const [embedded, reference] of assetAliases) if (text.includes(embedded)) text = text.split(embedded).join(reference);
     for (const embedded of new Set(text.match(/data:[a-z0-9.+\/-]+;base64,[A-Za-z0-9+/]+={0,2}/gi) || [])) {
       const base64 = embedded.slice(embedded.indexOf(",") + 1);
-      if (base64.length > 44739244) continue;
+      if (base64.length > Math.ceil(maxAssetBytes / 3) * 4) continue;
       const digest = await rpc("editor.digest", { algorithm: "SHA-256", base64 });
       const id = Array.from(base64ToBytes(digest.base64), (value) => (value + 256).toString(16).slice(1)).join("").slice(0, 32);
       if (assetIds.has(id)) text = text.split(embedded).join("/_blob/" + id);
     }
     return text;
   };
-  const preserveAssetReferences = async (bytes) => {
+  const preserveAssetReferences = async (bytes2) => {
     let body;
     try {
-      body = JSON.parse(new TextDecoder().decode(bytes));
+      body = JSON.parse(new TextDecoder().decode(bytes2));
     } catch {
-      return bytes;
+      return bytes2;
     }
     const walk = async (value) => {
       if (typeof value === "string") return originalAssets(value);
@@ -4892,17 +5462,32 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     const url = typeof input === "string" || input instanceof URL ? new URL(String(input), base).href : input.url;
     const requestedMethod = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (readOnly && !["GET", "HEAD"].includes(requestedMethod)) throw Object.assign(new Error("Earlier versions are read-only."), { code: "EDITOR_PREVIEW_READ_ONLY" });
-    const path14 = relative(url);
-    if (path14 === null) return originalFetch(input, init);
+    const path17 = relative(url);
+    if (path17 === null) return originalFetch(input, init);
     const request = input instanceof Request ? new Request(input, init) : new Request(url, init);
     if (readOnly && !["GET", "HEAD"].includes(request.method)) throw Object.assign(new Error("Earlier versions are read-only."), { code: "EDITOR_PREVIEW_READ_ONLY" });
-    if (!["GET", "HEAD"].includes(request.method) && /^__history\/(?:\d+\/restore|notice\/[^/?]+\/recover)(?:\?|$)/.test(path14)) await flushEditor();
+    let route;
+    try {
+      route = decodeURIComponent(path17.split("?")[0]);
+    } catch {
+    }
+    const systemSync = request.method === "POST" && /^__ds-sync\/([a-z0-9][a-z0-9_-]{0,63})$/.exec(route || "");
+    if (systemSync) {
+      if (!["slides", "design"].includes(configuration.kind)) throw Object.assign(new Error("Only slides and canvases install design systems."), { code: "SYSTEM_SYNC_UNAVAILABLE" });
+      if (request.signal.aborted) throw request.signal.reason || new DOMException("Aborted", "AbortError");
+      await flushEditor();
+      const synced = await rpc("editor.systemSync", { namespace: systemSync[1] });
+      const response2 = new Response(JSON.stringify(synced), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+      Object.defineProperty(response2, "url", { value: url });
+      return response2;
+    }
+    if (!["GET", "HEAD"].includes(request.method) && /^__history\/(?:\d+\/restore|notice\/[^/?]+\/recover)(?:\?|$)/.test(path17)) await flushEditor();
     const headers = {};
     for (const name of ["content-type", "accept", "if-match", "if-none-match", "last-event-id", "x-filename", "x-deck-client"]) if (request.headers.has(name)) headers[name] = request.headers.get(name);
     let requestBytes = request.body ? new Uint8Array(await request.arrayBuffer()) : void 0;
-    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path14.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
+    if (requestBytes && /(?:^|\/)(?:__deck\/publish|_api\/write)$/.test(path17.split("?")[0]) && request.headers.get("content-type")?.includes("application/json")) requestBytes = await preserveAssetReferences(requestBytes);
     const body = requestBytes ? bytesToBase64(requestBytes) : void 0;
-    const responseTask = rpc("editor.request", { request: { path: path14, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
+    const responseTask = rpc("editor.request", { request: { path: path17, method: request.method, headers, ...body === void 0 ? {} : { body } } }, init?.signal || request.signal);
     const writing = !["GET", "HEAD"].includes(request.method);
     if (writing) pendingWrites.add(responseTask);
     let response;
@@ -4912,15 +5497,15 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       if (writing) pendingWrites.delete(responseTask);
     }
     let responseBytes = base64ToBytes(response.body);
-    if (!readOnly && /^__history(?:\/|\?|$)/.test(path14) && response.headers?.["content-type"]?.includes("application/json")) {
+    if (!readOnly && /^__history(?:\/|\?|$)/.test(path17) && response.headers?.["content-type"]?.includes("application/json")) {
       try {
         const value = JSON.parse(new TextDecoder().decode(responseBytes));
         for (const row of Array.isArray(value.rows) ? value.rows : []) {
           if (typeof row.preview !== "string") continue;
           const serverPath = configuration.serverPath;
-          const route = typeof serverPath === "string" && row.preview.startsWith(serverPath) ? row.preview.slice(serverPath.length) : row.preview;
-          if (/^v\/[1-9][0-9]{0,8}\/$/.test(route)) row.preview = new URL(route, rootBase).href;
-          else if (configuration.kind === "dashboard" && Number.isSafeInteger(row.n) && row.n >= 1 && row.n <= 999999999 && route === `?at=${row.n}`) row.preview = new URL(`v/${row.n}/`, rootBase).href;
+          const route2 = typeof serverPath === "string" && row.preview.startsWith(serverPath) ? row.preview.slice(serverPath.length) : row.preview;
+          if (/^v\/[1-9][0-9]{0,8}\/$/.test(route2)) row.preview = new URL(route2, rootBase).href;
+          else if (configuration.kind === "dashboard" && Number.isSafeInteger(row.n) && row.n >= 1 && row.n <= 999999999 && route2 === `?at=${row.n}`) row.preview = new URL(`v/${row.n}/`, rootBase).href;
         }
         responseBytes = new TextEncoder().encode(JSON.stringify(value));
       } catch {
@@ -4939,17 +5524,17 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       entry2.promise = (async () => {
         const response = await target.fetch(key);
         if (!response.ok) throw new Error("The artwork image or font could not be loaded.");
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        if (bytes.byteLength > 32 * 1024 * 1024) throw new Error("The artwork asset exceeds its transfer limit.");
-        const url = "data:" + (response.headers.get("content-type")?.split(";")[0] || "application/octet-stream") + ";base64," + bytesToBase64(bytes);
-        entry2.size = bytes.byteLength;
+        const bytes2 = new Uint8Array(await response.arrayBuffer());
+        if (bytes2.byteLength > maxAssetBytes) throw new Error("The artwork asset exceeds its transfer limit.");
+        const url = "data:" + (response.headers.get("content-type")?.split(";")[0] || "application/octet-stream") + ";base64," + bytesToBase64(bytes2);
+        entry2.size = bytes2.byteLength;
         entry2.ready = true;
         entry2.url = url;
         assetBytes += entry2.size;
         assetIds.add(id);
         assetAliases.set(url, "/_blob/" + id);
         for (const [oldKey, old] of assetCache) {
-          if (assetCache.size <= 128 && assetBytes <= 64 * 1024 * 1024) break;
+          if (assetCache.size <= 128 && assetBytes <= maxCachedAssetBytes) break;
           if (oldKey === key || !old.ready) continue;
           assetCache.delete(oldKey);
           assetBytes -= old.size;
@@ -5004,7 +5589,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
         console.error("Codex Design could not display an artwork asset.", error3);
       }
     };
-    const inspect = (element) => {
+    const inspect2 = (element) => {
       if (element.nodeType !== 1) return;
       for (const attribute2 of ["src", "href", "poster", "style", "srcset"]) if (element.hasAttribute(attribute2)) void transform(element, attribute2, element.getAttribute(attribute2));
       if (element.tagName === "STYLE") void transform(element, "textContent", element.textContent);
@@ -5015,12 +5600,12 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
     };
     new MutationObserver((records) => {
       for (const record of records) {
-        if (record.type === "attributes") inspect(record.target);
-        else if (record.type === "characterData" && record.target.parentElement?.tagName === "STYLE") inspect(record.target.parentElement);
-        else for (const node of record.addedNodes) inspect(node);
+        if (record.type === "attributes") inspect2(record.target);
+        else if (record.type === "characterData" && record.target.parentElement?.tagName === "STYLE") inspect2(record.target.parentElement);
+        else for (const node of record.addedNodes) inspect2(node);
       }
     }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "href", "poster", "style", "srcset"], characterData: true });
-    inspect(document.documentElement);
+    inspect2(document.documentElement);
   }
   const framePrototype = target.HTMLIFrameElement?.prototype;
   const srcdoc = framePrototype && Object.getOwnPropertyDescriptor(framePrototype, "srcdoc");
@@ -5039,7 +5624,7 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
         for (const vendor of configuration.previewVendors || []) {
           const relative2 = "artifact-type/vendor/" + vendor.file;
           const url = new URL(relative2, base);
-          for (const path14 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path14).join(vendor.url);
+          for (const path17 of [url.href, url.pathname, "/" + relative2, relative2]) preview = preview.split(path17).join(vendor.url);
         }
         const runtime = "<script data-codex-native-preview-transport>(" + installPreviewTransport.toString() + ")();</script>";
         srcdoc.set.call(this, /<head\b[^>]*>/i.test(preview) ? preview.replace(/<head\b[^>]*>/i, (head) => head + runtime) : runtime + preview);
@@ -5149,19 +5734,23 @@ function installNativeEditorTransport(configuration, target, installPreviews) {
       const filename = this.download || "download";
       void (async () => {
         const resource = await originalFetch(this.href);
-        const bytes = new Uint8Array(await resource.arrayBuffer());
-        await rpc("editor.download", { filename, mimeType: resource.headers.get("content-type") || "application/octet-stream", base64: bytesToBase64(bytes) });
+        const bytes2 = new Uint8Array(await resource.arrayBuffer());
+        await rpc("editor.download", { filename, mimeType: resource.headers.get("content-type") || "application/octet-stream", base64: bytesToBase64(bytes2) });
       })().catch((error3) => target.parent.postMessage({ type: "codex-design:editor-diagnostic", channel, message: String(error3.message || error3).slice(0, 500) }, "*"));
     };
   }
   target.addEventListener("unload", () => {
     for (const source of sources) source.close();
+    for (const jobId of motionJobs) void rpc("editor.motionExport", { operation: "cancel", jobId }).catch(() => {
+    });
+    motionJobs.clear();
     disposed = true;
     target.document?.removeEventListener?.("DOMContentLoaded", startPreviews);
     hostTheme.dispose();
     previews?.dispose?.();
     target.__CODEX_DESIGN_NATIVE_HISTORY__?.dispose?.();
     if (readOnly) delete target.__CODEX_DESIGN_PREVIEW_CLOSE__;
+    if (configuration.kind === "motion") delete target.__CODEX_DESIGN_MOTION_EXPORT__;
     for (const call of [...pending.values()]) call.reject(Object.assign(new Error("The artwork editor has closed."), { code: "EDITOR_CLOSED" }));
   });
   target.addEventListener("error", (event) => {
@@ -5190,18 +5779,19 @@ init_worker_core();
 
 // source/server/editor-lifecycle.mjs
 init_bridge_core();
+init_artifact_command();
 import { spawn } from "node:child_process";
-import fs7 from "node:fs";
-import path10 from "node:path";
+import fs8 from "node:fs";
+import path11 from "node:path";
 var failure = (code, message) => Object.assign(new Error(message), { code });
 async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 15e3 } = {}) {
-  const stateFile = path10.join(record.path, ".artifact-server.json");
-  if (!fs7.existsSync(stateFile)) return { stopped: false };
+  const stateFile = path11.join(record.path, ".artifact-server.json");
+  if (!fs8.existsSync(stateFile)) return { stopped: false };
   const state = readJson(stateFile);
   if (!state || state.kind !== record.kind || !samePath(state.root, record.path)) {
     throw failure("EDITOR_IDENTITY_UNVERIFIED", "The selected artwork editor record is invalid. Its process and files were preserved.");
   }
-  const cli = path10.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
+  const cli = path11.join(pluginRoot, "skills", `codex-${record.kind}`, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, "stop", record.path], {
       cwd: pluginRoot,
@@ -5230,7 +5820,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
       finish(failure("EDITOR_STOP_TIMEOUT", "The selected editor did not finish stopping. Artwork files were not moved."));
     }, timeoutMs);
     child.once("error", (error3) => finish(failure("EDITOR_STOP_FAILED", error3.message)));
-    child.once("close", (code) => {
+    child.once("close", async (code) => {
       if (finished) return;
       if (code !== 0) {
         let detail2;
@@ -5242,7 +5832,7 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
       }
       try {
         const result = JSON.parse(stdout.trim());
-        if (alive(state.pid)) return finish(failure("EDITOR_STOP_FAILED", "The verified editor is still running. Artwork files were not moved."));
+        if (fs8.existsSync(stateFile) || !await editorInstanceStopped(state, record.path, record.kind)) return finish(failure("EDITOR_STOP_FAILED", "The verified editor is still running. Artwork files were not moved."));
         finish(null, result);
       } catch {
         finish(failure("EDITOR_STOP_FAILED", "The selected editor stop returned invalid data. Artwork files were not moved."));
@@ -5251,11 +5841,373 @@ async function stopLocalEditor(record, { pluginRoot, env = process.env, timeoutM
   });
 }
 
+// source/server/motion-export.mjs
+init_safety();
+import fs9 from "node:fs/promises";
+import { constants as constants3 } from "node:fs";
+import path12 from "node:path";
+import { createHash as createHash10, randomUUID as randomUUID9 } from "node:crypto";
+import { spawn as spawn2 } from "node:child_process";
+var fail5 = (code, message) => Object.assign(new Error(message), { code });
+var fingerprint2 = (stat) => ["dev", "ino", "size", "mode", "mtimeNs", "ctimeNs", "birthtimeNs"].map((key) => String(stat[key])).join(":");
+var MAX_BYTES2 = 2 * 1024 * 1024 * 1024;
+var RETAIN_MS = 30 * 60 * 1e3;
+function optionsFor(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => !["height", "fps", "quality", "supersample"].includes(key))) throw fail5("INVALID_MOTION_EXPORT", "Unsupported Motion export options.");
+  const options = { ...value };
+  if (options.height !== void 0 && (!Number.isInteger(options.height) || options.height < 64 || options.height > 4320)) throw fail5("INVALID_MOTION_EXPORT", "Export height must be between 64 and 4320.");
+  if (options.fps !== void 0 && (!Number.isInteger(options.fps) || options.fps < 1 || options.fps > 120)) throw fail5("INVALID_MOTION_EXPORT", "Export frame rate must be between 1 and 120.");
+  if (options.quality !== void 0 && !["low", "medium", "high"].includes(options.quality)) throw fail5("INVALID_MOTION_EXPORT", "Choose low, medium, or high export quality.");
+  if (options.supersample !== void 0 && typeof options.supersample !== "boolean") throw fail5("INVALID_MOTION_EXPORT", "Supersampling must be a boolean.");
+  return options;
+}
+function createMotionExports({ store, pluginRoot, spawnProcess = spawn2, timeoutMs = 60 * 60 * 1e3 } = {}) {
+  const jobs = /* @__PURE__ */ new Map();
+  let startup = Promise.resolve();
+  const serializeStart = (action) => {
+    const previous = startup;
+    let release;
+    startup = new Promise((resolve) => {
+      release = resolve;
+    });
+    return previous.then(action).finally(() => release());
+  };
+  const view = (job) => ({
+    jobId: job.id,
+    status: job.status,
+    ...job.progress ? { progress: job.progress } : {},
+    ...job.error ? { error: job.error } : {},
+    ...job.resource ? { resource: job.resource } : {}
+  });
+  const owned = (id, artifactId2) => {
+    const job = jobs.get(id);
+    if (!UUID.test(id ?? "") || !job || job.artifactId !== artifactId2) throw fail5("MOTION_EXPORT_NOT_FOUND", "This export does not belong to the selected film.");
+    return job;
+  };
+  const terminate = (job, signal = "SIGTERM") => {
+    if (!job.child?.pid || job.closed) return;
+    try {
+      if (process.platform === "win32") job.child.kill(signal);
+      else process.kill(-job.child.pid, signal);
+    } catch (error3) {
+      if (error3.code !== "ESRCH") job.child.kill(signal);
+    }
+  };
+  const remove = async (job) => {
+    await fs9.rm(job.directory, { recursive: true, force: true });
+    jobs.delete(job.id);
+  };
+  return {
+    async operate(record, payload) {
+      if (record.kind !== "motion") throw fail5("INVALID_MOTION_EXPORT", "Only Motion films can use the video renderer.");
+      const operation = payload.operation ?? "start";
+      if (operation === "status") return view(owned(payload.jobId, record.id));
+      if (operation === "cancel") {
+        const job = owned(payload.jobId, record.id);
+        if (job.status === "running") {
+          job.status = "cancelled";
+          terminate(job);
+          const force = setTimeout(() => terminate(job, "SIGKILL"), 1e3);
+          force.unref();
+        }
+        return view(job);
+      }
+      if (operation !== "start" || payload.format !== "mp4") throw fail5("INVALID_MOTION_EXPORT", "Choose an MP4 render or a known export job operation.");
+      const options = optionsFor(payload.options);
+      return serializeStart(async () => {
+        for (const job2 of jobs.values()) if (job2.status !== "running" && Date.now() - job2.finishedAt > RETAIN_MS) await remove(job2);
+        if ([...jobs.values()].some((job2) => job2.artifactId === record.id && job2.status === "running")) throw fail5("MOTION_EXPORT_BUSY", "This film already has a video export in progress.");
+        if ([...jobs.values()].filter((job2) => job2.status === "running").length >= 2) throw fail5("MOTION_EXPORT_BUSY", "Finish a video export before starting another.");
+        const parent = await safePath(store.root, "_state/motion-exports", { mustExist: false });
+        await fs9.mkdir(parent, { recursive: true });
+        await safePath(store.root, "_state/motion-exports", { type: "directory" });
+        const id = randomUUID9(), directory = path12.join(parent, id);
+        await fs9.mkdir(directory, { mode: 448 });
+        const output = path12.join(directory, "film.mp4");
+        const script = path12.join(pluginRoot, "skills/codex-motion/scripts/artifact.mjs");
+        const args = [script, "export", record.path, "--out", output, "--quality", options.quality ?? "high"];
+        for (const key of ["height", "fps"]) if (options[key] !== void 0) args.push("--" + key, String(options[key]));
+        if (options.supersample) args.push("--supersample");
+        const job = { id, artifactId: record.id, directory, output, status: "running", closed: false, stdout: "", stderr: "" };
+        jobs.set(id, job);
+        let child;
+        try {
+          child = job.child = spawnProcess(process.execPath, args, { cwd: record.path, env: { ...process.env, CODEX_DESIGN_NATIVE_SESSION: "1" }, shell: false, windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+        } catch (error3) {
+          await remove(job);
+          throw error3;
+        }
+        const shutdown = () => terminate(job, "SIGKILL");
+        process.once("exit", shutdown);
+        const timer = setTimeout(() => {
+          job.error = { code: "MOTION_EXPORT_TIMEOUT", message: "The video renderer exceeded its time limit." };
+          terminate(job, "SIGKILL");
+        }, timeoutMs);
+        timer.unref();
+        child.stdout.on("data", (chunk) => {
+          job.stdout = (job.stdout + chunk).slice(-65536);
+        });
+        child.stderr.on("data", (chunk) => {
+          job.stderr = (job.stderr + chunk).slice(-8e3);
+          const matches = [...job.stderr.matchAll(/export: ([a-z -]+) (\d+)\/(\d+)/gi)];
+          const latest = matches.at(-1);
+          if (latest) job.progress = { phase: latest[1].trim(), done: Number(latest[2]), total: Number(latest[3]) };
+        });
+        child.once("error", (error3) => {
+          job.error = { code: "MOTION_EXPORT_START_FAILED", message: error3.message };
+        });
+        child.once("close", async (code) => {
+          job.closed = true;
+          clearTimeout(timer);
+          process.removeListener("exit", shutdown);
+          job.finishedAt = Date.now();
+          try {
+            if (job.status === "cancelled") return;
+            if (code !== 0 || job.error) {
+              let detail2;
+              try {
+                detail2 = JSON.parse(job.stderr.trim().split("\n").at(-1));
+              } catch {
+              }
+              throw fail5(job.error?.code || detail2?.error || "MOTION_EXPORT_FAILED", job.error?.message || detail2?.message || "The Motion renderer could not finish the export.");
+            }
+            const result = JSON.parse(job.stdout.trim());
+            if (result.mime !== "video/mp4" || result.out !== output) throw fail5("MOTION_EXPORT_FORMAT", "The renderer did not produce the requested MP4 format.");
+            const file = await safePath(store.root, `_state/motion-exports/${id}/film.mp4`, { type: "file" });
+            const stat = await fs9.lstat(file, { bigint: true });
+            const size = Number(stat.size);
+            if (size < 1 || size > MAX_BYTES2 || result.bytes !== size) throw fail5("MOTION_EXPORT_SIZE", "The generated movie has an invalid or unsupported size.");
+            const handle = await fs9.open(file, constants3.O_RDONLY | (constants3.O_NOFOLLOW || 0));
+            try {
+              const hash = createHash10("sha256").update("video/mp4\0");
+              for await (const chunk of handle.createReadStream({ autoClose: false })) {
+                if (job.status === "cancelled") return;
+                hash.update(chunk);
+              }
+              if (fingerprint2(await handle.stat({ bigint: true })) !== fingerprint2(stat)) throw fail5("MOTION_EXPORT_CHANGED", "The generated movie changed before it could be saved.");
+              job.source = { path: file, size, mimeType: "video/mp4", contentHash: hash.digest("hex"), fingerprint: fingerprint2(stat) };
+            } finally {
+              await handle.close();
+            }
+            if (job.status === "cancelled") return;
+            let stem = record.title.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim().replace(/[. ]+$/g, "") || "Motion";
+            while (Buffer.byteLength(stem) > 220) stem = Array.from(stem).slice(0, -1).join("");
+            if (/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(stem)) stem = "Motion " + stem;
+            job.resource = {
+              filename: stem + ".mp4",
+              mimeType: "video/mp4",
+              bytes: size,
+              exportToken: id,
+              artifactId: record.id,
+              ...typeof result.format === "string" ? { format: result.format } : {},
+              ...Array.isArray(result.warnings) ? { warnings: result.warnings } : {}
+            };
+            job.status = "completed";
+          } catch (error3) {
+            job.status = "failed";
+            job.error = { code: error3.code || "MOTION_EXPORT_FAILED", message: String(error3.message).slice(0, 2e3) };
+          } finally {
+            if (job.status !== "completed") await fs9.rm(directory, { recursive: true, force: true }).catch(() => {
+            });
+            const expiry = setTimeout(() => {
+              if (jobs.get(id) === job) void remove(job).catch(() => {
+              });
+            }, RETAIN_MS);
+            expiry.unref();
+          }
+        });
+        return view(job);
+      });
+    },
+    async resolve(token, artifactId2) {
+      const job = owned(token, artifactId2);
+      if (job.status !== "completed" || !job.source || Date.now() - job.finishedAt > RETAIN_MS) throw fail5("MOTION_EXPORT_UNAVAILABLE", "Render the film again before saving it.");
+      await safePath(store.root, `_state/motion-exports/${job.id}/film.mp4`, { type: "file" });
+      return { ...job.source };
+    }
+  };
+}
+
+// source/server/service.mjs
+init_design_system_sync();
+
+// source/server/artifact-transfer.mjs
+init_safety();
+import fs10 from "node:fs/promises";
+import { constants as constants4 } from "node:fs";
+import path13 from "node:path";
+import { createHash as createHash11, randomUUID as randomUUID10 } from "node:crypto";
+
+// source/ui/library-transfer.mjs
+var MAX_UI_BUNDLE_BYTES = 16 * 1024 * 1024;
+var MAX_NATIVE_BUNDLE_BYTES = 180 * 1024 * 1024;
+var UPLOAD_CHUNK_BYTES = 768 * 1024;
+var bytes = (value) => new TextEncoder().encode(value).byteLength;
+function packageFilename(title) {
+  let stem = Array.from(String(title || "Artwork").normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, "_").trim().replace(/[. ]+$/g, "")).slice(0, 100).join("");
+  while (bytes(stem + ".codexdesign.json") > 220) stem = Array.from(stem).slice(0, -1).join("");
+  stem = stem.replace(/[. ]+$/g, "");
+  if (!stem || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) stem = "Artwork";
+  return stem + ".codexdesign.json";
+}
+
+// source/server/artifact-transfer.mjs
+var fail6 = (code, message) => Object.assign(new Error(message), { code });
+var MAX_CHUNK = 1024 * 1024;
+var RETAIN_MS2 = 30 * 60 * 1e3;
+var fingerprint3 = (stat) => ["dev", "ino", "size", "mode", "mtimeNs", "ctimeNs", "birthtimeNs"].map((key) => String(stat[key])).join(":");
+function createArtifactTransfers({ store } = {}) {
+  const uploads = /* @__PURE__ */ new Map(), exports = /* @__PURE__ */ new Map();
+  const relative = (job) => `_state/artifact-transfers/${job.id}`;
+  const directory = async (job) => safePath(store.root, relative(job), { type: "directory", mustExist: false });
+  const remove = async (job) => {
+    await fs10.rm(await directory(job), { recursive: true, force: true });
+    job.removed = true;
+  };
+  const failed = async (job, error3) => {
+    try {
+      await remove(job);
+    } catch (cleanup) {
+      throw Object.assign(new AggregateError([error3, cleanup], `The package operation failed and staging cleanup failed (${cleanup.code || "UNKNOWN"}).`, { cause: error3 }), { code: error3.code || "TRANSFER_FAILED" });
+    }
+    throw error3;
+  };
+  const prune = async () => {
+    for (const records of [uploads, exports]) for (const job of records.values()) {
+      if (job.busy || Date.now() - job.updatedAt <= RETAIN_MS2) continue;
+      if (!job.removed) await remove(job);
+      records.delete(job.id);
+    }
+  };
+  const create = async (id) => {
+    await store.initialize();
+    const parent = await safePath(store.root, "_state/artifact-transfers", { mustExist: false });
+    await fs10.mkdir(parent, { recursive: true });
+    await safePath(store.root, "_state/artifact-transfers", { type: "directory" });
+    const target = path13.join(parent, id);
+    await fs10.mkdir(target, { mode: 448 });
+    return path13.join(target, "package.json");
+  };
+  const owned = (id) => {
+    const job = UUID.test(id ?? "") && uploads.get(id);
+    if (!job) throw fail6("TRANSFER_NOT_FOUND", "This upload does not belong to the current library session.");
+    return job;
+  };
+  const locked2 = async (job, run) => {
+    if (job.busy) throw fail6("TRANSFER_BUSY", "Wait for the current package operation to finish.");
+    job.busy = true;
+    try {
+      return await run();
+    } finally {
+      job.busy = false;
+      job.updatedAt = Date.now();
+    }
+  };
+  const receipt = (job) => ({ transferId: job.id, status: job.status, offset: job.offset });
+  return {
+    async export(record) {
+      await prune();
+      const bundle = await store.exportArtifact(record.id);
+      const text = JSON.stringify(bundle), bytes2 = Buffer.byteLength(text);
+      if (bytes2 > store.limits.maxBundleBytes) throw fail6("TRANSFER_TOO_LARGE", "The artwork package exceeds its configured size limit.");
+      const job = { id: randomUUID10(), artifactId: record.id, status: "writing", updatedAt: Date.now() };
+      try {
+        const file = await create(job.id);
+        await fs10.writeFile(file, text, { mode: 384, flag: "wx" });
+        const stat = await fs10.lstat(file, { bigint: true });
+        job.source = { path: file, size: bytes2, mimeType: "application/json", contentHash: createHash11("sha256").update("application/json\0").update(text).digest("hex"), fingerprint: fingerprint3(stat) };
+        job.status = "completed";
+        exports.set(job.id, job);
+        return { filename: packageFilename(bundle.title), mimeType: "application/json", bytes: bytes2, exportToken: job.id, artifactId: record.id };
+      } catch (error3) {
+        return failed(job, error3);
+      }
+    },
+    async resolve(token, artifactId2) {
+      const job = UUID.test(token ?? "") && exports.get(token);
+      if (!job || job.artifactId !== artifactId2 || Date.now() - job.updatedAt > RETAIN_MS2) throw fail6("TRANSFER_NOT_FOUND", "Export this artwork again before saving its package.");
+      const file = await safePath(store.root, relative(job) + "/package.json", { type: "file" });
+      const stat = await fs10.lstat(file, { bigint: true });
+      if (fingerprint3(stat) !== job.source.fingerprint || stat.nlink !== 1n) throw fail6("TRANSFER_CHANGED", "The exported package changed before it could be saved.");
+      job.updatedAt = Date.now();
+      return { ...job.source };
+    },
+    async operate(payload = {}) {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw fail6("INVALID_TRANSFER", "Choose a package upload operation.");
+      const keys = { start: ["operation", "bytes"], write: ["operation", "transferId", "offset", "base64"], finish: ["operation", "transferId"], cancel: ["operation", "transferId"] }[payload.operation];
+      if (!keys || Object.keys(payload).some((key) => !keys.includes(key))) throw fail6("INVALID_TRANSFER", "Unsupported package upload arguments.");
+      if (payload.operation === "start") {
+        if (!Number.isSafeInteger(payload.bytes) || payload.bytes < 1 || payload.bytes > store.limits.maxBundleBytes) throw fail6("TRANSFER_TOO_LARGE", "The selected package exceeds its configured size limit.");
+        await prune();
+        if ([...uploads.values()].filter((job3) => job3.status !== "completed").length >= 2) throw fail6("TRANSFER_BUSY", "Finish the current package uploads first.");
+        const job2 = { id: randomUUID10(), expected: payload.bytes, offset: 0, status: "receiving", updatedAt: Date.now(), busy: true };
+        uploads.set(job2.id, job2);
+        try {
+          job2.file = await create(job2.id);
+          await fs10.writeFile(job2.file, "", { mode: 384, flag: "wx" });
+          return receipt(job2);
+        } catch (error3) {
+          uploads.delete(job2.id);
+          return failed(job2, error3);
+        } finally {
+          job2.busy = false;
+        }
+      }
+      const job = owned(payload.transferId);
+      return locked2(job, async () => {
+        if (payload.operation === "cancel") {
+          if (job.status === "completed") return { cancelled: false, artifactId: job.record.id };
+          await remove(job);
+          uploads.delete(job.id);
+          return { cancelled: true };
+        }
+        if (job.status === "completed") {
+          if (payload.operation === "finish") return job.record;
+          throw fail6("INVALID_TRANSFER", "This package was already imported.");
+        }
+        try {
+          const file = await safePath(store.root, relative(job) + "/package.json", { type: "file" });
+          const handle = await fs10.open(file, constants4.O_RDWR | (constants4.O_NOFOLLOW || 0));
+          try {
+            const stat = await handle.stat();
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size !== job.offset) throw fail6("TRANSFER_CHANGED", "The upload file changed outside its current operation.");
+            if (payload.operation === "write") {
+              if (payload.offset !== job.offset || !Number.isSafeInteger(payload.offset)) throw fail6("TRANSFER_OFFSET", "The upload chunk does not match the current file offset.");
+              if (typeof payload.base64 !== "string" || payload.base64.length < 1 || payload.base64.length > MAX_CHUNK || !isValidBase64(payload.base64)) throw fail6("INVALID_TRANSFER", "The package chunk has invalid or oversized encoding.");
+              const data = Buffer.from(payload.base64, "base64");
+              if (data.toString("base64") !== payload.base64 || job.offset + data.length > job.expected) throw fail6("TRANSFER_TOO_LARGE", "The package chunk exceeds the selected file size.");
+              let offset = 0;
+              while (offset < data.length) {
+                const { bytesWritten } = await handle.write(data, offset, data.length - offset, job.offset + offset);
+                if (!bytesWritten) throw fail6("TRANSFER_WRITE_FAILED", "The upload chunk could not be written.");
+                offset += bytesWritten;
+              }
+              job.offset += data.length;
+              return receipt(job);
+            }
+            if (job.offset !== job.expected) throw fail6("TRANSFER_INCOMPLETE", "Upload the complete package before importing it.");
+          } finally {
+            await handle.close();
+          }
+          job.record = await store.importArtifact({ sourcePath: file });
+          job.status = "completed";
+          await remove(job);
+          return job.record;
+        } catch (error3) {
+          if (job.status === "completed") throw error3;
+          uploads.delete(job.id);
+          return failed(job, error3);
+        }
+      });
+    }
+  };
+}
+
 // source/server/contract.mjs
-var PLUGIN_UI_VERSION = "0.6.6";
+var PLUGIN_UI_VERSION = "0.7.0";
 var LIBRARY_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/library`;
 var FILE_UI_URI = `ui://codex-design/${PLUGIN_UI_VERSION}/file`;
-var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard"]);
+var KINDS2 = Object.freeze(["slides", "design", "design-system", "dashboard", "motion"]);
 var READ_ACTIONS = Object.freeze(["library.list", "library.get", "view.get", "conversation.get", "reference.get", "reference.readFile"]);
 var ACTIONS = Object.freeze([
   ...READ_ACTIONS,
@@ -5271,6 +6223,7 @@ var ACTIONS = Object.freeze([
   "library.restoreSnapshot",
   "library.exportArtifact",
   "library.importArtifact",
+  "library.transfer",
   "thumbnail.get",
   "view.openTab",
   "view.activateTab",
@@ -5281,6 +6234,8 @@ var ACTIONS = Object.freeze([
   "editor.previewDocument",
   "editor.request",
   "editor.digest",
+  "editor.motionExport",
+  "editor.systemSync",
   "editor.events.open",
   "editor.events.poll",
   "editor.events.close",
@@ -5310,7 +6265,7 @@ function kindOf(value) {
   return value;
 }
 function relativeOf(value) {
-  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path11.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
+  if (typeof value !== "string" || !value || value.length > 1024 || value.includes("\\") || value.includes("%") || path14.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith(".")) || /[\u0000-\u001f:]/.test(value)) throw failure2("INVALID_PATH", "Only a safe artifact-relative content path is accepted.");
   return value;
 }
 var capabilityState = () => ({
@@ -5320,12 +6275,12 @@ var capabilityState = () => ({
   arbitraryThreadTarget: false,
   reasonCode: UNSUPPORTED_CHAT_CODE
 });
-async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn2 } = {}) {
-  const current = readJson(path11.join(record.path, ".artifact-server.json"));
+async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutMs = 3e4, spawnProcess = spawn3 } = {}) {
+  const current = readJson(path14.join(record.path, ".artifact-server.json"));
   if (current && alive(current.pid)) {
     try {
       const session = await verifyEditorInstance(current, record.path, record.kind);
-      const binding = readJson(path11.join(record.path, ".codex-design-bridge.json"));
+      const binding = readJson(path14.join(record.path, ".codex-design-bridge.json"));
       if (session.nativeSessionVersion === 2 && session.nativeLocalOnly === true) {
         return {
           url: current.url,
@@ -5341,7 +6296,7 @@ async function openLocalEditor(record, { pluginRoot, env = process.env, timeoutM
     }
   }
   const skill = `codex-${record.kind}`;
-  const cli = path11.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
+  const cli = path14.join(pluginRoot, "skills", skill, "scripts", "codex-artifact.mjs");
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [cli, "open-service", record.path, "--delivery", "native"], {
       cwd: record.path,
@@ -5430,7 +6385,17 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
   };
   const transport = createEditorTransport({ editorFor });
   const requests = createEditRequestStore({ store });
-  const exports = createExportStore({ store });
+  const motionExports = createMotionExports({ store, pluginRoot });
+  const systemSync = createDesignSystemSync({ store });
+  const transfers = createArtifactTransfers({ store });
+  const exports = createExportStore({ store, resolveSource: async (token, artifactId2) => {
+    try {
+      return await motionExports.resolve(token, artifactId2);
+    } catch (error3) {
+      if (error3.code !== "MOTION_EXPORT_NOT_FOUND") throw error3;
+      return transfers.resolve(token, artifactId2);
+    }
+  } });
   const nativeComments = createNativeComments({ requests, transport, editorFor });
   const modelRequest = async (requestId2) => {
     const value = await requests.requestForModel(idOf(requestId2));
@@ -5438,11 +6403,11 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
     const comments = await readJson2(value.artifactRoot, "comments.json", { version: 1, threads: [] });
     const projected = await requests.project(value.artifactId, { threads: comments.threads });
     const reported = projected.threads.find((thread) => thread.agent?.nativeRequest?.requestId === value.id)?.agent.nativeRequest;
-    const cli = path11.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
+    const cli = path14.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "scripts", "codex-artifact.mjs");
     return {
       ...value,
       ...reported ? { status: reported.status, phase: reported.phase } : {},
-      skillFile: path11.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
+      skillFile: path14.join(pluginRoot, "skills", `codex-${value.artifact.kind}`, "SKILL.md"),
       dispatchCommand: { executable: process.execPath, args: [cli, "request-dispatch", value.artifactRoot, value.id] },
       workerStatus: { executable: process.execPath, args: [cli, "worker-status", value.artifactRoot] },
       executionPolicy: "Dispatch only requests attached to the user message you actually received. Run the dispatch command in your own native parent environment. Inspect the real native worker before choosing reuse, resume or a new child; only the registered native child runs worker-register/worker-next/worker-complete. Never invent thread IDs, start an independent model process, or replay legacy unconfirmed jobs."
@@ -5509,6 +6474,14 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
           return await exports.listDirectory(payload);
         case "export.save":
           return await exports.save(payload);
+        case "editor.motionExport":
+          return await motionExports.operate(await requireRecord(payload.id), payload);
+        case "editor.systemSync": {
+          const record = await requireRecord(payload.id);
+          if (payload.operation === "prepare") return await systemSync.prepare(record, payload.namespace);
+          if (payload.operation === "apply") return await systemSync.apply(record, payload.confirmationToken);
+          throw failure2("SYSTEM_SYNC_INVALID_REQUEST", "Choose a design system review or an explicitly confirmed synchronization.");
+        }
         case "library.list":
           return await store.list({ kind: payload.kind === void 0 ? void 0 : kindOf(payload.kind), query: typeof payload.query === "string" ? payload.query.slice(0, 200) : "", favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
         case "library.get":
@@ -5551,7 +6524,9 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
         case "library.restoreSnapshot":
           return await store.restoreSnapshot(idOf(payload.id), payload.snapshotId);
         case "library.exportArtifact":
-          return await store.exportArtifact(idOf(payload.id));
+          return payload.asFile === true ? await transfers.export(await requireRecord(payload.id)) : await store.exportArtifact(idOf(payload.id));
+        case "library.transfer":
+          return await transfers.operate(payload);
         case "library.importArtifact": {
           if (!payload.bundle || typeof payload.bundle !== "object" || Array.isArray(payload.bundle) || Object.hasOwn(payload, "sourcePath")) {
             throw failure2("INVALID_IMPORT", "Choose a native artwork package; browser calls cannot import an arbitrary local path.");
@@ -5615,9 +6590,9 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
               ["react.production.min.js", "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"],
               ["react-dom.production.min.js", "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"]
             ].map(async ([file, expected]) => {
-              const bytes = await readFile(path11.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
-              if (bytes.length > 256 * 1024 || createHash9("sha256").update(bytes).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
-              return { file, url: "data:text/javascript;base64," + bytes.toString("base64") };
+              const bytes2 = await readFile(path14.join(pluginRoot, "skills/codex-design-system/scripts/editor/artifact-type/vendor", file));
+              if (bytes2.length > 256 * 1024 || createHash12("sha256").update(bytes2).digest("hex") !== expected) throw failure2("EDITOR_VENDOR_INTEGRITY", "The packaged preview runtime failed its integrity check.");
+              return { file, url: "data:text/javascript;base64," + bytes2.toString("base64") };
             }));
           }
           const bootstrap = `(${installNativeEditorTransport.toString()})(${JSON.stringify(configuration).replace(/</g, "\\u003c")},undefined,${installNativePreviews.toString()});`;
@@ -5628,35 +6603,42 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
             const relative = url.pathname.slice(root.pathname.length);
             editorRequestUrl(root.href, relative + url.search);
             let asset;
-            if (!relative) asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
-            else if (relative === "__codex/annotations.js") asset = path11.join(pluginRoot, "scripts/browser-annotations.js");
+            if (!relative) asset = path14.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/index.html");
+            else if (relative === "__codex/annotations.js") asset = path14.join(pluginRoot, "scripts/browser-annotations.js");
             else if (relative === "__codex/boot.js") {
               const response = await transport.request(id, { path: "__codex/boot.js" + (previewVersion === void 0 ? "" : `?at=${previewVersion}`), method: "GET" });
               return new Response(Buffer.from(response.body, "base64"), { status: response.status, headers: response.headers });
-            } else if (relative === "__codex/history-ui.js") asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/share-ui.js");
-            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
-              asset = path11.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
+            } else if (relative === "__codex/history-ui.js") asset = path14.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor/share-ui.js");
+            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative) || editor.kind === "motion" && /^artifact-type\/(?:app\.js|app\.css|[A-Za-z0-9._-]+\.woff2)$/.test(relative)) {
+              asset = path14.join(pluginRoot, "skills", `codex-${editor.kind}`, "scripts/editor", relative);
             } else throw failure2("EDITOR_ASSET_REFUSED", "Only packaged static editor assets can be assembled.");
-            const bytes = await readFile(asset);
-            return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
+            const bytes2 = await readFile(asset);
+            return new Response(bytes2, { headers: { "content-length": String(bytes2.length) } });
           };
           const document2 = await buildEditorDocument({ baseUrl: editor.url, fetchLocal, config: { ...configuration, virtualBase, bootstrap, nativeHistory: true } });
           return { ...editor, ...document2, artifactId: id, channel: payload.channel, transport: "mcp" };
         }
         case "editor.request": {
           const id = idOf(payload.id), request = payload.request ?? {};
-          const { method } = validateEditorRequest(request);
+          const record = await requireRecord(id);
+          const { method } = validateEditorRequest(request, { maxBodyBytes: record.kind === "motion" ? 64 * 1024 * 1024 : 32 * 1024 * 1024 });
           const editor = await editorFor(id);
           const url = editorRequestUrl(editor.url, request.path);
           const route = decodeURIComponent(url.pathname.slice(new URL(editor.url).pathname.length)).split("/").filter(Boolean).join("/");
+          if (method === "POST" && /^__ds-sync\/[a-z0-9][a-z0-9_-]{0,63}$/.test(route)) throw failure2("SYSTEM_SYNC_CONFIRMATION_REQUIRED", "Review the design system differences before replacing local files.");
+          const syncStatus = /^__ds-sync\/([a-z0-9][a-z0-9_-]{0,63})$/.exec(route);
+          if (syncStatus && ["GET", "HEAD"].includes(method)) {
+            const status = await systemSync.status(record, syncStatus[1]);
+            return { status: 200, statusText: "OK", headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, body: method === "HEAD" ? "" : Buffer.from(JSON.stringify(status)).toString("base64") };
+          }
           if (method === "POST" && /^__history\/(?:\d+\/restore|notice\/[^/]+\/recover)$/.test(route)) {
-            const record = await requireRecord(id);
-            return await withLock(path11.join(record.path, WORKER_LOCK_FILE), async () => {
-              const worker = await getWorkerStatus(record.path);
-              const jobs = loadJobs(record.path);
+            const record2 = await requireRecord(id);
+            return await withLock(path14.join(record2.path, WORKER_LOCK_FILE), async () => {
+              const worker = await getWorkerStatus(record2.path);
+              const jobs = loadJobs(record2.path);
               let registry;
               try {
-                const file = path11.join(record.path, WORKER_FILE);
+                const file = path14.join(record2.path, WORKER_FILE);
                 const info = await lstat(file).catch((error3) => {
                   if (error3.code === "ENOENT") return null;
                   throw error3;
@@ -5664,7 +6646,7 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
                 if (info) {
                   if (!info.isFile() || info.isSymbolicLink()) throw new Error("Unverified worker registry.");
                   registry = JSON.parse(await readFile(file, "utf8"));
-                  if (!registry || registry.version !== 1 || !samePath(registry.root, record.path) || !["waiting", "paused"].includes(registry.status) || registry.activeJobId || !UUID2.test(registry.nativeThreadId || "") || ["pid", "url", "token", "command"].some((key) => Object.hasOwn(registry, key))) throw new Error("Unverified worker ownership.");
+                  if (!registry || registry.version !== 1 || !samePath(registry.root, record2.path) || !["waiting", "paused"].includes(registry.status) || registry.activeJobId || !UUID2.test(registry.nativeThreadId || "") || ["pid", "url", "token", "command"].some((key) => Object.hasOwn(registry, key))) throw new Error("Unverified worker ownership.");
                 }
               } catch {
                 throw failure2("ARTIFACT_BUSY", "Worker ownership could not be verified before restoring edit history.");
@@ -5677,12 +6659,12 @@ function createDesignService({ store, pluginRoot = fileURLToPath2(new URL("../",
           return await nativeComments.request(id, request);
         }
         case "editor.digest": {
-          await requireRecord(payload.id);
+          const record = await requireRecord(payload.id), maxBytes = (record.kind === "motion" ? 64 : 32) * 1024 * 1024;
           const algorithm = payload.algorithm === "SHA-256" ? "sha256" : payload.algorithm === "SHA-384" ? "sha384" : void 0;
-          if (!algorithm || typeof payload.base64 !== "string" || payload.base64.length > 44739244 || !isValidBase64(payload.base64)) throw failure2("INVALID_EDITOR_DIGEST", "Only bounded SHA-256 and SHA-384 digests are supported.");
-          const bytes = Buffer.from(payload.base64, "base64");
-          if (bytes.length > 32 * 1024 * 1024) throw failure2("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
-          return { base64: createHash9(algorithm).update(bytes).digest("base64") };
+          if (!algorithm || typeof payload.base64 !== "string" || payload.base64.length > Math.ceil(maxBytes / 3) * 4 || !isValidBase64(payload.base64)) throw failure2("INVALID_EDITOR_DIGEST", "Only bounded SHA-256 and SHA-384 digests are supported.");
+          const bytes2 = Buffer.from(payload.base64, "base64");
+          if (bytes2.length > maxBytes) throw failure2("INVALID_EDITOR_DIGEST", "The digest input exceeds the transfer limit.");
+          return { base64: createHash12(algorithm).update(bytes2).digest("base64") };
         }
         case "editor.events.open":
           return await nativeComments.openEvents(idOf(payload.id), payload.path);
@@ -5725,7 +6707,7 @@ var alive2 = (pid) => {
   }
 };
 var detail = (cause) => ({ code: cause.code || "PREVIEW_ERROR", message: String(cause.message || cause).slice(0, 2e3) });
-var samePath3 = (a, b) => process.platform === "win32" ? path12.resolve(a).toLowerCase() === path12.resolve(b).toLowerCase() : path12.resolve(a) === path12.resolve(b);
+var samePath4 = (a, b) => process.platform === "win32" ? path15.resolve(a).toLowerCase() === path15.resolve(b).toLowerCase() : path15.resolve(a) === path15.resolve(b);
 async function previewNativeActivity(record) {
   try {
     const status = await getWorkerStatus(record.path);
@@ -5735,7 +6717,7 @@ async function previewNativeActivity(record) {
   }
 }
 function verifiedState(state, root) {
-  if (!state || state.version !== 1 || state.kind !== KIND || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state.token) || typeof state.instanceId !== "string" || !samePath3(state.root, root)) throw error2("INVALID_PREVIEW_STATE", "The preview record cannot identify this library.");
+  if (!state || state.version !== 1 || state.kind !== KIND || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state.token) || typeof state.instanceId !== "string" || !samePath4(state.root, root)) throw error2("INVALID_PREVIEW_STATE", "The preview record cannot identify this library.");
   let url;
   try {
     url = new URL(state.url);
@@ -5746,7 +6728,7 @@ function verifiedState(state, root) {
   return url;
 }
 async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutMs = 2e3 } = {}) {
-  root = path12.resolve(root);
+  root = path15.resolve(root);
   if (!await statOrNull(root)) return { running: false, root };
   const state = await readJson2(root, PREVIEW_STATE, null);
   if (!state) return { running: false, root };
@@ -5755,7 +6737,7 @@ async function libraryPreviewStatus({ root = createLibraryStore().root, timeoutM
   try {
     const response = await fetch(new URL("session", url), { redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
     const session = response.ok ? await response.json() : null;
-    if (!session || session.kind !== KIND || session.pid !== state.pid || session.instanceId !== state.instanceId || !samePath3(session.root, root)) throw error2("PREVIEW_IDENTITY_UNVERIFIED", "A live PID did not confirm this preview identity.");
+    if (!session || session.kind !== KIND || session.pid !== state.pid || session.instanceId !== state.instanceId || !samePath4(session.root, root)) throw error2("PREVIEW_IDENTITY_UNVERIFIED", "A live PID did not confirm this preview identity.");
     return { running: true, root, url: state.url, pid: state.pid, instanceId: state.instanceId, state };
   } catch {
     throw error2("PREVIEW_IDENTITY_UNVERIFIED", "The recorded live process did not confirm this library preview. No process was stopped.");
@@ -5794,10 +6776,10 @@ async function requestJson(request, maximum) {
     throw error2("REQUEST_TOO_LARGE", "The request exceeds the preview limit.");
   }
   const chunks = [];
-  let bytes = 0;
+  let bytes2 = 0;
   for await (const chunk of request) {
-    bytes += chunk.length;
-    if (bytes > maximum) {
+    bytes2 += chunk.length;
+    if (bytes2 > maximum) {
       request.resume();
       throw error2("REQUEST_TOO_LARGE", "The request exceeds the preview limit.");
     }
@@ -5816,10 +6798,10 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath3(new URL("
   store ||= createLibraryStore({ ...root === void 0 ? {} : { root }, isBusy: previewNativeActivity });
   await store.initialize();
   root = store.root;
-  pluginRoot = path12.resolve(pluginRoot);
+  pluginRoot = path15.resolve(pluginRoot);
   service ||= createDesignService({ store, pluginRoot });
-  if (html === void 0) html = await fs8.readFile(path12.join(pluginRoot, "ui", "index.html"), "utf8");
-  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID8(), nonce = randomBytes(18).toString("base64");
+  if (html === void 0) html = await fs11.readFile(path15.join(pluginRoot, "ui", "index.html"), "utf8");
+  const token = randomBytes(32).toString("base64url"), instanceId = randomUUID11(), nonce = randomBytes(18).toString("base64");
   const prefix = `/${token}/`, subscribers = /* @__PURE__ */ new Set(), timers = /* @__PURE__ */ new Map();
   let origin, servedHtml, state, closed = false;
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; connect-src 'self'; frame-src 'self' http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'self'`;
@@ -5848,7 +6830,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath3(new URL("
     });
     await locked(root, async () => {
       const recorded = await readJson2(root, PREVIEW_STATE, null);
-      if (recorded?.instanceId === instanceId) await fs8.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
+      if (recorded?.instanceId === instanceId) await fs11.unlink(await safePath(root, PREVIEW_STATE, { type: "file" }));
     });
   };
   server = http.createServer({ maxHeaderSize: 8192 }, async (request, response) => {
@@ -5913,7 +6895,7 @@ async function startLibraryPreview({ root, pluginRoot = fileURLToPath3(new URL("
       const result = await service.invoke(body.action, body.payload || {});
       json(response, 200, { result });
       if (body.action.startsWith("view.")) broadcast({ type: "view.changed", ...result?.tabs ? { viewState: result } : {} });
-      else if (body.action.startsWith("library.") && !["library.list", "library.get", "library.listSnapshots", "library.exportArtifact"].includes(body.action)) broadcast({ type: "library.changed" });
+      else if (body.action.startsWith("library.") && !["library.list", "library.get", "library.listSnapshots", "library.exportArtifact"].includes(body.action) && (body.action !== "library.transfer" || body.payload?.operation === "finish")) broadcast({ type: "library.changed" });
     } catch (cause) {
       if (response.headersSent) {
         response.destroy();
@@ -5954,7 +6936,7 @@ function parse(argv) {
     if (!match) throw new Error("Use --root, --plugin-root, or --port.");
     const value = match[2] ?? arguments_[++i];
     if (!value || value.startsWith("--")) throw new Error("Missing option value.");
-    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path13.resolve(value);
+    options[match[1] === "plugin-root" ? "pluginRoot" : match[1]] = match[1] === "port" ? Number(value) : path16.resolve(value);
   }
   return { command, options };
 }
@@ -5992,11 +6974,11 @@ async function main(argv = process.argv.slice(2)) {
     const store = createLibraryStore({ root });
     await store.initialize();
     const log = await safePath(root, "_state/library-preview.log", { mustExist: false });
-    const fd = fs9.openSync(log, "a");
+    const fd = fs12.openSync(log, "a");
     const entrypoint = fileURLToPath4(import.meta.url), childArgs = [entrypoint, "serve", "--root", root, "--plugin-root", options.pluginRoot || fileURLToPath4(new URL("../", import.meta.url)), ...options.port === void 0 ? [] : ["--port", String(options.port)]];
-    const child = spawn3(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
+    const child = spawn4(process.execPath, childArgs, { detached: true, windowsHide: true, shell: false, stdio: ["ignore", fd, fd] });
     child.unref();
-    fs9.closeSync(fd);
+    fs12.closeSync(fd);
     let childError;
     child.once("error", (cause) => {
       childError = cause;
@@ -6015,7 +6997,7 @@ async function main(argv = process.argv.slice(2)) {
   }
   console.log("Usage: node scripts/library-preview.mjs open|serve|status|stop [--root <library>] [--plugin-root <built-plugin>] [--port <number>]");
 }
-if (process.argv[1] && pathToFileURL(path13.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
+if (process.argv[1] && pathToFileURL(path16.resolve(process.argv[1])).href === import.meta.url) main().catch((cause) => {
   console.error(JSON.stringify({ error: cause.code || "LIBRARY_PREVIEW_ERROR", message: cause.message }));
   process.exitCode = 1;
 });

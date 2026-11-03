@@ -42,8 +42,11 @@ async function stagedEditors(t) {
       await fs.cp(originalAssets, path.join(editor, 'assets'), { recursive: true });
       await fs.copyFile(path.join(repository, 'skills/claude-slides/scripts/editor/index.html'), path.join(editor, 'index.html'));
     } else {
-      await fs.writeFile(path.join(editor, 'index.html'), '<html><head><script type="module" src="./assets/index-test.js"></script></head><body></body></html>');
-      await fs.writeFile(path.join(editor, 'assets/index-test.js'), 'var label={defaultMessage:"Cancel",id:"cancel"};');
+      const entry = kind === 'motion' ? 'artifact-type/app.js' : 'assets/index-test.js';
+      await fs.mkdir(path.dirname(path.join(editor, entry)), { recursive: true });
+      await fs.writeFile(path.join(editor, 'index.html'), `<html><head><script type="module" src="./${entry}"></script></head><body></body></html>`);
+      await fs.writeFile(path.join(editor, entry), 'var label={defaultMessage:"Cancel",id:"cancel"};');
+      if (kind === 'motion') await fs.writeFile(path.join(editor, 'local-host.js'), 'var localHost=true;');
     }
   }
   const localization = await build({ entryPoints: [path.join(repository, 'codex-plugins/source/scripts/editor-localization.js')], bundle: true,

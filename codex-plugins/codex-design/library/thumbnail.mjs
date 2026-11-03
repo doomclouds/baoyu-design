@@ -180,8 +180,8 @@ export async function createArtifactThumbnail(store, id, options = {}) {
     resolve(value, base) {
       value = decode(value).trim();
       if (files.has(value)) return value;
-      const blob = /^\/_blob\/([a-f0-9]{32})$/.exec(value)?.[1];
-      if (blob) { if (record.kind === 'dashboard') return files.has('_blobs/' + blob) ? '_blobs/' + blob : null; return [...files.keys()].find(file => file.startsWith((record.kind === 'design-system' ? 'project/_blobs/' : 'project/assets/') + blob + '.')) || null; }
+      const blob = /^\/?_blob\/([a-f0-9]{32})$/.exec(value)?.[1];
+      if (blob) { if (record.kind === 'dashboard' || record.kind === 'motion') return files.has('_blobs/' + blob) ? '_blobs/' + blob : null; return [...files.keys()].find(file => file.startsWith((record.kind === 'design-system' ? 'project/_blobs/' : 'project/assets/') + blob + '.')) || null; }
       if (!value || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(value) || /[\\\u0000-\u001f]/.test(value)) return null;
       const relative = path.posix.normalize(path.posix.join(path.posix.dirname(base), value.split(/[?#]/)[0]));
       return files.has(relative) ? relative : null;
@@ -198,7 +198,14 @@ export async function createArtifactThumbnail(store, id, options = {}) {
       if (!file) { if (value) context.note('An external or missing resource was omitted.'); return null; }
       if (assets.has(file)) return assets.get(file);
       if (visiting.has(file)) { context.note('A recursive image reference was omitted.'); return null; }
-      const info = files.get(file), mime = info.contentType || 'application/octet-stream';
+      const info = files.get(file);
+      let mime = info.contentType || 'application/octet-stream';
+      if (record.kind === 'motion' && /^_blobs\/[a-f0-9]{32}$/.test(file) && files.has(file + '.json')) {
+        try {
+          const metadata = JSON.parse(await context.text(file + '.json'));
+          if (/^(?:image\/(?:png|jpeg|webp|gif|svg\+xml)|font\/(?:woff2?|ttf|otf))$/.test(metadata.contentType || '')) mime = metadata.contentType;
+        } catch { /* Missing or invalid media metadata never grants a resource type. */ }
+      }
       if (!(mime.startsWith('image/') || purpose === 'style' && mime.startsWith('font/')) || info.bytes > limits.maxAssetBytes || total + info.bytes > limits.maxTotalBytes) { context.note('An unsupported or large material was omitted.'); return null; }
       visiting.add(file);
       try {
@@ -225,6 +232,35 @@ export async function createArtifactThumbnail(store, id, options = {}) {
     if (!files.has(sourceFile)) sourceFile = files.has('project/README.md') ? 'project/README.md' : 'project/tokens.json';
     if (sourceFile.endsWith('.html')) { raw = await context.text(sourceFile); width = dimension(/width\s*:\s*(\d+)px/i.exec(raw)?.[1], 960); height = dimension(/@dsCard\b[^>]*\bheight\s*=\s*(\d+)/i.exec(raw)?.[1], 540); extraCss = await sanitizedCss(tokenCss(await json('project/tokens.json')), 'project/tokens.json', context); }
     else { const text = await context.text(sourceFile); raw = '<div style="padding:64px;font:28px/1.6 system-ui;color:#20211f;background:#fafaf8"><h1>' + escape(record.title) + '</h1><p>' + escape(text.slice(0, 700)) + '</p></div>'; fidelity = 'content-reference'; context.note('The design system has no static Cover HTML; this preview quotes actual content.'); }
+  } else if (record.kind === 'motion') {
+    sourceFile = 'db/film/meta.json';
+    const meta = await json(sourceFile);
+    if (files.has('db/modules/scenes.json.json')) {
+      const module = await json('db/modules/scenes.json.json');
+      try {
+        const scenes = JSON.parse(module.text);
+        width = dimension(scenes.width ?? scenes.w ?? scenes.size?.width ?? scenes.size?.[0], 1280);
+        height = dimension(scenes.height ?? scenes.h ?? scenes.size?.height ?? scenes.size?.[1], 720);
+      } catch { /* The player reports invalid scene data; the library does not run it. */ }
+    }
+    const candidates = [];
+    if (typeof meta.poster === 'string') candidates.push({ value: meta.poster, file: sourceFile });
+    if (typeof meta.thumbnail === 'string') candidates.push({ value: meta.thumbnail, file: sourceFile });
+    for (const file of [...files.keys()].filter(file => /^db\/assets\/(?:poster|thumbnail|cover)(?:\.[A-Za-z0-9]+)?\.json$/i.test(file)).sort()) {
+      const asset = await json(file);
+      if (typeof asset.ref === 'string' && /^image\//.test(asset.mime || '')) candidates.push({ value: asset.ref, file });
+    }
+    for (const file of [...files.keys()].filter(file => /^exports\/stills\/[^/]+\.(?:png|jpe?g|webp)$/i.test(file)).sort()) candidates.push({ value: file, file });
+    let image;
+    for (const candidate of candidates) {
+      image = await context.asset(candidate.value, candidate.file, 'image');
+      if (image) { sourceFile = candidate.file; break; }
+    }
+    fidelity = 'content-reference';
+    raw = image
+      ? `<div style="width:${width}px;height:${height}px;background:#171717"><img src="${escape(image)}" alt="${escape(record.title)}" style="width:100%;height:100%;object-fit:contain"></div>`
+      : `<div style="width:${width}px;height:${height}px;box-sizing:border-box;padding:64px;display:flex;flex-direction:column;justify-content:center;background:#171717;color:#fafaf8;font-family:system-ui"><p style="font-size:20px;color:#b8b8b0">Motion · Title reference</p><h1 style="font-size:58px;line-height:1.25;font-weight:500">${escape(meta.title || record.title)}</h1><p style="font-size:23px;color:#b8b8b0">No stored poster or still frame</p></div>`;
+    context.note(image ? 'This is a stored poster or previously generated still. Film code was not executed or rendered again.' : 'No stored film frame is available. This cover shows the title only; film code was not executed.');
   } else {
     const page = await json('db/files/index.html.json'); sourceFile = 'db/files/index.html.json';
     if (typeof page.text !== 'string') throw new LibraryError('INVALID_CONTENT', 'The dashboard page is missing.');

@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { readJson, samePath, alive } from '../scripts/bridge-core.mjs';
+import { readJson, samePath } from '../scripts/bridge-core.mjs';
+import { editorInstanceStopped } from '../scripts/artifact-command.mjs';
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
 
@@ -33,7 +34,7 @@ export async function stopLocalEditor(record, { pluginRoot, env = process.env, t
       finish(failure('EDITOR_STOP_TIMEOUT', 'The selected editor did not finish stopping. Artwork files were not moved.'));
     }, timeoutMs);
     child.once('error', error => finish(failure('EDITOR_STOP_FAILED', error.message)));
-    child.once('close', code => {
+    child.once('close', async code => {
       if (finished) return;
       if (code !== 0) {
         let detail;
@@ -42,7 +43,7 @@ export async function stopLocalEditor(record, { pluginRoot, env = process.env, t
       }
       try {
         const result = JSON.parse(stdout.trim());
-        if (alive(state.pid)) return finish(failure('EDITOR_STOP_FAILED', 'The verified editor is still running. Artwork files were not moved.'));
+        if (fs.existsSync(stateFile) || !await editorInstanceStopped(state, record.path, record.kind)) return finish(failure('EDITOR_STOP_FAILED', 'The verified editor is still running. Artwork files were not moved.'));
         finish(null, result);
       }
       catch { finish(failure('EDITOR_STOP_FAILED', 'The selected editor stop returned invalid data. Artwork files were not moved.')); }

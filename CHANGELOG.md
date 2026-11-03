@@ -4,6 +4,35 @@ English | [中文](./CHANGELOG.zh.md)
 
 All notable changes to `baoyu-design` are tracked in this file.
 
+## 2.8.2 - 2026-11-02
+
+### Fixes
+- `claude-slides`: in a PowerPoint export, Chinese, Japanese or Korean text could show as boxes when its East Asian font was missing on the reader's computer or held none of those characters: Arial in the basic-fonts export, a Latin family, or an embedded subset that left characters out of a long deck. That text now names a font Windows and Office have instead (Microsoft YaHei, Microsoft JhengHei, Yu Gothic or Malgun Gothic). Text the embedded font holds, text without these characters and the Google Slides export are unchanged ([#29](https://github.com/JimLiu/baoyu-design/issues/29)).
+
+## 2.8.1 - 2026-11-02
+
+### Fixes
+- `claude-slides`, `claude-design`, `claude-design-system`, `claude-dashboard`: their descriptions no longer send one-off HTML work to the `baoyu-design` skill, which is archived and no longer installed. They now only say what each skill is not for. The DeepSeek Harness plugins carry the same descriptions.
+
+## 2.8.0 - 2026-11-02
+
+### Features
+- **Motion is released.** `claude-motion` makes animated films: the agent writes each scene as code into the film's folder while you watch it fill in the local player, then you retype lines, drag scene lengths, change the style in **Tweaks**, comment on a moment and send it to the agent, share it on the network and go back through its History. Export MP4 or GIF from the player, or `export` from the command line with Chrome, no page open.
+- Long narrated films: up to 900 s and 40 scenes, with a voice track of one take a scene. `voice` makes the takes with a speech provider of yours (`voice --providers` says which are ready), `--take` / `--takes` adopts ones made elsewhere, and `align`, `sync` and `beats` time scenes and motion to the words. Captions follow the voice, with CJK-aware line breaks, and `captions` or `export --captions` writes them as a subtitle file. A **Script** tab in the Tweaks panel edits the lines, and the voice lane draws each take's wave.
+- Sound and footage: `score` reports what the film plays and how loud it is, `S.bed` plays a recorded music bed under the film, `music` measures a track and `arrange` cuts one to the film, and `export --audio-only` renders the mix in seconds. `record` films a page of your own product as a clip (needs ffmpeg), `stills` gives the frames at chosen moments, and `import-explainer` brings an explainer project in as a film.
+- **`motion-director`** is a new skill that directs a film with something to say: it finds the point and the picture that carries it, writes the narration for the ear, has it voiced, times every scene to the words, reviews the frames as a viewer would, and hands the film over in its player. It needs `claude-motion` beside it.
+- DeepSeek Harness: the new `dsh-claude-motion` plugin. Comments and the player's **Continue**, **Finalize**, **Make the animation** and **Ask Agent** buttons reach the agent, and films are listed on the **Artifacts** page.
+- All the open artifacts of a kind now share one server and one port, instead of a port each: every page has its own address, such as `http://127.0.0.1:4710/slides/<id>/`, which stays the same from one start to the next. The server's root lists what is open, and the server ends with the last one. Sharing stays per artifact, and share links gain the same path, so links from an earlier version stop working.
+
+### Fixes
+- `share <root> --disable`, `--enable`, `--reset` and `--role` no longer open the page to the network. They used to turn sharing on whenever it was off, so disabling a link right after `--off` put the page back on the network. Only `share <root>` with no options opens it now; with no server running, the link options change the links without starting one.
+
+## 2.7.2 - 2026-11-02
+
+### Features
+- Slides and design: an installed design system now says when it has fallen behind the system it was copied from, and can be copied again. The **Theme** tab shows `Behind its source: N files changed` with a **Sync** button (the owner's), which updates the open page at once. `artifact.mjs ds-sync <root> [<folder>] [--check]` does the same from the command line, and `check` notes a copy that is behind. A system's new files are not copied, and a file it dropped stays in the copy ([#26](https://github.com/JimLiu/baoyu-design/issues/26)).
+- A source given as a relative path is found from the working directory, the artifact's folder and the folders above it, so the comparison also works in an editor reopened from another folder, such as the DeepSeek Harness **Artifacts** page. When the source cannot be found, the Theme tab says so.
+
 ## 2.7.1 - 2026-11-02
 
 ### Fixes

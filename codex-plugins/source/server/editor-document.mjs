@@ -6,6 +6,7 @@ import { adaptCommentViewport } from '../scripts/comment-viewport-adapter.mjs';
 import { adaptAgentDrafts } from '../scripts/agent-draft-adapter.mjs';
 import { adaptNativeHistoryUi } from '../scripts/native-history-adapter.mjs';
 import { adaptNativeEditorLanguage } from '../scripts/native-editor-language-adapter.mjs';
+import { adaptNativeMotionPlayer } from '../scripts/motion-player-adapter.mjs';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
 const scriptText = value => value.replace(/<\/script/gi, '<\\/script');
@@ -24,6 +25,12 @@ async function replaceAsync(source, expression, transform) {
 
 /** Adapt only the editor's local-host selection, never authored artwork files. */
 export function adaptInlineEditorScript(source, scriptUrl) {
+  // The upstream HTTP boot response prefixes a path/WebSocket transport shim.
+  // Its owner/history metadata is still needed, but native sessions already
+  // carry scoped fetch and SSE through MCP and must retain those transports.
+  if (source.startsWith('(function(BASE){\nvar P=location.protocol') && source.includes('window.EventSource=S;') && source.includes("'baoyu-sse'")) {
+    source = source.replace('(function(BASE){', '(function(BASE){if(globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__)return;');
+  }
   if (new URL(scriptUrl).pathname.endsWith('/__codex/history-ui.js')) return adaptNativeHistoryUi(source);
   source = adaptNativeEditorLanguage(source);
   source = repairEditorRuntime(source);
@@ -31,6 +38,7 @@ export function adaptInlineEditorScript(source, scriptUrl) {
   source = adaptCommentDrafts(source);
   source = adaptCommentViewport(source);
   source = adaptAgentDrafts(source);
+  source = adaptNativeMotionPlayer(source);
   source = source.replace(/\bwindow\.parent===window\b/g, '(!!globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__||window.parent===window)');
   source = source.replace(/function ([\w$]+)\(([\w$]+)\)\{return \2\.parent===\2\?null:\{post:/g,
     (match, name, win) => `function ${name}(${win}){return (globalThis.__CODEX_DESIGN_EDITOR_TRANSPORT__&&${win}===globalThis.window)||${win}.parent===${win}?null:{post:`);

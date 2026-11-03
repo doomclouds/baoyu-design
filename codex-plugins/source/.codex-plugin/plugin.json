@@ -1,18 +1,23 @@
 {
   "name": "codex-design",
-  "version": "0.6.6",
-  "description": "Local editable slides, canvases, design systems, and data dashboards for Codex.",
+  "version": "0.7.0",
+  "description": "Local editable slides, canvases, design systems, dashboards, and motion films for Codex.",
   "skills": "./skills/",
   "mcpServers": "./mcp.json",
   "requires_local_executor": true,
   "interface": {
     "displayName": "codex design",
-    "shortDescription": "Editable designs and charts",
+    "shortDescription": "Editable designs and films",
     "category": "Productivity",
-    "capabilities": ["Read", "Write", "Interactive"],
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
     "defaultPrompt": [
       "Use codex design to create an editable slide deck from these notes.",
-      "Use codex design to build a dashboard from this CSV."
+      "Use codex design to build a dashboard from this CSV.",
+      "Use codex design to create an editable Motion film with narration."
     ],
     "brandColor": "#D96839",
     "composerIcon": "./assets/icon.png",

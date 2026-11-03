@@ -48,8 +48,8 @@ export function createNativeComments({ requests, transport, editorFor, pollMs = 
   const touch = stream => { clearTimeout(stream.expiry); stream.expiry = setTimeout(() => close(stream), idleMs); stream.expiry.unref?.(); };
   return {
     async request(id, request) {
-      const { path } = await route(id, request.path);
-      const { method, body } = validateEditorRequest(request);
+      const { path, editor } = await route(id, request.path);
+      const { method, body } = validateEditorRequest(request, { maxBodyBytes: editor.kind === 'motion' ? 64 * 1024 * 1024 : 32 * 1024 * 1024 });
       if (path === '__comments' && ['GET', 'HEAD'].includes(method)) {
         const result = jsonResult(await snapshot(id));
         return method === 'HEAD' ? { ...result, body: '' } : result;

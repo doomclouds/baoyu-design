@@ -9,7 +9,7 @@ export class LibraryError extends Error {
 }
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const KINDS = Object.freeze(['slides', 'design', 'design-system', 'dashboard']);
+export const KINDS = Object.freeze(['slides', 'design', 'design-system', 'dashboard', 'motion']);
 export function artifactId(id) { if (typeof id !== 'string' || !UUID.test(id)) throw new LibraryError('INVALID_ID', 'Expected a persistent artifact UUID.'); return id.toLowerCase(); }
 export function artifactKind(kind) { if (!KINDS.includes(kind)) throw new LibraryError('INVALID_KIND', 'Unknown artifact kind.'); return kind; }
 export function titleText(title) {

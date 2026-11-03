@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -31,8 +31,9 @@ async function write(root, relative, text) {
 
 /** Make a disposable, valid project for a real editor. No installed skill files are changed. */
 export async function createFixture(kind, parentDir = tmpdir()) {
-  if (!['slides', 'design', 'design-system', 'dashboard'].includes(kind)) throw new Error(`Unknown fixture: ${kind}`);
+  if (!['slides', 'design', 'design-system', 'dashboard', 'motion'].includes(kind)) throw new Error(`Unknown fixture: ${kind}`);
   await mkdir(parentDir, { recursive: true });
+  parentDir = await realpath(parentDir);
   const root = await mkdtemp(path.join(parentDir, `codex-design-test-${kind}-`));
   const title = `Codex Design ${kind} verification`;
   const fixture = { root, kind, skill: `codex-${kind}`, sourceSkill: `claude-${kind}`, title };
@@ -72,6 +73,28 @@ export async function createFixture(kind, parentDir = tmpdir()) {
     });
     await write(root, 'project/components/Cover/preview.html', '<!-- @dsCard group="Overview" height=160 -->\n<div style="padding:24px;font-family:Arial, sans-serif"><h1>Codex Design verification</h1><p>Local design-system editor.</p></div>\n');
     fixture.comment = { anchor: 'token:ink', label: 'Ink token', detail: 'tokens.json ink token' };
+  } else if (kind === 'motion') {
+    fixture.indexFile = 'db/film/meta.json';
+    fixture.contentFile = 'db/modules/scene-intro.js.json';
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQioAAAAASUVORK5CYII=', 'base64');
+    const blobId = createHash('sha256').update(image).digest('hex').slice(0, 32);
+    await write(root, fixture.indexFile, { v: 1, title, updatedAt: createdAt });
+    await write(root, 'db/film/script.json', { code: 'window.CUT = kit.scenes();\n' });
+    await write(root, 'db/modules/scenes.json.json', { kind: 'json', text: JSON.stringify({ v: 1, stage: 'final', width: 640, height: 360, fps: 30,
+      background: '#ffffff', scenes: [{ id: 'intro', name: 'Opening', dur: 2, desc: 'A disposable animated heading.' }] }) });
+    await write(root, fixture.contentFile, { kind: 'js', text: `kit.scene('intro', {
+  init(kit) {
+    kit.stage.append(kit.h('<h1 style="font-family:Arial,sans-serif;color:#172033">Codex Design verification</h1>'));
+    this.heading = kit.stage.querySelector('h1');
+  },
+  render(t) { this.heading.style.opacity = String(Math.min(1, 0.2 + t)); }
+});\n` });
+    await mkdir(path.join(root, '_blobs'), { recursive: true });
+    await writeFile(path.join(root, '_blobs', blobId), image);
+    await write(root, `_blobs/${blobId}.json`, { name: 'fixture.png', contentType: 'image/png', bytes: image.length });
+    await write(root, 'db/assets/fixture.png.json', { ref: '/_blob/' + blobId, mime: 'image/png', w: 1, h: 1 });
+    fixture.blobId = blobId;
+    fixture.comment = { anchor: 'animation-v1:nth-of-type(1) > at-500ms:nth-of-type(1) > to-1500ms:nth-of-type(1)', label: 'Opening from 0.5s to 1.5s', detail: 'The authored opening scene from 0.5 to 1.5 seconds' };
   } else {
     fixture.indexFile = 'db/dash/meta.json';
     fixture.contentFile = 'db/files/index.html.json';

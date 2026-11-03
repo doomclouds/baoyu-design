@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createLibraryStore } from '../source/library/index.mjs';
 import { createDesignService, openLocalEditor } from '../source/server/service.mjs';
 import { stopLocalEditor } from '../source/server/editor-lifecycle.mjs';
+import { editorInstanceStopped } from '../source/scripts/artifact-command.mjs';
 import { stopWorker, getWorkerStatus } from '../source/scripts/worker-client.mjs';
 import { readJson, alive, BINDING_FILE, atomicJson } from '../source/scripts/bridge-core.mjs';
 import { WORKER_FILE, WORKER_JOBS_FILE } from '../source/scripts/worker-core.mjs';
@@ -56,7 +57,7 @@ test('trashing an active native job never invokes editor shutdown or moves artwo
   } finally { await removeTemporary(root); }
 });
 
-test('real editor opens, safely stops before trash, restores and opens a fresh instance', { timeout: 60_000 }, async () => {
+test('real editor opens, safely unmounts before trash, restores and opens a fresh mount', { timeout: 60_000 }, async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'codex-trash-live-editor-'));
   const store = createLibraryStore({ root: path.join(temporary, 'library') });
   let current, primary;
@@ -97,7 +98,7 @@ test('real editor opens, safely stops before trash, restores and opens a fresh i
     current = trashed;
     mark('assert.trashed');
     assert.equal(trashed.deleted, true);
-    assert.equal(alive(firstState.pid), false);
+    assert.equal(await editorInstanceStopped(firstState, firstState.root, record.kind), true);
     assert.equal(readJson(path.join(trashed.path, '.artifact-server.json')), null);
     assert.equal(readJson(path.join(trashed.path, BINDING_FILE)), null);
     assert.equal(readJson(path.join(trashed.path, WORKER_FILE)).status, 'paused');
@@ -112,7 +113,7 @@ test('real editor opens, safely stops before trash, restores and opens a fresh i
     mark('assert.second-session');
     const secondState = readJson(path.join(restored.path, '.artifact-server.json'));
     assert.equal((await fetch(second.url, { signal: AbortSignal.timeout(5000) })).status, 200);
-    assert.notEqual(secondState.pid, firstState.pid);
+    assert.equal(secondState.kind, record.kind);
     assert.equal(readJson(path.join(restored.path, WORKER_FILE)).status, 'paused', 'reopening does not resume pending native work');
     assert.equal((await getWorkerStatus(restored.path)).counts.active, 0);
     assert.equal((await getWorkerStatus(restored.path)).counts.pending, 1);
@@ -141,4 +142,37 @@ test('real editor opens, safely stops before trash, restores and opens a fresh i
     throw new AggregateError([...(primary ? [primary.error] : []), ...cleanup.map(item => item.error)],
       'Editor lifecycle failed; original and cleanup errors retained at ' + temporary, { cause: primary?.error });
   }
+});
+
+test('trashing and restoring an isolated artwork leaves the other artwork process running', { timeout: 60_000 }, async t => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'codex-trash-isolated-editor-'));
+  const store = createLibraryStore({ root: path.join(temporary, 'library') });
+  const firstRecord = await store.create({ kind: 'design-system', title: 'Unmount this artwork' });
+  const peer = await store.create({ kind: 'design-system', title: 'Preserve this artwork' });
+  let current = firstRecord;
+  const service = createDesignService({ store, pluginRoot,
+    editorOpen: (record, options) => openLocalEditor(record, { ...options, env: { ...process.env, CODEX_THREAD_ID: '' } }),
+  });
+  t.after(async () => {
+    for (const record of [current, peer]) await stopLocalEditor(record, { pluginRoot });
+    await removeTemporary(temporary);
+  });
+  const first = await service.invoke('editor.open', { id: firstRecord.id });
+  const second = await service.invoke('editor.open', { id: peer.id });
+  const firstState = readJson(path.join(firstRecord.path, '.artifact-server.json'));
+  const peerState = readJson(path.join(peer.path, '.artifact-server.json'));
+  assert.notEqual(firstState.pid, peerState.pid, 'each artwork owns an independent process');
+  assert.notEqual(new URL(first.url).port, new URL(second.url).port, 'each artwork owns an independent listener');
+  current = await service.invoke('library.trash', { id: firstRecord.id });
+  assert.equal(current.deleted, true);
+  assert.equal(readJson(path.join(current.path, '.artifact-server.json')), null);
+  assert.equal(alive(peerState.pid), true);
+  assert.equal(alive(firstState.pid), false);
+  assert.equal((await fetch(second.url, { signal: AbortSignal.timeout(5000) })).status, 200);
+  current = await service.invoke('library.restore', { id: firstRecord.id });
+  const restored = await service.invoke('editor.open', { id: firstRecord.id });
+  assert.notEqual(readJson(path.join(current.path, '.artifact-server.json')).pid, peerState.pid);
+  assert.notEqual(readJson(path.join(current.path, '.artifact-server.json')).pid, firstState.pid);
+  assert.equal((await fetch(restored.url, { signal: AbortSignal.timeout(5000) })).status, 200);
+  assert.equal((await fetch(second.url, { signal: AbortSignal.timeout(5000) })).status, 200);
 });

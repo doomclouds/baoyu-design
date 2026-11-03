@@ -13,7 +13,7 @@ import { BridgeError, alive, atomicJson, normalizeEvent, readJson, samePath, wit
 import { WORKER_FILE, WORKER_LOCK_FILE, NATIVE_BINDING_FILE, appendWorkerLog, loadJobs, saveJobs, userRevisionHash } from './worker-core.mjs';
 
 const PROTOCOL = 'native-draft-v1';
-const kindForSkill = skillDir => ({ 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard' })[path.basename(skillDir).replace(/^claude-/, 'codex-')];
+const kindForSkill = skillDir => ({ 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard', 'codex-motion': 'motion' })[path.basename(skillDir).replace(/^claude-/, 'codex-')];
 const lockOptions = { timeoutMs: 10_000, staleMs: 0 };
 const now = () => new Date().toISOString();
 const packageName = 'codex-design';

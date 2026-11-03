@@ -4,8 +4,12 @@ import { execFile } from 'node:child_process';
 import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { createFixture } from './fixtures.mjs';
+import { createLibraryStore } from '../source/library/index.mjs';
+import { createDesignService } from '../source/server/service.mjs';
+import { dispatchEditRequest } from '../source/scripts/edit-request-dispatch.mjs';
 
 const execFileAsync = promisify(execFile);
 const pluginRoot = path.resolve(process.env.CODEX_DESIGN_TEST_PLUGIN_ROOT || fileURLToPath(new URL('../codex-design/', import.meta.url)));
@@ -33,20 +37,20 @@ async function jsonRequest(url, options) {
   return body;
 }
 
-test('built package contains all five complete skills', async () => {
+test('built package contains five complete editors, the director and dataviz skills', async () => {
   await access(path.join(pluginRoot, 'plugin.json')).catch(() => {
     throw new Error('Build the Codex plugin first: node codex-plugins/build.mjs');
   });
-  for (const name of ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-dataviz']) {
+  for (const name of ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-motion', 'codex-motion-director', 'codex-dataviz']) {
     await access(path.join(pluginRoot, 'skills', name, 'SKILL.md'));
-    if (name !== 'codex-dataviz') {
+    if (!['codex-dataviz', 'codex-motion-director'].includes(name)) {
       await access(path.join(pluginRoot, 'skills', name, 'scripts', 'codex-artifact.mjs'));
       await access(path.join(pluginRoot, 'skills', name, 'scripts', 'editor', 'index.html'));
     }
   }
 });
 
-for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
+for (const kind of ['slides', 'design', 'design-system', 'dashboard', 'motion']) {
   test(`${kind}: real check, editor save, annotation routes, comments and stop`, { timeout: 45_000 }, async () => {
     const fixture = await createFixture(kind);
     let opened;
@@ -72,7 +76,7 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
       assert.equal(editorSession.root, fixture.root);
       assert.equal(editorSession.kind, fixture.kind);
       assert.equal(editorSession.pid, opened.pid);
-      if (kind !== 'dashboard') {
+      if (!['dashboard', 'motion'].includes(kind)) {
         const ungranted = await fetchWithin(new URL('/__codex/annotation-context', opened.url));
         assert.equal(ungranted.status, 404, 'annotation context must retain the editor grant boundary');
       }
@@ -85,10 +89,12 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
       });
       assert.equal(crossOrigin.status, 403, 'editor write routes must reject a different origin');
       const before = await readFile(path.join(fixture.root, fixture.contentFile), 'utf8');
-      if (kind === 'dashboard') {
+      if (['dashboard', 'motion'].includes(kind)) {
         const content = JSON.parse(before);
-        content.text = content.text.replace('Monthly revenue</p>', 'Verified monthly revenue</p>');
-        await jsonRequest(new URL('_api/write', opened.url), { method: 'POST', headers, body: JSON.stringify({ op: 'set', path: 'files/index.html', data: content }) });
+        content.text = kind === 'dashboard'
+          ? content.text.replace('Monthly revenue</p>', 'Verified monthly revenue</p>')
+          : content.text.replace('Codex Design verification', 'Codex Design verified');
+        await jsonRequest(new URL('_api/write', opened.url), { method: 'POST', headers, body: JSON.stringify({ op: 'set', path: kind === 'dashboard' ? 'files/index.html' : 'modules/scene-intro.js', data: content }) });
         assert.equal(JSON.parse(await readFile(path.join(fixture.root, fixture.contentFile), 'utf8')).text, content.text);
       } else {
         const updated = before.replace('Codex Design verification', 'Codex Design verified');
@@ -119,7 +125,14 @@ for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
       const finalCheck = await runCli(fixture, 'check', fixture.root);
       assert.equal(finalCheck.problems, 0, JSON.stringify(finalCheck));
       await runCli(fixture, 'stop', fixture.root);
-      await assert.rejects(fetchWithin(opened.url));
+      try {
+        const stopped = await fetchWithin(opened.url);
+        assert.equal(stopped.status, 404, 'the shared Hub must no longer mount this artwork');
+        await stopped.arrayBuffer();
+      } catch (error) {
+        if (error instanceof assert.AssertionError) throw error;
+        assert.equal(error.cause?.code, 'ECONNREFUSED', 'a stopped final Hub refuses the connection');
+      }
       opened = undefined;
     } finally {
       if (opened) await runCli(fixture, 'stop', fixture.root).catch(() => {});
@@ -141,141 +154,86 @@ test('codex-dataviz: real validator accepts the reference palette and rejects in
   });
 });
 
-test('legacy main delivery: real editor hook targets the bound chat and refuses a silent chat switch', { timeout: 30_000 }, async () => {
-  const fixture = await createFixture('slides');
-  const wrapper = path.join(pluginRoot, 'skills', fixture.skill, 'scripts', 'codex-artifact.mjs');
-  const trace = path.join(fixture.root, 'fake-queue-trace.jsonl');
-  const fake = path.join(fixture.root, 'fake codex.mjs');
-  const threadId = '11111111-2222-4333-8444-555555555555';
-  const otherThread = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-  const env = { ...process.env, CODEX_THREAD_ID: '', FAKE_TRACE: trace };
-  const runWrapper = async (...args) => execFileAsync(process.execPath, [wrapper, ...args], {
-    env, timeout: 12_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
-  });
-  await writeFile(fake, "import fs from 'node:fs'; fs.appendFileSync(process.env.FAKE_TRACE, JSON.stringify({args:process.argv.slice(2),cwd:process.cwd()})+'\\n');\n");
-  let opened;
-  try {
-    const first = await runWrapper('open-service', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake);
-    opened = JSON.parse(first.stdout);
-    const bindingPath = path.join(fixture.root, '.codex-design-bridge.json');
-    const binding = JSON.parse(await readFile(bindingPath, 'utf8'));
-    assert.equal(binding.threadId, threadId);
-    assert.equal(binding.serverPid, opened.pid);
-    const reused = JSON.parse((await runWrapper('open-service', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake)).stdout);
-    assert.equal(reused.pid, opened.pid);
-    assert.equal(reused.reused, true);
-    await assert.rejects(runWrapper('open-service', fixture.root, '--delivery', 'main', '--thread', otherThread, '--codex-path', fake), (error) => {
-      assert.equal(error.code, 2);
-      assert.match(error.stderr, /EDITOR_ALREADY_BOUND/);
-      return true;
-    });
-    assert.equal(JSON.parse(await readFile(bindingPath, 'utf8')).threadId, threadId);
-    assert.equal(JSON.parse(await readFile(path.join(fixture.root, '.artifact-server.json'), 'utf8')).pid, opened.pid);
-
-    const text = '把验证标题改成“年度报告” & keep $(literal) `code` %PATH%';
-    const headers = { 'Content-Type': 'application/json', Origin: new URL(opened.url).origin };
-    const created = await jsonRequest(new URL('__comments', opened.url), {
-      method: 'POST', headers, body: JSON.stringify({ ...fixture.comment, text, send: true }),
-    });
-    const deadline = Date.now() + 8_000;
-    let calls = [];
-    let delivered;
-    while (Date.now() < deadline) {
-      try {
-        calls = (await readFile(trace, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
-        const stored = JSON.parse(await readFile(path.join(fixture.root, 'comments.json'), 'utf8'));
-        delivered = stored.threads.find((entry) => entry.id === created.thread.id)?.agent;
-        if (calls.length && delivered?.status === 'delivered') break;
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+function storedZipEntry(bytes, name) {
+  for (let offset = 0; offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50;) {
+    const flags = bytes.readUInt16LE(offset + 6), method = bytes.readUInt16LE(offset + 8);
+    const size = bytes.readUInt32LE(offset + 18), nameLength = bytes.readUInt16LE(offset + 26), extraLength = bytes.readUInt16LE(offset + 28);
+    assert.equal(flags & 8, 0, 'The uncompressed test export has known entry sizes.');
+    const filename = bytes.toString('utf8', offset + 30, offset + 30 + nameLength);
+    const start = offset + 30 + nameLength + extraLength;
+    if (filename === name) {
+      assert.equal(method, 0, 'Read the actual stored XML without a separate ZIP dependency.');
+      return bytes.toString('utf8', start, start + size);
     }
-    assert.equal(calls.length, 1, 'the actual editor hook must invoke the fake queue runner once');
-    assert.equal(delivered?.status, 'delivered');
-    assert.deepEqual(calls[0].args.slice(0, 3), ['queue', '--thread', threadId]);
-    assert.equal(calls[0].cwd, fixture.root);
-    const message = calls[0].args[calls[0].args.indexOf('--message') + 1];
-    assert.ok(message.includes(JSON.stringify(text).slice(1, -1)), 'user text must remain literal across the Windows hook boundary');
-    assert.ok(message.includes(created.thread.id));
-    const receipt = JSON.parse(await readFile(path.join(fixture.root, '.codex-design-deliveries.json'), 'utf8'));
-    assert.equal(Object.keys(receipt.delivered).length, 1);
-    const resend = await fetchWithin(new URL(`__comments/${created.thread.id}/send`, opened.url), { method: 'POST', headers });
-    assert.equal(resend.status, 409);
-    assert.equal((await readFile(trace, 'utf8')).trim().split('\n').length, 1);
-  } finally {
-    if (opened) await runCli(fixture, 'stop', fixture.root).catch(() => {});
-    await rm(fixture.root, { recursive: true, force: true });
+    offset = start + size;
   }
+  assert.fail(`The actual PPTX did not contain ${name}.`);
+}
+
+test('upstream CJK revision: actual compiler and PPTX XML retain Latin typefaces and choose regional East Asian fallbacks', async () => {
+  const { runtime } = createRequire(import.meta.url)(path.join(pluginRoot, 'skills/codex-slides/scripts/editor/node/compiler.cjs'));
+  runtime.initializeHtmlCompiler();
+  runtime.initializePptxExport();
+  const cases = [
+    { text: '中文标题', family: 'Arial', eastAsian: 'Microsoft YaHei' },
+    { text: '日本語の見出し', family: 'Arial', eastAsian: 'Yu Gothic' },
+    { text: '한국어 제목', family: 'Arial', eastAsian: 'Malgun Gothic' },
+    { text: '繁體中文', family: 'Noto Sans TC', eastAsian: 'Microsoft JhengHei' },
+    { text: 'Latin heading', family: 'Arial', eastAsian: null },
+  ];
+  const slides = cases.map(({ text, family }, index) => {
+    const result = runtime.compileSlideHtml(`<section id="cjk-${index}" style="background:#ffffff;font-family:Arial,sans-serif;padding:80px"><p style="font-size:40px">${text}</p></section>`);
+    assert.deepEqual(result.errors, []);
+    const node = result.content.slides[`cjk-${index}`].frames[0].node.children[0];
+    assert.equal(node.text, text);
+    // Fixed measured bounds isolate the exported font choice from browser layout.
+    return { bg: '#ffffff', leaves: [{ kind: 'text', text: node.text, role: node.role, ...node.style,
+      fontFamily: { family, fallback: 'sans' },
+      rect: { x: 80, y: 80, w: 800, h: 120 }, color: '#172033' }] };
+  });
+  const { pptx } = runtime.buildPptxPresentation({ title: 'CJK fallback regression', slides });
+  const bytes = Buffer.from(await pptx.write({ outputType: 'nodebuffer', compression: false }));
+  for (const [index, expected] of cases.entries()) {
+    const xml = storedZipEntry(bytes, `ppt/slides/slide${index + 1}.xml`);
+    assert.ok(xml.includes(expected.text));
+    assert.ok(xml.includes(`<a:latin typeface="${expected.family}"`));
+    if (expected.eastAsian) assert.ok(xml.includes(`<a:ea typeface="${expected.eastAsian}"`));
+    else assert.ok(xml.includes(`<a:ea typeface="${expected.family}"`), 'Latin-only text retains the ordinary export font.');
+  }
+  const googleSlides = runtime.buildPptxPresentation({ title: 'Google Slides retains its font path', slides }, { forGoogleSlides: true });
+  const googleBytes = Buffer.from(await googleSlides.pptx.write({ outputType: 'nodebuffer', compression: false }));
+  const googleXml = storedZipEntry(googleBytes, 'ppt/slides/slide1.xml');
+  assert.ok(googleXml.includes('<a:ea typeface="Arial"'));
+  assert.doesNotMatch(googleXml, /Microsoft YaHei|Yu Gothic|Malgun Gothic/);
 });
 
-test('legacy main delivery: an edited revision sent during slow delivery is queued after the first revision', { timeout: 30_000 }, async () => {
+test('legacy hook delivery is rejected before starting a service or launching a Codex process', async () => {
   const fixture = await createFixture('slides');
   const wrapper = path.join(pluginRoot, 'skills', fixture.skill, 'scripts', 'codex-artifact.mjs');
-  const trace = path.join(fixture.root, 'slow-queue-trace.jsonl');
-  const fake = path.join(fixture.root, 'slow fake codex.mjs');
   const threadId = '11111111-2222-4333-8444-555555555555';
-  const env = { ...process.env, CODEX_THREAD_ID: '', FAKE_TRACE: trace };
-  await writeFile(fake, "import fs from 'node:fs'; fs.appendFileSync(process.env.FAKE_TRACE, JSON.stringify({args:process.argv.slice(2),at:Date.now()})+'\\n'); await new Promise(resolve=>setTimeout(resolve,350));\n");
-  const readCalls = async () => {
-    try { return (await readFile(trace, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse); }
-    catch (error) { if (error.code === 'ENOENT') return []; throw error; }
-  };
-  const waitUntil = async (predicate, message) => {
-    const deadline = Date.now() + 8_000;
-    while (Date.now() < deadline) {
-      if (await predicate()) return;
-      await new Promise((resolve) => setTimeout(resolve, 15));
-    }
-    assert.fail(message);
-  };
-  let opened;
   try {
-    const result = await execFileAsync(process.execPath, [wrapper, 'open-service', fixture.root, '--delivery', 'main', '--thread', threadId, '--codex-path', fake], {
-      env, timeout: 12_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
-    });
-    opened = JSON.parse(result.stdout);
-    const headers = { 'Content-Type': 'application/json', Origin: new URL(opened.url).origin };
-    const firstText = 'Revision A: change the heading to Draft A.';
-    const secondText = 'Revision B: change the heading to Final B.';
-    const created = await jsonRequest(new URL('__comments', opened.url), {
-      method: 'POST', headers, body: JSON.stringify({ ...fixture.comment, text: firstText, send: true }),
-    });
-    await waitUntil(async () => (await readCalls()).length === 1, 'the first revision never reached the fake queue');
-    const commentId = created.thread.id;
-    const messageId = created.thread.messages[0].id;
-    const revised = await jsonRequest(new URL(`__comments/${commentId}/messages/${messageId}`, opened.url), {
-      method: 'PATCH', headers, body: JSON.stringify({ text: secondText, send: true }),
-    });
-    assert.equal(revised.thread.agent.status, 'pending');
-    const secondSentAt = revised.thread.agent.sentAt;
-    await waitUntil(async () => (await readCalls()).length === 2, 'the newer revision was swallowed by the first delivery acknowledgment');
-    let stored;
-    await waitUntil(async () => {
-      stored = JSON.parse(await readFile(path.join(fixture.root, 'comments.json'), 'utf8'));
-      return stored.threads[0].agent?.status === 'delivered';
-    }, 'the newer revision was not marked delivered after its queue command completed');
-    const calls = await readCalls();
-    assert.equal(calls.length, 2);
-    const messageOf = (call) => call.args[call.args.indexOf('--message') + 1];
-    assert.ok(messageOf(calls[0]).includes(firstText));
-    assert.ok(!messageOf(calls[0]).includes(secondText));
-    assert.ok(messageOf(calls[1]).includes(secondText));
-    assert.equal(stored.threads[0].messages[0].text, secondText);
-    assert.equal(stored.threads[0].agent.sentAt, secondSentAt);
-    assert.ok(Date.parse(stored.threads[0].agent.deliveredAt) >= Date.parse(secondSentAt));
-    const receipts = JSON.parse(await readFile(path.join(fixture.root, '.codex-design-deliveries.json'), 'utf8'));
-    assert.equal(Object.keys(receipts.delivered).length, 2);
-  } finally {
-    if (opened) await runCli(fixture, 'stop', fixture.root).catch(() => {});
-    await rm(fixture.root, { recursive: true, force: true });
-  }
+    for (const [delivery, code] of [['main', 'LEGACY_DELIVERY_UNAVAILABLE'], ['unknown', 'INVALID_DELIVERY_MODE']]) {
+      await assert.rejects(execFileAsync(process.execPath, [wrapper, 'open-service', fixture.root, '--delivery', delivery, '--thread', threadId], {
+        env: { ...process.env, CODEX_THREAD_ID: '', CODEX_DESIGN_THREAD_ID: '' }, timeout: 10_000, windowsHide: true,
+      }), error => {
+        assert.equal(error.code, 2);
+        assert.equal(JSON.parse(error.stderr).error, code);
+        return true;
+      });
+    }
+    await assert.rejects(access(path.join(fixture.root, '.artifact-server.json')), { code: 'ENOENT' });
+    await assert.rejects(access(path.join(fixture.root, '.codex-design-bridge.json')), { code: 'ENOENT' });
+    await assert.rejects(access(path.join(fixture.root, '.codex-design-worker-jobs.json')), { code: 'ENOENT' });
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
 });
 
 // The test controller supplies distinct native identities to the actual CLI.
 // This simulates platform lifecycle decisions, not platform-spawn verification.
 async function boundNativeFixture() {
-  const fixture = await createFixture('slides');
+  const source = await createFixture('slides');
+  const store = createLibraryStore({ root: path.join(source.root, 'library') });
+  const artwork = await store.importArtifact({ sourcePath: source.root });
+  const fixture = { ...source, root: artwork.path };
   const wrapper = path.join(pluginRoot, 'skills', fixture.skill, 'scripts', 'codex-artifact.mjs');
   const trace = path.join(fixture.root, 'forbidden-codex-launches.jsonl');
   const fake = path.join(fixture.root, 'forbidden codex.mjs');
@@ -301,22 +259,38 @@ async function boundNativeFixture() {
   };
   let opened;
   try { opened = await parent('open-service', fixture.root, '--codex-path', fake); }
-  catch (error) { await rm(fixture.root, { recursive: true, force: true }); throw error; }
-  const headers = { 'Content-Type': 'application/json', Origin: new URL(opened.url).origin };
+  catch (error) { await rm(source.root, { recursive: true, force: true }); throw error; }
+  const service = createDesignService({ store, pluginRoot, editorOpen: async () => ({ ...opened, kind: 'slides' }) });
+  const request = async (route, method, data) => {
+    const response = await service.invoke('editor.request', { id: artwork.id, request: { path: route, method,
+      headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(data)).toString('base64') } });
+    const value = JSON.parse(Buffer.from(response.body, 'base64').toString('utf8'));
+    assert.ok(response.status >= 200 && response.status < 300, JSON.stringify(value));
+    return { ...value, ...(response.nativeDraft ? { nativeDraft: response.nativeDraft } : {}) };
+  };
   return {
     ...fixture, opened, originThreadId, workerThreadId, parent, worker, calls,
     status: () => parent('worker-status', fixture.root),
     register: () => worker('worker-register', fixture.root, '--name', 'runtime-native-worker'),
     next: () => worker('worker-next', fixture.root, '--timeout', '0'),
     complete: (jobId, input) => execute(workerThreadId, ['worker-complete', fixture.root, jobId, '-'], input),
-    comment: (text, send = true) => jsonRequest(new URL('__comments', opened.url), { method: 'POST', headers, body: JSON.stringify({ ...fixture.comment, text, send }) }),
-    revise: (commentId, messageId, text) => jsonRequest(new URL('__comments/' + commentId + '/messages/' + messageId, opened.url), { method: 'PATCH', headers, body: JSON.stringify({ text, send: true }) }),
+    comment: (text, send = true) => request('__comments', 'POST', { ...fixture.comment, text, send }),
+    revise: (commentId, messageId, text) => request('__comments/' + commentId + '/messages/' + messageId, 'PATCH', { text, send: true }),
+    acceptDraft: async draft => {
+      assert.ok(draft?.requestId, 'A user-sent request must identify its immutable native draft.');
+      await service.invoke('request.draftAdded', { requestId: draft.requestId });
+      const result = await service.operateEditRequests('accept', [draft.requestId]);
+      assert.equal(result.errors.length, 0);
+      return dispatchEditRequest(path.join(pluginRoot, 'skills/codex-slides'), fixture.root, draft.requestId, {
+        env: { ...env, CODEX_THREAD_ID: originThreadId }, store,
+      });
+    },
     close: async () => {
       try {
         await parent('stop', fixture.root);
         assert.deepEqual(await calls(), [], 'native delivery must never launch an external Codex process');
       } finally {
-        await rm(fixture.root, { recursive: true, force: true });
+        await rm(source.root, { recursive: true, force: true });
       }
     },
   };
@@ -336,10 +310,10 @@ async function pendingNativeJob(fixture, commentId) {
   return waitForWorker(async () => {
     const status = await fixture.status();
     return status.jobs.find((job) => job.commentId === commentId && job.status === 'pending');
-  }, 'the editor HTTP send did not persist its native job');
+  }, 'the accepted native draft did not persist its dispatched job');
 }
 
-test('default native delivery: durable editor jobs are claimed serially by the registered child and replied to automatically', { timeout: 45_000 }, async () => {
+test('accepted native drafts: durable jobs are claimed serially by the registered child and replied to automatically', { timeout: 45_000 }, async () => {
   const fixture = await boundNativeFixture();
   try {
     const initial = await fixture.status();
@@ -354,13 +328,15 @@ test('default native delivery: durable editor jobs are claimed serially by the r
     assert.deepEqual(await fixture.calls(), []);
 
     const first = await fixture.comment('First native design request.');
+    assert.equal((await fixture.status()).jobs.length, 0, 'Add to chat prepares a draft without queueing work.');
+    await fixture.acceptDraft(first.nativeDraft);
     const firstJob = await pendingNativeJob(fixture, first.thread.id);
     const unclaimed = await fixture.status();
     assert.equal(unclaimed.counts.pending, 1);
     assert.equal(unclaimed.counts.active, 0);
     assert.equal(unclaimed.nativeThreadId, null, 'the editor must not spawn or register a child');
     assert.equal(unclaimed.needsResume, true);
-    assert.deepEqual(await fixture.calls(), [], 'HTTP send persists work without launching a model or queue');
+    assert.deepEqual(await fixture.calls(), [], 'Explicit receipt and dispatch persist work without launching a model or queue command.');
 
     await assert.rejects(fixture.parent('worker-register', fixture.root), (error) => {
       assert.equal(error.code, 2);
@@ -392,6 +368,7 @@ test('default native delivery: durable editor jobs are claimed serially by the r
     assert.equal(claimed.event.data.id, first.thread.id);
 
     const second = await fixture.comment('Second native design request.');
+    await fixture.acceptDraft(second.nativeDraft);
     const secondJob = await pendingNativeJob(fixture, second.thread.id);
     const serial = await fixture.status();
     assert.equal(serial.counts.active, 1);
@@ -435,11 +412,12 @@ test('default native delivery: durable editor jobs are claimed serially by the r
   } finally { await fixture.close(); }
 });
 
-test('default native delivery: failed completions remain failed and receive an honest original-comment reply', { timeout: 35_000 }, async () => {
+test('accepted native drafts: failed completions remain failed and receive an honest original-comment reply', { timeout: 35_000 }, async () => {
   const fixture = await boundNativeFixture();
   try {
     await fixture.register();
     const created = await fixture.comment('This controlled native edit intentionally fails.');
+    await fixture.acceptDraft(created.nativeDraft);
     const pending = await pendingNativeJob(fixture, created.thread.id);
     assert.equal((await fixture.next()).job.id, pending.id);
     const text = '未完成：intentional native edit failure; no changes were reported as complete.';
@@ -469,18 +447,20 @@ test('default native delivery: failed completions remain failed and receive an h
   } finally { await fixture.close(); }
 });
 
-test('default native delivery: revision B supersedes the active revision A and receives the only reply', { timeout: 40_000 }, async () => {
+test('accepted native drafts: revision B supersedes the active revision A and receives the only reply', { timeout: 40_000 }, async () => {
   const fixture = await boundNativeFixture();
   try {
     await fixture.register();
     const firstText = 'Native revision A: use Draft A.';
     const secondText = 'Native revision B: use Final B.';
     const created = await fixture.comment(firstText);
+    await fixture.acceptDraft(created.nativeDraft);
     const firstJob = await pendingNativeJob(fixture, created.thread.id);
     const firstClaim = await fixture.next();
     assert.equal(firstClaim.job.id, firstJob.id);
     assert.ok(firstClaim.request.includes(firstText));
-    await fixture.revise(created.thread.id, created.thread.messages[0].id, secondText);
+    const revised = await fixture.revise(created.thread.id, created.thread.messages[0].id, secondText);
+    await fixture.acceptDraft(revised.nativeDraft);
     const secondJob = await pendingNativeJob(fixture, created.thread.id);
     assert.notEqual(secondJob.id, firstJob.id);
     const stale = await fixture.complete(firstJob.id, 'Stale reply for revision A must not be posted.');

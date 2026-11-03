@@ -1,4 +1,4 @@
-const ALLOWED = new Set(['editor.request', 'editor.digest', 'editor.events.open', 'editor.events.poll', 'editor.events.close', 'editor.download', 'editor.previewDocument']);
+const ALLOWED = new Set(['editor.request', 'editor.digest', 'editor.motionExport', 'editor.systemSync', 'editor.events.open', 'editor.events.poll', 'editor.events.close', 'editor.download', 'editor.previewDocument']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REQUEST_LIMIT = 128;
 const errorDetail = error => ({ code: error?.code || 'EDITOR_REQUEST_FAILED', message: String(error?.message || error).slice(0, 2000) });
@@ -90,6 +90,7 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
   if (typeof editorDocument?.html !== 'string' || !editorDocument.html.trim()) throw new TypeError('The editor document is missing.');
   const ownerWindow = iframe.ownerDocument?.defaultView || window;
   const subscriptions = new Set();
+  const motionJobs = new Set();
   const requests = new Map(), drafts = new Map();
   let disposed = false;
   let appReady = false;
@@ -161,13 +162,21 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     let result;
     try {
       result = message.action === 'editor.download'
-        ? await bridge.downloadResource(message.payload)
-        : await bridge.invoke(message.action, { ...message.payload, id: artifactId });
+        ? await bridge.downloadResource({ ...message.payload, artifactId })
+        : message.action === 'editor.systemSync'
+          ? await bridge.syncDesignSystem({ id: artifactId, namespace: message.payload.namespace })
+          : await bridge.invoke(message.action, { ...message.payload, id: artifactId });
       if (message.action === 'editor.events.open' && result?.subscriptionId) {
         if (disposed) { void bridge.invoke('editor.events.close', { id: artifactId, subscriptionId: result.subscriptionId }).catch(() => {}); return; }
         subscriptions.add(result.subscriptionId);
       }
       if (message.action === 'editor.events.close') subscriptions.delete(message.payload.subscriptionId);
+      if (message.action === 'editor.motionExport' && typeof result?.jobId === 'string' && UUID.test(result.jobId)) {
+        if (result.status === 'running') {
+          if (disposed) { void bridge.invoke('editor.motionExport', { id: artifactId, operation: 'cancel', jobId: result.jobId }).catch(() => {}); return; }
+          motionJobs.add(result.jobId);
+        } else motionJobs.delete(result.jobId);
+      }
       if (message.action === 'editor.request' && result?.nativeDraft) await draftComment(result.nativeDraft);
       return { result };
     } catch (error) {
@@ -303,6 +312,9 @@ export function mountNativeEditor({ iframe, bridge, artifactId, channel, documen
     openHistory,
     dispose() {
       if (disposed) return;
+      bridge.cancelSystemSync?.(artifactId);
+      for (const jobId of motionJobs) void bridge.invoke('editor.motionExport', { id: artifactId, operation: 'cancel', jobId }).catch(() => {});
+      motionJobs.clear();
       disposed = true; clearTimeout(startup); stopViewport(); ownerWindow.removeEventListener('message', listener); iframe.removeEventListener?.('load', sendHostContext); unsubscribe?.();
       const closed = Object.assign(new Error('The artwork editor closed before edit history opened.'), { code: 'EDITOR_CLOSED' });
       historyAction?.cancel(closed);

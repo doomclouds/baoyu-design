@@ -7,7 +7,7 @@ import { createMenuDismissal, menuInputMode } from './menu-dismissal.mjs';
 import { createLibraryTransfer } from './library-transfer.mjs';
 import { mountNativeEditor } from './native-editor.mjs';
 
-const KINDS = ['slides', 'design', 'design-system', 'dashboard'];
+const KINDS = ['slides', 'design', 'design-system', 'dashboard', 'motion'];
 const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   library: '<path d="M4 5h4v14H4zM10 4h4v15h-4zM16 6l4-1 3 13-4 1z"/>',
@@ -15,6 +15,7 @@ const ICONS = {
   design: '<path d="M5 4h14l1 8c0 5-4 8-8 9-4-1-8-4-8-9z"/><circle cx="12" cy="11" r="2"/>',
   'design-system': '<path d="M12 3l9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9"/>',
   dashboard: '<rect x="3" y="5" width="6" height="15" rx="1"/><rect x="15" y="3" width="6" height="15" rx="1"/><path d="M10 8h3v13h-3"/>',
+  motion: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 8l6 4-6 4z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/>',
   trash: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/>',
@@ -133,6 +134,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
   const transfer = createLibraryTransfer({
     invoke: (action, payload) => invoke(action, payload),
     ...(typeof bridge.downloadArtifact === 'function' ? { download: bridge.downloadArtifact.bind(bridge) } : {}),
+    ...(typeof bridge.downloadResource === 'function' ? { downloadResource: bridge.downloadResource.bind(bridge) } : {}),
     onImported: async record => {
       upsertRecord(record);
       await changeView('openTab', { id: record.id });
@@ -1121,7 +1123,7 @@ export async function createUi({ root, bridge = unavailableBridge() } = {}) {
     else if (action === 'import') {
       const task = transfer.importArtifact();
       await runAction('import', async () => { if (await task) toast(t('imported')); });
-    } else if (action === 'export') await runAction('export-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); const saved = await transfer.exportArtifact(id, recordFor(id)?.title); toast(saved?.path ? t('exported') + ': ' + saved.path : t('exported')); });
+    } else if (action === 'export') await runAction('export-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); const record = recordFor(id); const saved = await transfer.exportArtifact(id, record?.title, { kind: record?.kind }); toast(saved?.path ? t('exported') + ': ' + saved.path : t('exported')); });
     else if (action === 'history') await openHistory(id);
     else if (action === 'edit-history') await openEditHistory(id, button);
     else if (action === 'snapshot-create') await runAction('snapshot-' + id, async () => { if (state.view.activeTabId === id) await flushCurrentEditor(); await transfer.createSnapshot(id, t('manualSnapshot')); await openHistory(id); });

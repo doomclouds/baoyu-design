@@ -130,7 +130,7 @@ export async function startLibraryPreview({ root, pluginRoot = fileURLToPath(new
       if (typeof body.action !== 'string' || body.action.length > 100 || body.payload !== undefined && (!body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload))) return json(response, 400, { error: { code: 'INVALID_ACTION', message: 'Expected {action, payload}.' } });
       const result = await service.invoke(body.action, body.payload || {}); json(response, 200, { result });
       if (body.action.startsWith('view.')) broadcast({ type: 'view.changed', ...(result?.tabs ? { viewState: result } : {}) });
-      else if (body.action.startsWith('library.') && !['library.list', 'library.get', 'library.listSnapshots', 'library.exportArtifact'].includes(body.action)) broadcast({ type: 'library.changed' });
+      else if (body.action.startsWith('library.') && !['library.list', 'library.get', 'library.listSnapshots', 'library.exportArtifact'].includes(body.action) && (body.action !== 'library.transfer' || body.payload?.operation === 'finish')) broadcast({ type: 'library.changed' });
     } catch (cause) {
       if (response.headersSent) { response.destroy(); return; }
       const status = cause.code === 'REQUEST_TOO_LARGE' ? 413 : cause.code === 'UNSUPPORTED_MEDIA_TYPE' ? 415 : cause.code === 'NOT_FOUND' ? 404 : ['ARTIFACT_BUSY', 'LIBRARY_BUSY', 'BINDING_CONFLICT'].includes(cause.code) ? 409 : 400;

@@ -10,7 +10,7 @@ const MAX_BODY = 32 * 1024 * 1024;
 const MAX_RESPONSE = 64 * 1024 * 1024;
 
 /** Validate intercepted requests with exactly the same contract as HTTP forwarding. */
-export function validateEditorRequest(request = {}) {
+export function validateEditorRequest(request = {}, { maxBodyBytes = MAX_BODY } = {}) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) throw fail('INVALID_EDITOR_REQUEST', 'An editor request object is required.');
   const method = String(request.method || 'GET').toUpperCase();
   if (!METHODS.has(method)) throw fail('INVALID_EDITOR_REQUEST', 'Unsupported editor request method.');
@@ -23,9 +23,9 @@ export function validateEditorRequest(request = {}) {
   }
   let body;
   if (request.body !== undefined) {
-    if (typeof request.body !== 'string' || request.body.length > Math.ceil(MAX_BODY / 3) * 4 || !isValidBase64(request.body)) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
+    if (typeof request.body !== 'string' || request.body.length > Math.ceil(maxBodyBytes / 3) * 4 || !isValidBase64(request.body)) throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
     body = Buffer.from(request.body, 'base64');
-    if (body.length > MAX_BODY || method === 'GET' || method === 'HEAD') throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
+    if (body.length > maxBodyBytes || method === 'GET' || method === 'HEAD') throw fail('INVALID_EDITOR_REQUEST', 'Invalid editor request body.');
   }
   return { method, headers, body };
 }
@@ -65,8 +65,8 @@ function previewReadUrl(editor, url, method) {
   const preview = /^v\/([1-9][0-9]{0,8})\/(.*)$/.exec(relative);
   if (!preview) return url;
   if (!['GET', 'HEAD'].includes(method)) throw fail('EDITOR_PREVIEW_READ_ONLY', 'Earlier versions are read-only.');
-  if (editor.kind !== 'dashboard') return url;
-  // Dashboard's history uses ?at=n; other editors expose a v/n/ subtree.
+  if (!['dashboard', 'motion'].includes(editor.kind)) return url;
+  // Store-based editors use ?at=n; file-based editors expose a v/n/ subtree.
   // Keep the virtual preview grant identical and translate only at the scoped
   // local boundary, for both ordinary reads and live-event setup.
   const translated = editorRequestUrl(root.href, preview[2] + url.search);
@@ -118,7 +118,7 @@ export function createEditorTransport({ editorFor, fetcher = fetch, idleMs = 120
   return {
     async request(id, request = {}) {
       const { url: granted, editor } = await get(id, request.path);
-      const { method, headers, body } = validateEditorRequest(request);
+      const { method, headers, body } = validateEditorRequest(request, { maxBodyBytes: editor.kind === 'motion' ? 64 * 1024 * 1024 : MAX_BODY });
       const url = previewReadUrl(editor, granted, method);
       headers.set('origin', url.origin);
       const response = await fetcher(url, { method, headers, body, redirect: 'error', signal: AbortSignal.timeout(30_000) });

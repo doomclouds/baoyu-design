@@ -8,7 +8,7 @@ import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {alive, BINDING_FILE, readJson, runBounded} from '../source/scripts/bridge-core.mjs';
-import {verifyEditorInstance} from '../source/scripts/artifact-command.mjs';
+import {verifyEditorInstance, editorInstanceStopped} from '../source/scripts/artifact-command.mjs';
 import {NATIVE_BINDING_FILE, WORKER_FILE, WORKER_JOBS_FILE} from '../source/scripts/worker-core.mjs';
 import {createFixture} from './fixtures.mjs';
 
@@ -17,7 +17,7 @@ const cleanEnv = {...process.env, CODEX_THREAD_ID: '', CODEX_DESIGN_THREAD_ID: '
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fixture(t, {health = 'legacy', mode = '', noNative = false} = {}) {
-  const temporary = await fsp.mkdtemp(path.join(os.tmpdir(), 'codex-runtime-upgrade-'));
+  const temporary = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'codex-runtime-upgrade-')));
   const artifact = await createFixture('design', temporary);
   const stateFile = path.join(artifact.root, '.artifact-server.json');
   const currentSkill = path.join(temporary, 'current package/skills/codex-design');
@@ -27,7 +27,8 @@ async function fixture(t, {health = 'legacy', mode = '', noNative = false} = {})
   await fsp.writeFile(runtimeFile, `import fs from 'node:fs';import path from 'node:path';import http from 'node:http';
 const [root,mode]=process.argv.slice(2);
 const health=()=>({pid:process.pid,root,kind:mode==='wrong-kind'?'slides':'design',...(mode==='legacy'?{}:{nativeSessionVersion:mode==='v1'?1:mode==='future'?3:2,nativeLocalOnly:mode!=='nonlocal'})});
-const server=http.createServer((request,response)=>{if(request.url!=='/design/fixture-grant/__codex/editor-session'){response.writeHead(404).end();return;}response.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(health()));});
+let mounted=true;
+const server=http.createServer((request,response)=>{if(request.url==='/peer/'){response.writeHead(200).end('Peer remains mounted');return;}if(request.url==='/design/fixture-grant/__fixture/unmount'){mounted=false;response.writeHead(200).end();return;}if(!mounted||request.url!=='/design/fixture-grant/__codex/editor-session'){response.writeHead(404).end();return;}response.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(health()));});
 server.listen(0,'127.0.0.1',()=>{fs.writeFileSync(path.join(root,'.artifact-server.json'),JSON.stringify({kind:'design',root,pid:process.pid,url:'http://127.0.0.1:'+server.address().port+'/design/fixture-grant/',startedAt:new Date().toISOString()},null,2)+'\\n');});
 `);
   const old = spawn(process.execPath, [runtimeFile, artifact.root, health], {cwd: temporary, windowsHide: true, stdio: 'ignore'});
@@ -58,6 +59,7 @@ const [command,root]=process.argv.slice(2),file=path.join(root,'.artifact-server
 const read=()=>{try{return JSON.parse(fs.readFileSync(file));}catch{return null;}},alive=pid=>{try{process.kill(pid,0);return true;}catch{return false;}},wait=ms=>new Promise(r=>setTimeout(r,ms));
 fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({command,native:process.env.CODEX_DESIGN_NATIVE_SESSION})+'\\n');
 if(command==='stop'){const state=read();if(mode==='stop-fail'){console.log(JSON.stringify({stopped:false,pid:state.pid}));}
+else if(mode==='shared-hub'){const response=await fetch(new URL('__fixture/unmount',state.url));if(!response.ok)throw Error('fixture failed to unmount');fs.rmSync(file);console.log(JSON.stringify({stopped:true,pid:state.pid}));}
 else{process.kill(state.pid);const end=Date.now()+5000;while(alive(state.pid)&&Date.now()<end)await wait(20);if(alive(state.pid))throw Error('fixture failed to stop');if(mode==='stop-mutates-native'){const n=path.join(root,'.codex-design-native-binding.json');fs.writeFileSync(n,JSON.stringify({...JSON.parse(fs.readFileSync(n)),externalRevision:'Preserve concurrent controller metadata'})+'\\n');}fs.rmSync(file);console.log(JSON.stringify({stopped:true,pid:state.pid}));}}
 else if(command==='open'||command==='serve'){const before=read();if(before&&alive(before.pid)){console.log(JSON.stringify({...before,reused:true}));}
 else if(mode==='startup-fail'||mode==='startup-dead'){if(mode==='startup-dead')fs.writeFileSync(file,JSON.stringify({root,kind:'design',pid:process.pid,url:'http://127.0.0.1:1/design/dead/'}));console.error('FIXTURE_STARTUP_FAILED');process.exitCode=73;}
@@ -86,7 +88,7 @@ else throw Error('unexpected fixture command '+command);
     }
     if (old.exitCode === null && old.signalCode === null) old.kill();
     await oldClosed;
-    const relative = path.relative(os.tmpdir(), temporary);
+    const relative = path.relative(await fsp.realpath(os.tmpdir()), temporary);
     assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
     await fsp.rm(temporary, {recursive: true, force: true});
   });
@@ -109,6 +111,56 @@ for (const noAgent of [false, true]) test(`an idle verified legacy native servic
   assert.deepEqual(await fsp.readFile(path.join(f.root, (await f.backups())[0])), f.originalState);
   assert.deepEqual((await f.rawCalls()).map(call => call.command), ['stop', 'open']);
   assert.ok((await f.rawCalls()).every(call => call.native === '1'));
+});
+
+test('a legacy shared hub upgrades one artwork without stopping its peer process', {timeout: 40_000}, async t => {
+  const f = await fixture(t, {mode: 'shared-hub'}), before = await f.capture();
+  const old = JSON.parse(f.originalState);
+  const result = await f.execute(['open-service', f.root, '--no-agent']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).runtimeUpgraded, true);
+  assert.equal(alive(f.old.pid), true, 'the old hub still serves its other artwork');
+  assert.equal((await fetch(new URL('/peer/', old.url))).status, 200);
+  assert.equal((await fetch(new URL('__codex/editor-session', old.url))).status, 404);
+  assert.equal(await editorInstanceStopped(old, f.root, 'design'), true);
+  assert.equal((await verifyEditorInstance(readJson(f.stateFile), f.root, 'design')).nativeSessionVersion, 2);
+  assert.equal((await f.backups()).length, 1);
+  await f.assertProtected(before);
+});
+
+test('rebinding a current artwork unmounts it without stopping its shared hub peer', {timeout: 40_000}, async t => {
+  const f = await fixture(t, {health: 'v2', mode: 'shared-hub'}), old = JSON.parse(f.originalState);
+  await fsp.writeFile(path.join(f.root, BINDING_FILE), JSON.stringify({...f.bridge, deliveryMode: 'main', threadId: randomUUID()}));
+  const result = await f.execute(['open-service', f.root, '--rebind']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(alive(f.old.pid), true);
+  assert.equal((await fetch(new URL('/peer/', old.url))).status, 200);
+  assert.equal((await fetch(new URL('__codex/editor-session', old.url))).status, 404);
+  const fresh = readJson(f.stateFile), binding = readJson(path.join(f.root, BINDING_FILE));
+  assert.equal(binding.deliveryMode, 'native');
+  assert.equal(binding.serverPid, fresh.pid);
+  assert.equal((await verifyEditorInstance(fresh, f.root, 'design')).nativeSessionVersion, 2);
+  assert.deepEqual((await f.rawCalls()).map(call => call.command), ['stop', 'open']);
+});
+
+test('only a missing session or refused connection proves an artwork left a live hub', async t => {
+  const f = await fixture(t, {health: 'v2'}), state = readJson(f.stateFile);
+  assert.equal(await editorInstanceStopped(state, f.root, 'design'), false);
+  const original = globalThis.fetch;
+  try {
+    for (const status of [200, 403, 500]) {
+      globalThis.fetch = async () => ({status});
+      assert.equal(await editorInstanceStopped(state, f.root, 'design'), false);
+    }
+    for (const status of [404, 410]) {
+      globalThis.fetch = async () => ({status});
+      assert.equal(await editorInstanceStopped(state, f.root, 'design'), true);
+    }
+    for (const code of ['ECONNREFUSED', 'ETIMEDOUT', 'EACCES', 'ECONNRESET']) {
+      globalThis.fetch = async () => {throw new TypeError('Fixture failure', {cause: Object.assign(new Error(), {code})});};
+      assert.equal(await editorInstanceStopped(state, f.root, 'design'), code === 'ECONNREFUSED');
+    }
+  } finally { globalThis.fetch = original; }
 });
 
 test('a declared v1 native runtime upgrades, including artwork with no registered request controller', async t => {

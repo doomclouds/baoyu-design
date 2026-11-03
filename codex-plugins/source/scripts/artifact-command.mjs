@@ -7,9 +7,10 @@ import { BINDING_FILE, BridgeError, readJson, atomicJson, alive, withLock, resol
 import { getWorkerStatus, retryWorkerJob, stopWorker, registerNativeWorker, nextNativeJob, completeNativeJob } from './worker-client.mjs';
 import { designSystemSearchEnvironment } from './design-system-search.mjs';
 import { createLibraryStore } from '../library/index.mjs';
+import { createDesignSystemSync } from '../server/design-system-sync.mjs';
 import { UUID } from '../library/safety.mjs';
 import { WORKER_FILE, WORKER_JOBS_FILE, WORKER_LOCK_FILE, NATIVE_BINDING_FILE, loadJobs } from './worker-core.mjs';
-import { artworkAppUrl, openArtworkInApp, checkedArtworkDelivery, normalizeControlHints } from './artifact-delivery.mjs';
+import { artworkAppUrl, openArtworkInApp, checkedArtworkDelivery, normalizeControlHints, nativeArtworkForRoot } from './artifact-delivery.mjs';
 import { dispatchEditRequest } from './edit-request-dispatch.mjs';
 
 const BRIDGE_FLAGS = new Map([
@@ -55,11 +56,11 @@ function artifactRoot(skillDir, argv, { allowMissing = false } = {}) {
 
 // Generated packages expose codex-* skills; accept the upstream names only as
 // compatibility aliases when reusing a previous local package.
-const kindForSkill = (skillDir) => ({ 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard' })[path.basename(skillDir).replace(/^claude-/, 'codex-')];
+const kindForSkill = (skillDir) => ({ 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard', 'codex-motion': 'motion' })[path.basename(skillDir).replace(/^claude-/, 'codex-')];
 
 export async function createArtworkForSkill(skillDir, title, { store = createLibraryStore() } = {}) {
   const kind = kindForSkill(skillDir);
-  if (!kind) throw new BridgeError('UNSUPPORTED_SKILL', 'Only the four artwork editor skills can create library artwork.');
+  if (!kind) throw new BridgeError('UNSUPPORTED_SKILL', 'Only artwork editor skills can create library artwork.');
   const artwork = await store.create({ kind, title });
   return { id: artwork.id, kind: artwork.kind, title: artwork.title, root: artwork.path, appUrl: artworkAppUrl(artwork.id), navigationRequested: false };
 }
@@ -121,6 +122,23 @@ export async function verifyEditorInstance(state, root, kind) {
     if (session.pid !== state.pid || session.kind !== kind || !samePath(session.root, root) || !alive(state.pid)) throw fail();
     return session;
   } catch { throw fail(); }
+}
+
+// A hub process may still serve other artworks after this one is unmounted.
+// A timeout, permission response or malformed endpoint never proves shutdown.
+export async function editorInstanceStopped(state, root, kind) {
+  if (!state || state.kind !== kind || !samePath(state.root, root)) return false;
+  if (!alive(state.pid)) return true;
+  let url;
+  try {
+    const base = new URL(state.url);
+    if (base.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) || base.username || base.password || base.search || base.hash || !base.pathname.endsWith('/')) return false;
+    url = new URL('__codex/editor-session', base);
+  } catch { return false; }
+  try {
+    const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(2000), headers: { Accept: 'application/json' } });
+    return response.status === 404 || response.status === 410;
+  } catch (error) { return refusedConnection(error); }
 }
 
 // A response, timeout, DNS/reset error or mixed address failure is not proof
@@ -266,11 +284,11 @@ async function upgradeLegacyNativeRuntime(script, forwarded, env, skillDir, root
     let stopped;
     try { stopped = await originalJsonCommand(script, ['stop', root], env); }
     catch (error) {
-      retired = !alive(old.pid);
+      retired = await editorInstanceStopped(old, root, kind);
       if (retired) { recoveryPaths(root, {files: false}); fs.writeFileSync(backup, captured.bytes, {flag: 'wx', mode: 0o600}); }
       throw error;
     }
-    retired = !alive(old.pid);
+    retired = await editorInstanceStopped(old, root, kind);
     if (retired) { recoveryPaths(root, {files: false}); fs.writeFileSync(backup, captured.bytes, {flag: 'wx', mode: 0o600}); }
     if (stopped.code !== 0) return stopped.code;
     if (stopped.result?.stopped !== true || stopped.result.pid !== old.pid || !retired
@@ -282,7 +300,7 @@ async function upgradeLegacyNativeRuntime(script, forwarded, env, skillDir, root
     const fresh = readJson(serverFile);
     let health;
     try { health = await verifyEditorInstance(fresh, root, kind); } catch { throw refused(); }
-    if (!currentNativeSession(health) || fresh.pid === old.pid || started.result?.pid !== fresh.pid
+    if (!currentNativeSession(health) || started.result?.pid !== fresh.pid
       || !sameSnapshot(fileSnapshot(bindingFile), bridgeSnapshot) || !controlsUnchanged(root, protectedFiles)) throw refused();
     atomicJson(bindingFile, {...bridge, serverPid: fresh.pid, skillDir});
     process.stdout.write(`${JSON.stringify({...started.result, runtimeUpgraded: true, nativeSessionVersion: 2}, null, 2)}\n`);
@@ -354,9 +372,8 @@ async function stopVerified(script, root, kind, state, env, argv = ['stop', root
   const serverFile = path.join(root, '.artifact-server.json');
   if (state && alive(state.pid)) {
     await verifyEditorInstance(state, root, kind);
-    // The original stop uses an OS process signal. Check its exact input again
-    // immediately before invoking it; the remaining signal/PID race cannot be
-    // made atomic without an authenticated server-side shutdown operation.
+    // Check the exact record immediately before the upstream stop unmounts
+    // this artwork (or signals an older standalone editor).
     if (JSON.stringify(readJson(serverFile)) !== JSON.stringify(state)) {
       throw new BridgeError('EDITOR_STATE_CHANGED', 'The editor record changed during identity verification. No process was stopped; retry after inspecting it.');
     }
@@ -483,6 +500,32 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       }), null, 2)}\n`);
       process.exitCode = checked.code; return checked.code;
     }
+    if (command === 'ds-sync') {
+      const { root } = artifactRoot(skillDir, forwarded), kind = kindForSkill(skillDir);
+      if (!['slides', 'design'].includes(kind) || Object.keys(options).length) throw new BridgeError('SYSTEM_SYNC_INVALID_REQUEST', 'Design system synchronization is available for slides and canvases.');
+      const arguments_ = forwarded.slice(2), confirming = arguments_.indexOf('--confirm');
+      const checkOnly = arguments_.includes('--check');
+      const namespace = arguments_.find((value, index) => !value.startsWith('--') && !(confirming >= 0 && index === confirming + 1));
+      const token = confirming < 0 ? null : arguments_[confirming + 1];
+      const recognized = arguments_.filter((value, index) => value !== '--check' && value !== '--confirm' && !(confirming >= 0 && index === confirming + 1) && value !== namespace);
+      if (recognized.length || confirming >= 0 && (!token || !UUID.test(token)) || confirming >= 0 && checkOnly || confirming < 0 && !checkOnly) throw new BridgeError('SYSTEM_SYNC_CONFIRMATION_REQUIRED', 'Use ds-sync <root> [namespace] --check to review, then ds-sync <root> --confirm <confirmationToken>.');
+      const store = libraryStore ?? createLibraryStore({ root: path.dirname(path.dirname(root)) });
+      const artwork = nativeArtworkForRoot(root, kind, { libraryRoot: store.root });
+      if (!artwork) throw new BridgeError('NOT_LIBRARY_ARTIFACT', 'Import this artwork into the library before synchronizing its design systems.');
+      const record = await store.get(artwork.id), sync = createDesignSystemSync({ store });
+      if (confirming >= 0) {
+        const result = await sync.apply(record, token); process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+        process.exitCode = 0; return 0;
+      }
+      const indexName = kind === 'slides' ? 'deck.json' : 'canvas.json';
+      const index = readJson(path.join(root, 'project', indexName));
+      const installed = Array.isArray(index?.designSystems) ? index.designSystems : Object.values(index?.designSystems ?? {});
+      const namespaces = namespace ? [namespace] : installed.map(item => item?.namespace).filter(value => typeof value === 'string');
+      const systems = [];
+      for (const name of namespaces) systems.push(await sync.prepare(record, name));
+      process.stdout.write(JSON.stringify({ root, systems, next: 'Use ds-sync <root> --confirm <confirmationToken> only after reviewing its listed files.' }, null, 2) + '\n');
+      const code = systems.some(item => item.changed.length || item.removed.length) ? 1 : 0; process.exitCode = code; return code;
+    }
     if (['upload', 'write-db'].includes(command)) {
       const { root, rootIndex } = artifactRoot(skillDir, forwarded, { allowMissing: true });
       forwarded[rootIndex] = root;
@@ -586,7 +629,8 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
       return code;
     }
     const deliveryMode = options.deliveryMode === 'worker' ? 'native' : options.deliveryMode ?? 'native';
-    if (!['native', 'main'].includes(deliveryMode)) throw new BridgeError('INVALID_DELIVERY_MODE', 'Use --delivery native (default; worker is an alias) or --delivery main for compatibility.');
+    if (!['native', 'main'].includes(deliveryMode)) throw new BridgeError('INVALID_DELIVERY_MODE', 'Use --delivery native (default; worker is an alias).');
+    if (deliveryMode === 'main') throw new BridgeError('LEGACY_DELIVERY_UNAVAILABLE', 'Use native comment drafts and explicit native-parent dispatch. Automatic hook delivery is no longer available.');
     if (deliveryMode === 'native' && (options.remote || options.remoteAuthTokenEnv || options.workerModel)) throw new BridgeError('NATIVE_AGENT_OPTIONS', 'The parent creates/resumes native agents using native tools and chooses their model there. Remote queue/model-process options do not apply to native delivery.');
     const threadId = options.threadId ?? (env.CODEX_THREAD_ID || null);
     if ((deliveryMode === 'main' && !threadId) || (threadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId))) {
@@ -632,14 +676,14 @@ export async function runArtifactCommand(skillDir, argv, { env = process.env, st
         const stopCode = await stopVerified(script, root, expectedKind, state, env);
         if (stopCode !== 0) return stopCode;
         const deadline = Date.now() + 6000;
-        while (alive(state.pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
-        if (alive(state.pid)) throw new BridgeError('EDITOR_STILL_RUNNING', 'The previous editor did not stop; its chat binding was preserved.');
+        while (!await editorInstanceStopped(state, root, expectedKind) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+        if (fs.existsSync(serverFile) || !await editorInstanceStopped(state, root, expectedKind)) throw new BridgeError('EDITOR_STILL_RUNNING', 'The previous editor did not stop; its chat binding was preserved.');
         state = null;
       }
       const binding = owned ? previous : { ...target, token: randomUUID(), serverPid: null, createdAt: new Date().toISOString() };
       if (!owned) atomicJson(bindingFile, binding);
       const bridgeEnv = { ...env, CODEX_DESIGN_BRIDGE_NODE: process.execPath, CODEX_DESIGN_BRIDGE_SCRIPT: fileURLToPath(new URL('./send-comment.mjs', import.meta.url)) };
-      const forwardedWithHook = [...forwarded, '--agent-hook', hookCommand(binding.token)];
+      const forwardedWithHook = deliveryMode === 'main' ? [...forwarded, '--agent-hook', hookCommand(binding.token)] : forwarded;
       const startup = new Promise((resolve, reject) => {
         runningPromise = originalCommand(script, forwardedWithHook, bridgeEnv, (child) => {
           let done = false;

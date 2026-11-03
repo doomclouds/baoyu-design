@@ -42,19 +42,22 @@ function browser(language = 'zh-CN', configuration = {}, saved = 'zh') {
   return { target, authored, navigator, storage, accesses, events };
 }
 
-test('all four real editors have an exact English-only native message catalog', async () => {
+test('all five real editors have exact English-only catalogs and retain the historical four-editor inventory', async () => {
   const inventory = JSON.parse(await fs.readFile(new URL('../source/scripts/locales/native-en.json', import.meta.url), 'utf8'));
   const discovered = new Set();
   for (const kind of EDITOR_KINDS) {
-    const assets = path.join(repository, 'skills', 'claude-' + kind, 'scripts/editor/assets');
-    const file = (await fs.readdir(assets)).find(name => /^index-.*\.js$/.test(name));
-    const source = await fs.readFile(path.join(assets, file), 'utf8');
+    const editor = path.join(repository, 'skills', 'claude-' + kind, 'scripts/editor');
+    const assets = path.join(editor, 'assets');
+    const file = kind === 'motion' ? path.join(editor, 'artifact-type/app.js')
+      : path.join(assets, (await fs.readdir(assets)).find(name => /^index-.*\.js$/.test(name)));
+    const source = await fs.readFile(file, 'utf8');
     const native = extractNativeMessages(source), catalog = createEditorCatalog(kind, [source]);
     assert.ok(native.size > 50, kind);
     assert.equal(catalog.language, 'en'); assert.deepEqual(Object.keys(catalog.resources), ['en']);
     assert.equal(catalog.coverage.englishNative, native.size);
     for (const [key, english] of native) {
-      discovered.add(english); assert.equal(catalog.resources.en.editor[key], english);
+      if (kind !== 'motion') discovered.add(english);
+      assert.equal(catalog.resources.en.editor[key], english);
     }
     assert.equal(adaptStaticCommentChrome(source), source, 'the removed translation adapter must not rewrite canonical literals');
     const repaired = repairEditorRuntime(source);
@@ -152,7 +155,7 @@ test('publication excludes unused locale history without changing runtime, vendo
   for (const name of ['', 'scripts/editor-runtime-adapter.mjs', 'scripts/editor-localization.js', 'ui/locales/en.js', 'assets/icon.png', 'skills/codex-design-system/scripts/editor/artifact-type/vendor/react.production.min.js']) assert.equal(includePublishedSource(name), true, name);
 });
 
-test('all four generated editor fixtures load only English resources before runtime without translating Chinese content', async () => {
+test('all five generated editor fixtures load only English resources before runtime without translating Chinese content', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-editor-en-only-'));
   try {
     const result = await build({ entryPoints: [path.join(repository, 'codex-plugins/source/scripts/editor-localization.js')], bundle: true, format: 'iife', platform: 'browser', write: false });
@@ -160,9 +163,12 @@ test('all four generated editor fixtures load only English resources before runt
     const pluginRoot = path.join(temporary, 'plugin');
     for (const kind of EDITOR_KINDS) {
       const editor = path.join(pluginRoot, 'skills', 'codex-' + kind, 'scripts/editor');
+      const entry = kind === 'motion' ? 'artifact-type/app.js' : 'assets/index-test.js';
       await fs.mkdir(path.join(editor, 'assets'), { recursive: true });
-      await fs.writeFile(path.join(editor, 'index.html'), '<html><head><script src="./comments.js"></script><script type="module" src="./assets/index-test.js"></script></head><body><div id="root"></div></body></html>');
-      await fs.writeFile(path.join(editor, 'assets/index-test.js'), 'var native={defaultMessage:"Cancel",id:"cancel"};var ui={label:"Reply"};var authored={title:"中文作品",text:"用户中文批注"};');
+      await fs.mkdir(path.dirname(path.join(editor, entry)), { recursive: true });
+      await fs.writeFile(path.join(editor, 'index.html'), `<html><head><script src="./comments.js"></script><script type="module" src="./${entry}"></script></head><body><div id="root"></div></body></html>`);
+      await fs.writeFile(path.join(editor, entry), 'var native={defaultMessage:"Cancel",id:"cancel"};var ui={label:"Reply"};var authored={title:"中文作品",text:"用户中文批注"};');
+      if (kind === 'motion') await fs.writeFile(path.join(editor, 'local-host.js'), 'var localHost=true;');
       await fs.writeFile(path.join(editor, 'comments.js'), 'var icon={name:"Comment"};');
     }
     const report = await adaptEditorLocalization(pluginRoot, { bundlePath });
@@ -182,7 +188,7 @@ test('all four generated editor fixtures load only English resources before runt
       vm.runInNewContext(await fs.readFile(path.join(editor, 'assets', resourceFile), 'utf8'), f.target);
       assert.deepEqual(Object.keys(f.target.__CODEX_DESIGN_EDITOR_RESOURCES__.resources), ['en']);
       vm.runInNewContext(await fs.readFile(path.join(editor, 'assets', runtimeFile), 'utf8'), f.target);
-      vm.runInNewContext(await fs.readFile(path.join(editor, 'assets/index-test.js'), 'utf8'), f.target);
+      vm.runInNewContext(await fs.readFile(path.join(editor, kind === 'motion' ? 'artifact-type/app.js' : 'assets/index-test.js'), 'utf8'), f.target);
       assert.equal(f.target.__appifact_i18n.lang, 'en-US'); assert.equal(f.target.__appifact_i18n.settled.cancel, 'Cancel');
       assert.equal(f.target.ui.label, 'Reply'); assert.equal(f.target.authored.title, '中文作品'); assert.equal(f.target.authored.text, '用户中文批注');
     }

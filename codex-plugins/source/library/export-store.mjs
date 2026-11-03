@@ -59,12 +59,12 @@ function exportInput(input) {
   if (input.overwriteToken !== undefined && (typeof input.overwriteToken !== 'string' || !UUID.test(input.overwriteToken))) {
     throw fail('EXPORT_INVALID_CONFIRMATION', 'An explicit overwrite confirmation token is required.');
   }
-  return { requestId: input.requestId.toLowerCase(), filename, mimeType: input.mimeType, bytes,
+  return { requestId: input.requestId.toLowerCase(), filename, mimeType: input.mimeType, bytes, size: bytes.length,
     directory: absoluteDirectory(input.directory), overwriteToken: input.overwriteToken };
 }
 
 /** App-only Save As operations; no path is written until the user submits Save. */
-export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl = fs, now = Date.now, beforeCommit } = {}) {
+export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl = fs, now = Date.now, beforeCommit, resolveSource } = {}) {
   if (!store || typeof store.initialize !== 'function' || typeof store._checkRoot !== 'function') throw new TypeError('A LibraryStore is required.');
   const io = fsImpl;
   const ready = async () => { await store.initialize(); await store._checkRoot(); };
@@ -92,7 +92,7 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
   };
   const matchesPayload = async (target, request, contentHash) => {
     const info = await targetInfo(target);
-    if (!info || info.size !== request.bytes.length) return false;
+    if (!info || info.size !== request.size) return false;
     const handle = await io.open(target, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     try {
       const opened = await handle.stat({ bigint: true });
@@ -110,10 +110,25 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
   const receiptPath = id => `_state/export-receipts/${id}.json`;
   const collision = async (request, target, contentHash, existing) => {
     const receipt = { version: 1, requestId: request.requestId, status: 'confirmation', target, contentHash,
+      ...(request.sourceBinding ? { sourceBinding: request.sourceBinding } : {}),
       existingFingerprint: existing.fingerprint, overwriteToken: randomUUID(), expiresAt: now() + TOKEN_MS };
     await atomicJson(store.root, receiptPath(request.requestId), receipt);
     return { saved: false, exists: true, path: target, overwriteToken: receipt.overwriteToken,
       existing: { size: existing.size, modifiedAt: existing.modifiedAt } };
+  };
+  const recover = async (previous, request, target, contentHash, folder) => {
+    if (previous?.status === 'saved') {
+      if (previous.result?.saved !== true || previous.result.path !== target || previous.result.filename !== request.filename || previous.result.bytes !== request.size) throw fail('EXPORT_INVALID_STATE', 'The saved export receipt cannot be verified.');
+      if (!await matchesPayload(target, request, contentHash)) throw fail('EXPORT_RESULT_CHANGED', 'This export was saved earlier, but the destination has since changed. Start a new export before choosing whether to replace it.');
+      return { ...previous.result, duplicate: true };
+    }
+    if (previous?.status === 'committing' && await matchesPayload(target, request, contentHash)) {
+      const result = { saved: true, path: target, filename: request.filename, bytes: request.size };
+      await atomicJson(store.root, receiptPath(request.requestId), { ...previous, status: 'saved', result, savedAt: new Date(now()).toISOString() });
+      await atomicJson(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {});
+      return { ...result, duplicate: true };
+    }
+    return null;
   };
   const api = {
     async locations() {
@@ -167,11 +182,12 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
         ...(offset + PAGE_SIZE < entries.length ? { nextCursor: Buffer.from(JSON.stringify({ key, revision, offset: offset + PAGE_SIZE })).toString('base64url') } : {}) };
     },
     async save(input) {
-      const request = exportInput(input);
+      const fileSource = input && Object.hasOwn(input, 'exportToken');
+      if (fileSource && (!UUID.test(input.exportToken ?? '') || !UUID.test(input.artifactId ?? '') || Object.hasOwn(input, 'text') || Object.hasOwn(input, 'base64') || typeof resolveSource !== 'function')) throw fail('EXPORT_INVALID_CONTENT', 'The rendered export reference is invalid.');
+      const request = exportInput(fileSource ? { ...input, base64: '' } : input);
       await ready();
       return locked(store.root, async () => {
         const folder = await directoryInfo(request.directory), target = path.join(folder.canonical, request.filename);
-        const contentHash = createHash('sha256').update(request.mimeType + '\0').update(request.bytes).digest('hex');
         const previous = await readJson(store.root, receiptPath(request.requestId), null);
         if (previous && (previous.version !== 1 || previous.requestId !== request.requestId || !['confirmation', 'committing', 'saved'].includes(previous.status)
           || typeof previous.target !== 'string' || !path.isAbsolute(previous.target) || !/^[a-f0-9]{64}$/.test(previous.contentHash ?? '')
@@ -179,22 +195,26 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
             || typeof previous.existingFingerprint !== 'string' || previous.existingFingerprint.length > 1000))) {
           throw fail('EXPORT_INVALID_STATE', 'The previous export receipt cannot be verified.');
         }
+        if (fileSource && previous?.sourceBinding) {
+          const binding = previous.sourceBinding;
+          if (binding.exportToken !== input.exportToken || binding.artifactId !== input.artifactId || binding.mimeType !== request.mimeType
+            || !Number.isSafeInteger(binding.size) || binding.size < 1 || binding.size > 2 * 1024 * 1024 * 1024 || !samePath(previous.target, target)) throw fail('EXPORT_REQUEST_CONFLICT', 'This export ID belongs to a different rendered file or destination.');
+          request.size = binding.size;
+          const restored = await recover(previous, request, target, previous.contentHash, folder);
+          if (restored) return restored;
+        }
+        if (fileSource) {
+          const source = await resolveSource(input.exportToken, input.artifactId);
+          if (!source || !path.isAbsolute(source.path ?? '') || source.mimeType !== request.mimeType || !Number.isSafeInteger(source.size) || source.size < 1 || source.size > 2 * 1024 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(source.contentHash ?? '') || typeof source.fingerprint !== 'string') throw fail('EXPORT_INVALID_CONTENT', 'The rendered export could not be verified.');
+          request.source = source; request.size = source.size;
+          request.sourceBinding = { exportToken: input.exportToken, artifactId: input.artifactId, mimeType: request.mimeType, size: source.size };
+        }
+        const contentHash = request.source?.contentHash ?? createHash('sha256').update(request.mimeType + '\0').update(request.bytes).digest('hex');
         if (previous && (!samePath(previous.target, target) || previous.contentHash !== contentHash)) {
           throw fail('EXPORT_REQUEST_CONFLICT', 'This export ID already belongs to different content or a different destination.');
         }
-        if (previous?.status === 'saved') {
-          if (previous.result?.saved !== true || previous.result.path !== target || previous.result.filename !== request.filename || previous.result.bytes !== request.bytes.length) {
-            throw fail('EXPORT_INVALID_STATE', 'The saved export receipt cannot be verified.');
-          }
-          if (!await matchesPayload(target, request, contentHash)) throw fail('EXPORT_RESULT_CHANGED', 'This export was saved earlier, but the destination has since changed. Start a new export before choosing whether to replace it.');
-          return { ...previous.result, duplicate: true };
-        }
-        if (previous?.status === 'committing' && await matchesPayload(target, request, contentHash)) {
-          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
-          await atomicJson(store.root, receiptPath(request.requestId), { ...previous, status: 'saved', result, savedAt: new Date(now()).toISOString() });
-          await atomicJson(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {});
-          return { ...result, duplicate: true };
-        }
+        const restored = await recover(previous, request, target, contentHash, folder);
+        if (restored) return restored;
         let existing = await targetInfo(target);
         if (existing) {
           if (!request.overwriteToken || previous?.status !== 'confirmation' || previous.overwriteToken !== request.overwriteToken
@@ -206,7 +226,20 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
         let handle;
         try {
           handle = await io.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW || 0), 0o600);
-          await handle.writeFile(request.bytes); await handle.sync(); await handle.close(); handle = null;
+          if (request.source) {
+            const source = await io.open(request.source.path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+            try {
+              if (fingerprint(await source.stat({ bigint: true })) !== request.source.fingerprint) throw fail('EXPORT_SOURCE_CHANGED', 'The rendered movie changed. Render it again before saving.');
+              const hash = createHash('sha256').update(request.mimeType + '\0'), buffer = Buffer.alloc(64 * 1024);
+              for (let position = 0; position < request.size;) {
+                const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, request.size - position), position);
+                if (!bytesRead) throw fail('EXPORT_SOURCE_CHANGED', 'The rendered movie is incomplete.');
+                const chunk = buffer.subarray(0, bytesRead); hash.update(chunk); await handle.writeFile(chunk); position += bytesRead;
+              }
+              if (hash.digest('hex') !== contentHash || fingerprint(await source.stat({ bigint: true })) !== request.source.fingerprint) throw fail('EXPORT_SOURCE_CHANGED', 'The rendered movie changed while saving.');
+            } finally { await source.close(); }
+          } else await handle.writeFile(request.bytes);
+          await handle.sync(); await handle.close(); handle = null;
           if (beforeCommit) await beforeCommit({ path: target, temporary, replacing: Boolean(existing) });
           await assertDirectory(folder);
           const latest = await targetInfo(target);
@@ -217,7 +250,7 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
           if (!existing && latest) return collision(request, target, contentHash, latest);
           // The durable intent lets a later process recover the narrow window
           // where publication succeeded but the final receipt/ACK was lost.
-          await atomicJson(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: 'committing', target, contentHash });
+          await atomicJson(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: 'committing', target, contentHash, ...(request.sourceBinding ? { sourceBinding: request.sourceBinding } : {}) });
           if (existing) await io.rename(temporary, target);
           else {
             // Exclusive publication never overwrites a file created by another
@@ -232,8 +265,8 @@ export function createExportStore({ store, homeDirectory = os.homedir(), fsImpl 
               } else throw error;
             }
           }
-          const result = { saved: true, path: target, filename: request.filename, bytes: request.bytes.length };
-          await atomicJson(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: 'saved', target, contentHash, result, savedAt: new Date(now()).toISOString() });
+          const result = { saved: true, path: target, filename: request.filename, bytes: request.size };
+          await atomicJson(store.root, receiptPath(request.requestId), { version: 1, requestId: request.requestId, status: 'saved', target, contentHash, result, savedAt: new Date(now()).toISOString(), ...(request.sourceBinding ? { sourceBinding: request.sourceBinding } : {}) });
           // A preference-write failure must not make a completed export look
           // failed or encourage overwriting its already-saved file again.
           await atomicJson(store.root, preferenceFile, { version: 1, directory: folder.canonical }).catch(() => {});

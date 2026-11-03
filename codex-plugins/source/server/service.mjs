@@ -18,6 +18,9 @@ import { getWorkerStatus, stopWorker } from '../scripts/worker-client.mjs';
 import { withLock } from '../scripts/bridge-core.mjs';
 import { loadJobs, WORKER_FILE, WORKER_LOCK_FILE } from '../scripts/worker-core.mjs';
 import { stopLocalEditor } from './editor-lifecycle.mjs';
+import { createMotionExports } from './motion-export.mjs';
+import { createDesignSystemSync } from './design-system-sync.mjs';
+import { createArtifactTransfers } from './artifact-transfer.mjs';
 import { ACTIONS, KINDS, UNSUPPORTED_CHAT_CODE, fileUri, referenceUri } from './contract.mjs';
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
@@ -112,7 +115,13 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
   };
   const transport = createEditorTransport({ editorFor });
   const requests = createEditRequestStore({ store });
-  const exports = createExportStore({ store });
+  const motionExports = createMotionExports({ store, pluginRoot });
+  const systemSync = createDesignSystemSync({ store });
+  const transfers = createArtifactTransfers({ store });
+  const exports = createExportStore({ store, resolveSource: async (token, artifactId) => {
+    try { return await motionExports.resolve(token, artifactId); }
+    catch (error) { if (error.code !== 'MOTION_EXPORT_NOT_FOUND') throw error; return transfers.resolve(token, artifactId); }
+  } });
   const nativeComments = createNativeComments({ requests, transport, editorFor });
   const modelRequest = async requestId => {
     const value = await requests.requestForModel(idOf(requestId));
@@ -172,6 +181,13 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'export.locations': return await exports.locations();
         case 'export.listDirectory': return await exports.listDirectory(payload);
         case 'export.save': return await exports.save(payload);
+        case 'editor.motionExport': return await motionExports.operate(await requireRecord(payload.id), payload);
+        case 'editor.systemSync': {
+          const record = await requireRecord(payload.id);
+          if (payload.operation === 'prepare') return await systemSync.prepare(record, payload.namespace);
+          if (payload.operation === 'apply') return await systemSync.apply(record, payload.confirmationToken);
+          throw failure('SYSTEM_SYNC_INVALID_REQUEST', 'Choose a design system review or an explicitly confirmed synchronization.');
+        }
         case 'library.list': return await store.list({ kind: payload.kind === undefined ? undefined : kindOf(payload.kind), query: typeof payload.query === 'string' ? payload.query.slice(0, 200) : '', favoritesOnly: payload.favoritesOnly === true, includeDeleted: payload.includeDeleted === true });
         case 'library.get': return await store.get(idOf(payload.id));
         case 'thumbnail.get': return await createArtifactThumbnail(store, idOf(payload.id));
@@ -201,7 +217,8 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         case 'library.snapshot': return await store.snapshot(idOf(payload.id), payload.label === undefined ? {} : { label: titleOf(payload.label) });
         case 'library.listSnapshots': return await store.listSnapshots(idOf(payload.id));
         case 'library.restoreSnapshot': return await store.restoreSnapshot(idOf(payload.id), payload.snapshotId);
-        case 'library.exportArtifact': return await store.exportArtifact(idOf(payload.id));
+        case 'library.exportArtifact': return payload.asFile === true ? await transfers.export(await requireRecord(payload.id)) : await store.exportArtifact(idOf(payload.id));
+        case 'library.transfer': return await transfers.operate(payload);
         case 'library.importArtifact': {
           if (!payload.bundle || typeof payload.bundle !== 'object' || Array.isArray(payload.bundle) || Object.hasOwn(payload, 'sourcePath')) {
             throw failure('INVALID_IMPORT', 'Choose a native artwork package; browser calls cannot import an arbitrary local path.');
@@ -265,7 +282,7 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
               return new Response(Buffer.from(response.body, 'base64'), { status: response.status, headers: response.headers });
             }
             else if (relative === '__codex/history-ui.js') asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor/share-ui.js');
-            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative)) {
+            else if (/^(?:assets\/[A-Za-z0-9._-]+|comments\.js|local-host\.js)$/.test(relative) || editor.kind === 'motion' && /^artifact-type\/(?:app\.js|app\.css|[A-Za-z0-9._-]+\.woff2)$/.test(relative)) {
               asset = path.join(pluginRoot, 'skills', `codex-${editor.kind}`, 'scripts/editor', relative);
             } else throw failure('EDITOR_ASSET_REFUSED', 'Only packaged static editor assets can be assembled.');
             const bytes = await readFile(asset);
@@ -276,10 +293,17 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
         }
         case 'editor.request': {
           const id = idOf(payload.id), request = payload.request ?? {};
-          const { method } = validateEditorRequest(request);
+          const record = await requireRecord(id);
+          const { method } = validateEditorRequest(request, { maxBodyBytes: record.kind === 'motion' ? 64 * 1024 * 1024 : 32 * 1024 * 1024 });
           const editor = await editorFor(id);
           const url = editorRequestUrl(editor.url, request.path);
           const route = decodeURIComponent(url.pathname.slice(new URL(editor.url).pathname.length)).split('/').filter(Boolean).join('/');
+          if (method === 'POST' && /^__ds-sync\/[a-z0-9][a-z0-9_-]{0,63}$/.test(route)) throw failure('SYSTEM_SYNC_CONFIRMATION_REQUIRED', 'Review the design system differences before replacing local files.');
+          const syncStatus = /^__ds-sync\/([a-z0-9][a-z0-9_-]{0,63})$/.exec(route);
+          if (syncStatus && ['GET', 'HEAD'].includes(method)) {
+            const status = await systemSync.status(record, syncStatus[1]);
+            return { status: 200, statusText: 'OK', headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, body: method === 'HEAD' ? '' : Buffer.from(JSON.stringify(status)).toString('base64') };
+          }
           if (method === 'POST' && /^__history\/(?:\d+\/restore|notice\/[^/]+\/recover)$/.test(route)) {
             const record = await requireRecord(id);
             return await withLock(path.join(record.path, WORKER_LOCK_FILE), async () => {
@@ -305,12 +329,12 @@ export function createDesignService({ store, pluginRoot = fileURLToPath(new URL(
           return await nativeComments.request(id, request);
         }
         case 'editor.digest': {
-          await requireRecord(payload.id);
+          const record = await requireRecord(payload.id), maxBytes = (record.kind === 'motion' ? 64 : 32) * 1024 * 1024;
           const algorithm = payload.algorithm === 'SHA-256' ? 'sha256' : payload.algorithm === 'SHA-384' ? 'sha384' : undefined;
-          if (!algorithm || typeof payload.base64 !== 'string' || payload.base64.length > 44_739_244
+          if (!algorithm || typeof payload.base64 !== 'string' || payload.base64.length > Math.ceil(maxBytes / 3) * 4
             || !isValidBase64(payload.base64)) throw failure('INVALID_EDITOR_DIGEST', 'Only bounded SHA-256 and SHA-384 digests are supported.');
           const bytes = Buffer.from(payload.base64, 'base64');
-          if (bytes.length > 32 * 1024 * 1024) throw failure('INVALID_EDITOR_DIGEST', 'The digest input exceeds the transfer limit.');
+          if (bytes.length > maxBytes) throw failure('INVALID_EDITOR_DIGEST', 'The digest input exceeds the transfer limit.');
           return { base64: createHash(algorithm).update(bytes).digest('base64') };
         }
         case 'editor.events.open': return await nativeComments.openEvents(idOf(payload.id), payload.path);

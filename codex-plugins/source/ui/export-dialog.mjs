@@ -2,7 +2,7 @@ const fail = (message, code = 'EXPORT_FAILED') => Object.assign(new Error(messag
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const absolute = value => /^(?:[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+|\/)/i.test(value);
 const noWriteFailures = new Set(['INVALID_ARGUMENTS', 'EXPORT_INVALID_REQUEST', 'EXPORT_INVALID_DIRECTORY', 'EXPORT_INVALID_FILENAME', 'EXPORT_INVALID_CONTENT',
-  'EXPORT_LIMIT_EXCEEDED', 'EXPORT_INVALID_CONFIRMATION', 'EXPORT_REQUEST_CONFLICT', 'EXPORT_DIRECTORY_CHANGED', 'EXPORT_UNSAFE_TARGET', 'EXPORT_TARGET_CHANGED']);
+  'EXPORT_LIMIT_EXCEEDED', 'EXPORT_INVALID_CONFIRMATION', 'EXPORT_REQUEST_CONFLICT', 'EXPORT_DIRECTORY_CHANGED', 'EXPORT_UNSAFE_TARGET', 'EXPORT_TARGET_CHANGED', 'EXPORT_SOURCE_CHANGED', 'MOTION_EXPORT_UNAVAILABLE', 'MOTION_EXPORT_NOT_FOUND']);
 
 export function directoryBreadcrumbs(directory) {
   if (typeof directory !== 'string' || !directory) return [];
@@ -226,7 +226,7 @@ export function createExportDialog({ invoke, document = globalThis.document, cre
   return {
     save(resource) {
       if (disposed) return Promise.reject(fail('The export dialog has closed.', 'BRIDGE_UNAVAILABLE'));
-      const same = [active, ...queue].find(entry => entry && ['filename', 'mimeType', 'text', 'base64'].every(key => entry.resource[key] === resource[key]));
+      const same = [active, ...queue].find(entry => entry && ['filename', 'mimeType', 'text', 'base64', 'exportToken', 'artifactId'].every(key => entry.resource[key] === resource[key]));
       if (same) return same.promise;
       if (queue.length + Number(Boolean(active)) >= 3) return Promise.reject(fail('Finish the current exports before starting another.', 'EXPORT_BUSY'));
       const entry = { resource: Object.freeze({ ...resource }), navigation: 0, requestId: createId(), model: { filename: resource.filename, locations: [], directory: '', locationInput: '', parent: null, entries: [], nextCursor: null, home: null, loading: true, saving: false, uncertain: false, restartRequired: false, error: '', collision: null, collisionChanged: false, result: null } };

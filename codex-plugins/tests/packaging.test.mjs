@@ -14,7 +14,8 @@ import { LIBRARY_UI_URI, FILE_UI_URI, PLUGIN_UI_VERSION } from '../source/server
 const buildRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pluginRoot = path.join(buildRoot, 'codex-design');
 const readJson = async (filename) => JSON.parse(await readFile(filename, 'utf8'));
-const editors = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard'];
+const editors = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-motion'];
+const skills = [...editors, 'codex-motion-director', 'codex-dataviz'];
 
 async function markdownFiles(root) {
   const files = [];
@@ -208,7 +209,7 @@ test('the installed stdio bundle exposes real entrypoints while ordinary tools k
   assert.equal(ui.contents[0].text, packagedHtml, 'the distributed server must return the bundled UI, not source HTML or a test placeholder');
 });
 
-test('all four distributed editors load English-only UI resources before their runtime', async () => {
+test('all five distributed editors load English-only UI resources before their runtime', async () => {
   for (const name of editors) {
     const editor = path.join(pluginRoot, 'skills', name, 'scripts/editor');
     const html = await readFile(path.join(editor, 'index.html'), 'utf8');
@@ -266,9 +267,9 @@ test('installed-package metadata and Markdown links resolve inside the package',
   }
 });
 
-test('all five generated skills use Codex routing, validation, and supported entry points', async () => {
-  assert.deepEqual((await readdir(path.join(pluginRoot, 'skills'))).sort(), [...editors, 'codex-dataviz'].sort());
-  for (const name of [...editors, 'codex-dataviz']) {
+test('all seven generated skills use Codex routing, validation, and supported entry points', async () => {
+  assert.deepEqual((await readdir(path.join(pluginRoot, 'skills'))).sort(), skills.toSorted());
+  for (const name of skills) {
     const text = await readFile(path.join(pluginRoot, 'skills', name, 'SKILL.md'), 'utf8');
     assert.equal(/^name: (.+)$/m.exec(text)?.[1], name);
     assert.doesNotMatch(text, /claude/i);
@@ -308,6 +309,11 @@ test('all five generated skills use Codex routing, validation, and supported ent
       const wrapper = await readFile(path.join(pluginRoot, 'skills', name, 'scripts/codex-artifact.mjs'), 'utf8');
       assert.match(wrapper, /runArtifactCommand/);
       await readFile(path.join(pluginRoot, 'skills', name, 'scripts/artifact.mjs'));
+    } else if (name === 'codex-motion-director') {
+      assert.match(text, /\.\.\/codex-motion\/SKILL\.md/);
+      assert.match(text, /codex-artifact\.mjs/);
+      assert.match(text, /adds no separate artwork type, player or format/);
+      assert.match(text, /native|appUrl/);
     } else {
       assert.doesNotMatch(text, /built-in\s+`?check|codex-artifact/i);
       assert.doesNotMatch(text, /annotation panel|Send to agent|worker-status/i);

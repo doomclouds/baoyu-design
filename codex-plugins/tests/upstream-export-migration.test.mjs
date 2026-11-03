@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { setImmediate } from 'node:timers/promises';
 import { readCommentComponent } from '../source/scripts/comment-toolbar-adapter.mjs';
+import { startArtifactServer } from './artifact-server-fixture.mjs';
 
 const require = createRequire(import.meta.url);
 const { runtime } = require('../../skills/claude-slides/scripts/editor/node/compiler.cjs');
@@ -181,7 +182,7 @@ for (const kind of ['design', 'slides']) test(`actual ${kind} Theme endpoint ser
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-upstream-theme-'));
   assert.equal(path.dirname(root), path.resolve(os.tmpdir()));
   let server;
-  t.after(async () => { server?.close(); await setImmediate(); await fs.rm(root, { recursive: true, force: true }); });
+  t.after(async () => { await server?.close(); await setImmediate(); await fs.rm(root, { recursive: true, force: true }); });
   const project = path.join(root, 'project'), copy = path.join(project, 'ds', 'qa');
   await fs.mkdir(path.join(copy, 'components', 'Card'), { recursive: true });
   const index = kind === 'design' ? 'canvas.json' : 'deck.json';
@@ -194,8 +195,7 @@ for (const kind of ['design', 'slides']) test(`actual ${kind} Theme endpoint ser
   const outside = path.join(root, 'outside'); await fs.mkdir(outside);
   await fs.writeFile(path.join(outside, 'README.md'), 'PRIVATE_OUTSIDE_MARKER');
   await fs.symlink(outside, path.join(project, 'ds', 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
-  const module = await import(new URL(`../../skills/claude-${kind}/scripts/server.mjs`, import.meta.url));
-  server = await module.startServer({ root, port: 0, portGiven: true, host: '127.0.0.1', lan: false, log() {} });
+  server = await startArtifactServer(fileURLToPath(new URL(`../../skills/claude-${kind}/scripts/server.mjs`, import.meta.url)), root);
   const page = await fetch(new URL('__ds/qa/', server.url));
   assert.equal(page.status, 200);
   assert.equal(page.headers.get('content-security-policy'), "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:");

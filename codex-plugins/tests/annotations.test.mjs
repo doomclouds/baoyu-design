@@ -10,11 +10,12 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { adaptAnnotations } from '../adapt-annotations.mjs';
 import { createFixture } from './fixtures.mjs';
+import { startArtifactServer } from './artifact-server-fixture.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const browserSource = await fs.readFile(new URL('../source/scripts/browser-annotations.js', import.meta.url), 'utf8');
-const names = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard'];
-const upstreamNames = {'codex-slides': 'claude-slides', 'codex-design': 'claude-design', 'codex-design-system': 'claude-design-system', 'codex-dashboard': 'claude-dashboard'};
+const names = ['codex-slides', 'codex-design', 'codex-design-system', 'codex-dashboard', 'codex-motion'];
+const upstreamNames = {'codex-slides': 'claude-slides', 'codex-design': 'claude-design', 'codex-design-system': 'claude-design-system', 'codex-dashboard': 'claude-dashboard', 'codex-motion': 'claude-motion'};
 let temporary, pluginRoot, serverModule;
 const execFileAsync = promisify(execFile);
 
@@ -25,7 +26,7 @@ test.before(async () => {
     const source = path.join(repository, 'skills', upstreamNames[name], 'scripts');
     const target = path.join(pluginRoot, 'skills', name, 'scripts');
     await fs.mkdir(path.join(target, 'editor'), {recursive: true});
-    for (const relative of ['artifact.mjs', ...(name === 'codex-dashboard' ? ['editor/local-host.js', 'editor/comments.js'] : ['server.mjs']), 'editor/index.html', 'editor/share-ui.js']) await fs.copyFile(path.join(source, relative), path.join(target, relative));
+    for (const relative of ['artifact.mjs', ...(name === 'codex-dashboard' ? ['editor/local-host.js', 'editor/comments.js'] : name === 'codex-motion' ? ['editor/local-host.js'] : ['server.mjs']), 'editor/index.html', 'editor/share-ui.js']) await fs.copyFile(path.join(source, relative), path.join(target, relative));
   }
   await adaptAnnotations(pluginRoot);
   serverModule = await import(pathToFileURL(path.join(pluginRoot, 'skills/codex-slides/scripts/codex-annotation-server.mjs')));
@@ -33,7 +34,7 @@ test.before(async () => {
 test.after(async () => { await fs.rm(temporary, {recursive: true, force: true}); });
 
 test('real reply CLI checks the captured user revision inside its comment transaction', async () => {
-  for (const kind of ['slides', 'design', 'design-system', 'dashboard']) {
+  for (const kind of ['slides', 'design', 'design-system', 'dashboard', 'motion']) {
     const fixture = await createFixture(kind, temporary);
     const filename = path.join(fixture.root, 'comments.json');
     const at = '2026-10-31T00:00:00.000Z';
@@ -76,11 +77,11 @@ test('all generated editors load a same-origin integrity-checked adapter and gra
     const html = await fs.readFile(path.join(scripts, 'editor/index.html'), 'utf8');
     const integrity = 'sha384-' + createHash('sha384').update(browserSource).digest('base64');
     assert.ok(html.includes(`src="./__codex/annotations.js" integrity="${integrity}"`));
-    const filename = name === 'codex-dashboard' ? 'artifact.mjs' : 'server.mjs';
+    const filename = ['codex-dashboard', 'codex-motion'].includes(name) ? 'artifact.mjs' : 'server.mjs';
     const runtime = await fs.readFile(path.join(scripts, filename), 'utf8');
     assert.ok(runtime.includes('serveCodexAnnotation'));
     assert.ok(runtime.includes('windowsHide: true'));
-    if (name !== 'codex-dashboard') assert.ok(runtime.includes('serveCodexAnnotation(request, response, rest, root'));
+    if (!['codex-dashboard', 'codex-motion'].includes(name)) assert.ok(runtime.includes('serveCodexAnnotation(request, response, rest, root'));
   }
 });
 
@@ -91,7 +92,7 @@ test('adaptation is idempotent and does not duplicate hidden-process settings', 
   assert.equal(await fs.readFile(file, 'utf8'), before);
 });
 
-test('all four CLI help banners use their installed Codex skill names', async () => {
+test('all five CLI help banners use their installed Codex skill names', async () => {
   for (const name of names) {
     const file = path.join(pluginRoot, 'skills', name, 'scripts/artifact.mjs');
     const runtime = await fs.readFile(file, 'utf8');
@@ -118,10 +119,12 @@ test('design-system discovery prefers the new environment name and retains its l
     assert.ok(runtime.includes('process.env.CODEX_DESIGN_SYSTEMS ?? process.env.CLAUDE_DESIGN_SYSTEMS ?? ""'));
     const env = {...process.env, CODEX_DESIGN_SYSTEMS: primary, CLAUDE_DESIGN_SYSTEMS: legacy};
     const preferred = await execFileAsync(process.execPath, [file, 'list', empty], {env, windowsHide: true, timeout: 10_000});
-    assert.deepEqual(JSON.parse(preferred.stdout).map(system => system.title), ['New environment']);
+    const preferredResult = JSON.parse(preferred.stdout);
+    assert.deepEqual((name === 'codex-motion' ? preferredResult.designSystems : preferredResult).map(system => system.title), ['New environment']);
     delete env.CODEX_DESIGN_SYSTEMS;
     const aliased = await execFileAsync(process.execPath, [file, 'list', empty], {env, windowsHide: true, timeout: 10_000});
-    assert.deepEqual(JSON.parse(aliased.stdout).map(system => system.title), ['Legacy environment']);
+    const legacyResult = JSON.parse(aliased.stdout);
+    assert.deepEqual((name === 'codex-motion' ? legacyResult.designSystems : legacyResult).map(system => system.title), ['Legacy environment']);
   }
 });
 
@@ -165,7 +168,7 @@ test('an old hook acknowledgement cannot mark a newer user revision delivered', 
 });
 
 test('renamed skill namespaces preserve standard editor health kinds', async () => {
-  const kinds = ['slides', 'design', 'design-system', 'dashboard'];
+  const kinds = ['slides', 'design', 'design-system', 'dashboard', 'motion'];
   for (let i = 0; i < names.length; i++) {
     let body;
     const response = {writeHead(status) { assert.equal(status, 200); }, end(bytes) { body = JSON.parse(bytes.toString()); }};
@@ -189,7 +192,24 @@ test('native metadata and boot routes refuse guests before reading local state',
   }
 });
 
-test('internal native services refuse network opt-ins while standalone options retain their own behavior', () => {
+test('native old comment delivery refuses encoded route aliases before forwarding', async () => {
+  const previous = process.env.CODEX_DESIGN_NATIVE_SESSION;
+  process.env.CODEX_DESIGN_NATIVE_SESSION = '1';
+  try {
+    for (const route of ['__comments/agent/wait', '__comments/agent%2frequests/', '__comments//c_123/send/', '__comments/c_123%2Fsend']) {
+      let status, body;
+      const response = {writeHead(value) { status = value; return this; }, end(value) { body = JSON.parse(value); }};
+      assert.equal(await serverModule.serveCodexAnnotation({method: 'POST'}, response, route, temporary, 'codex-motion', import.meta.url, {viewer: {role: 'owner'}}), true);
+      assert.equal(status, 403);
+      assert.equal(body.code, 'NATIVE_COMMENT_DELIVERY_REQUIRED');
+    }
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
+    else process.env.CODEX_DESIGN_NATIVE_SESSION = previous;
+  }
+});
+
+test('all generated services refuse network sharing in native and standalone modes', () => {
   const previous = process.env.CODEX_DESIGN_NATIVE_SESSION;
   try {
     process.env.CODEX_DESIGN_NATIVE_SESSION = '1';
@@ -198,7 +218,7 @@ test('internal native services refuse network opt-ins while standalone options r
       assert.throws(() => serverModule.assertNativeNetwork(options), {code: 'NATIVE_NETWORK_REFUSED'});
     }
     delete process.env.CODEX_DESIGN_NATIVE_SESSION;
-    serverModule.assertNativeNetwork({host: '0.0.0.0', lan: true});
+    assert.throws(() => serverModule.assertNativeNetwork({host: '0.0.0.0', lan: true}), {code: 'NATIVE_NETWORK_REFUSED'});
   } finally {
     if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
     else process.env.CODEX_DESIGN_NATIVE_SESSION = previous;
@@ -215,14 +235,13 @@ test('real adapted artifact servers retain authenticated metadata, history boot 
       const persisted = JSON.stringify({lan: true, port: 42399, links: {}, guests: []});
       await fs.writeFile(sharing, persisted);
       const scripts = path.join(pluginRoot, 'skills', fixture.skill, 'scripts');
-      const module = await import(pathToFileURL(path.join(scripts, 'server.mjs')));
-      const server = await module.startServer({root: fixture.root, port: 0, log: () => {}});
+      const server = await startArtifactServer(path.join(scripts, 'server.mjs'), fixture.root);
       try {
         assert.equal(server.lan, undefined, 'opening a native editor must not restore persisted LAN listeners');
         const base = new URL(server.url), origin = base.origin;
         const session = await fetch(new URL('__codex/editor-session', base));
         assert.equal(session.status, 200);
-        assert.deepEqual(await session.json(), {root: path.resolve(fixture.root), kind, pid: process.pid, nativeSessionVersion: 2, nativeLocalOnly: true});
+        assert.deepEqual(await session.json(), {root: path.resolve(fixture.root), kind, pid: server.pid, nativeSessionVersion: 2, nativeLocalOnly: true});
         assert.equal((await fetch(`${origin}/${kind}/wrong/__codex/editor-session`)).status, 404);
         assert.equal((await fetch(`${origin}/__codex/editor-session`)).status, 404);
         const head = await fetch(new URL('__codex/editor-session', base), {method: 'HEAD'});
@@ -240,12 +259,16 @@ test('real adapted artifact servers retain authenticated metadata, history boot 
         assert.equal(await historyUI.text(), await fs.readFile(path.join(scripts, 'editor/share-ui.js'), 'utf8'));
         const historyHead = await fetch(new URL('__codex/history-ui.js', base), {method: 'HEAD'});
         assert.equal(historyHead.status, 200); assert.equal(await historyHead.text(), '');
-        const share = await fetch(`${origin}/__share`, {method: 'POST', headers: {origin, 'content-type': 'application/json'}, body: '{"action":"lan","on":true}'});
+        assert.equal((await fetch(`${origin}/__share`)).status, 404, 'Hub root does not expose an artwork sharing route');
+        const sync = await fetch(new URL('__ds-sync%2Fnimbus/', base), {method: 'POST', headers: {origin}});
+        assert.equal(sync.status, 403);
+        assert.equal((await sync.json()).code, 'DS_SYNC_CONFIRMATION_REQUIRED');
+        const share = await fetch(new URL('__share', base), {method: 'POST', headers: {origin, 'content-type': 'application/json'}, body: '{"action":"lan","on":true}'});
         assert.equal(share.status, 403); assert.equal((await share.json()).code, 'native_local_only');
-        const zip = await fetch(`${origin}/__share/archive`);
+        const zip = await fetch(new URL('__share/archive', base));
         assert.equal(zip.status, 403); await zip.arrayBuffer();
         assert.equal(await fs.readFile(sharing, 'utf8'), persisted, 'native opening and refused share requests preserve the old sharing record');
-      } finally { server.close(); }
+      } finally { await server.close(); }
     }
   } finally {
     if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
@@ -255,15 +278,17 @@ test('real adapted artifact servers retain authenticated metadata, history boot 
 
 test('upstream port probing excludes synthetic always-answering TUN interfaces but still rejects real occupied ports', async () => {
   for (const name of names) {
-    const file = path.join(pluginRoot, 'skills', name, 'scripts', name === 'codex-dashboard' ? 'artifact.mjs' : 'server.mjs');
+    const file = path.join(pluginRoot, 'skills', name, 'scripts', ['codex-dashboard', 'codex-motion'].includes(name) ? 'artifact.mjs' : 'server.mjs');
     const runtime = await fs.readFile(file, 'utf8');
     const start = runtime.indexOf('async function listenFree('), end = runtime.indexOf('\nfunction serverOrigin(', start);
     assert.ok(start >= 0 && end > start, `${name}: upstream port probe contract changed`);
     const implementation = runtime.slice(start, end);
     const probes = [], binds = [];
     const portError = class extends Error { code = 'PORT_IN_USE'; };
+    const networkError = class extends Error { code = 'NETWORK_BLOCKED'; };
     const compile = overrides => vm.runInNewContext(`(${implementation})`, {
       PORT_TRIES: 100, PortsTaken: portError,
+      loopbackBlocked: async () => false, NetworkBlocked: networkError,
       lanAddresses: () => ['10.255.0.1', '192.0.2.10'],
       answersAnyPort: async address => address === '10.255.0.1',
       answers: async (address, port) => { probes.push({address, port}); return address === '127.0.0.1' && port === 4710; },
@@ -279,6 +304,47 @@ test('upstream port probing excludes synthetic always-answering TUN interfaces b
     await assert.rejects(exhausted({}, 65535, '127.0.0.1'), {code: 'PORT_IN_USE'});
     const ephemeral = compile({lanAddresses: () => assert.fail('port zero must let the OS select'), listen: async (_server, value) => value === 0 ? 52719 : assert.fail('unexpected bind')});
     assert.equal(await ephemeral({}, 0, '127.0.0.1'), 52719);
+    const blocked = compile({loopbackBlocked: async () => true, listen: async () => assert.fail('a blocked sandbox must not attempt a bind')});
+    await assert.rejects(blocked({}, 4710, '127.0.0.1'), {code: 'NETWORK_BLOCKED'});
+  }
+});
+
+test('each artwork owns its process and port, reuses only itself, and stops independently', async () => {
+  for (const kind of ['slides', 'design', 'design-system', 'dashboard', 'motion']) {
+    const scripts = path.join(pluginRoot, 'skills', `codex-${kind}`, 'scripts');
+    const cli = path.join(scripts, 'artifact.mjs');
+    const script = path.join(scripts, ['dashboard', 'motion'].includes(kind) ? 'artifact.mjs' : 'server.mjs');
+    const first = await createFixture(kind, temporary);
+    const second = await createFixture(kind, temporary);
+    let primary, sibling;
+    try {
+      primary = await startArtifactServer(script, first.root, {port: null, native: true});
+      sibling = await startArtifactServer(script, second.root, {port: null, native: true});
+      assert.notEqual(primary.pid, sibling.pid, kind + ': artworks must not share a process');
+      assert.notEqual(new URL(primary.url).port, new URL(sibling.url).port, kind + ': artworks must not share a listener');
+      const reused = JSON.parse((await execFileAsync(process.execPath, [cli, 'open', first.root], {
+        env: {...process.env, CODEX_DESIGN_NATIVE_SESSION: '1'}, windowsHide: true,
+      })).stdout);
+      assert.equal(reused.pid, primary.pid, kind + ': opening the same artwork reuses its own service');
+      assert.equal(reused.url, primary.url);
+      const mount = await fetch(new URL('/__hub', primary.url), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({action: 'mount', root: second.root})});
+      assert.equal(mount.status, 403);
+      assert.equal((await mount.json()).code, 'SINGLE_ARTWORK_SERVICE');
+      const wait = await fetch(new URL('__comments/agent/wait', primary.url));
+      assert.equal(wait.status, 403); await wait.arrayBuffer();
+      const oldRequest = await fetch(new URL('__comments/agent/requests', primary.url), {method: 'POST', headers: {'content-type': 'application/json'}, body: '{"text":"do not dispatch"}'});
+      assert.equal(oldRequest.status, 403); await oldRequest.arrayBuffer();
+      await assert.rejects(execFileAsync(process.execPath, [cli, 'comments', first.root, '--wait'], {windowsHide: true, timeout: 3000}), error => {
+        assert.match(error.stderr, /NATIVE_COMMENT_DELIVERY_REQUIRED|upstream comment waiting is disabled/); return true;
+      });
+      if (['slides', 'design'].includes(kind)) await assert.rejects(execFileAsync(process.execPath, [cli, 'ds-sync', first.root, 'nimbus'], {windowsHide: true, timeout: 3000}), error => {
+        assert.match(error.stderr, /DS_SYNC_CONFIRMATION_REQUIRED|raw CLI cannot overwrite/); return true;
+      });
+      const stopped = JSON.parse((await execFileAsync(process.execPath, [cli, 'stop', first.root], {windowsHide: true, timeout: 10000})).stdout);
+      assert.equal(stopped.stopped, true);
+      assert.equal(stopped.pid, primary.pid);
+      assert.equal((await fetch(new URL('__codex/editor-session', sibling.url))).status, 200, kind + ': stopping one artwork must preserve the other');
+    } finally { await sibling?.close(); await primary?.close(); }
   }
 });
 
@@ -288,8 +354,7 @@ test('real adapted artifact saves reject stale or missing bases after an interve
   try {
     for (const kind of ['slides', 'design', 'design-system']) {
       const fixture = await createFixture(kind, temporary);
-      const module = await import(pathToFileURL(path.join(pluginRoot, 'skills', fixture.skill, 'scripts/server.mjs')));
-      const server = await module.startServer({root: fixture.root, port: 0, log: () => {}});
+      const server = await startArtifactServer(path.join(pluginRoot, 'skills', fixture.skill, 'scripts/server.mjs'), fixture.root);
       try {
         const base = new URL(server.url);
         const files = (await (await fetch(new URL('_files.json', base))).json()).files;
@@ -317,7 +382,7 @@ test('real adapted artifact saves reject stale or missing bases after an interve
         assert.equal(stale.status, 409);
         assert.equal(await fs.readFile(content, 'utf8'), external);
         assert.deepEqual(await fs.readFile(index), indexBytes, 'the unrelated index must not be partially written');
-      } finally { server.close(); }
+      } finally { await server.close(); }
     }
   } finally {
     if (previous === undefined) delete process.env.CODEX_DESIGN_NATIVE_SESSION;
@@ -364,9 +429,10 @@ test('actual Dashboard service keeps native metadata behind its stable artwork b
     assert.equal(boot.status, 200); assert.match(await boot.text(), /__baoyuHistory/);
     const historyUI = await fetch(new URL('__codex/history-ui.js', base));
     assert.equal(historyUI.status, 200); assert.match(await historyUI.text(), /__baoyuHistory/);
-    const share = await fetch(`${base.origin}/__share`, {method: 'POST', headers: {origin: base.origin, 'content-type': 'application/json'}, body: '{"action":"lan","on":true}'});
+    assert.equal((await fetch(`${base.origin}/__share`)).status, 404);
+    const share = await fetch(new URL('__share', base), {method: 'POST', headers: {origin: base.origin, 'content-type': 'application/json'}, body: '{"action":"lan","on":true}'});
     assert.equal(share.status, 403); await share.arrayBuffer();
-    const zip = await fetch(`${base.origin}/__share/archive`);
+    const zip = await fetch(new URL('__share/archive', base));
     assert.equal(zip.status, 403); await zip.arrayBuffer();
     assert.equal(await fs.readFile(sharing, 'utf8'), sharingBytes);
     const writeDoc = async data => {

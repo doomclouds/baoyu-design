@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { repairEditorRuntime } from './source/scripts/editor-runtime-adapter.mjs';
 import { readCommentComponent } from './source/scripts/comment-toolbar-adapter.mjs';
 
-export const EDITOR_KINDS = ['slides', 'design', 'design-system', 'dashboard'];
+export const EDITOR_KINDS = ['slides', 'design', 'design-system', 'dashboard', 'motion'];
 
 // Keep canonical English chrome and compatibility keys. Artwork, comments,
 // fonts, and locale-sensitive document code are never rewritten.
@@ -213,7 +213,10 @@ export async function adaptEditorLocalization(pluginRoot, { bundlePath } = {}) {
   for (const kind of EDITOR_KINDS) {
     const editor = path.join(pluginRoot, 'skills', 'codex-' + kind, 'scripts/editor');
     const assets = path.join(editor, 'assets');
-    const sourceFiles = (await fs.readdir(assets)).filter(name => /^index-.*\.js$/.test(name)).map(name => path.join(assets, name));
+    if (kind === 'motion') await fs.mkdir(assets, { recursive: true });
+    const sourceFiles = kind === 'motion'
+      ? [path.join(editor, 'artifact-type/app.js'), path.join(editor, 'local-host.js')]
+      : (await fs.readdir(assets)).filter(name => /^index-.*\.js$/.test(name)).map(name => path.join(assets, name));
     const comments = path.join(editor, 'comments.js');
     if (await fs.stat(comments).catch(() => null)) sourceFiles.push(comments);
     if (sourceFiles.length === 0) throw new Error('No compiled editor module found for ' + kind);

@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { adaptSkillMarkdown, adaptSkills } from '../adapt-skills.mjs';
 
 const upstream = fileURLToPath(new URL('../../skills/', import.meta.url));
-const kinds = ['slides', 'design', 'design-system', 'dashboard'];
+const kinds = ['slides', 'design', 'design-system', 'dashboard', 'motion'];
+const skillKinds = [...kinds, 'motion-director', 'dataviz'];
+const sourceName = kind => ['dataviz', 'motion-director'].includes(kind) ? kind : 'claude-' + kind;
 const section = (text, heading) => text.split(new RegExp(`^## ${heading}[^\\n]*\\n`, 'm'))[1]?.split(/^## /m)[0] || '';
 
 for (const kind of kinds) {
@@ -30,10 +32,11 @@ for (const kind of kinds) {
     assert.match(open, /appUrl.*navigationRequested.*renderVerified/);
     assert.doesNotMatch(open, /\{url|127\.0\.0\.1|starts the (?:editor )?page.*background/);
     assert.match(preview, /only when the user explicitly/);
-    const creating = section(adapted, 'Creating');
-    assert.match(creating, /open(?: <root>)?`[\s\S]*?`appUrl`/);
+    const creating = section(adapted, kind === 'motion' ? 'A new film' : 'Creating');
+    assert.match(creating, kind === 'motion' ? /open <root>[\s\S]*?native Codex Design artwork Tab/ : /open(?: <root>)?`[\s\S]*?`appUrl`/);
     const revising = section(adapted, kind === 'dashboard' ? 'Changing and refreshing' : 'Revising');
-    assert.match(revising, /open <root>[\s\S]*?`appUrl`/);
+    if (kind === 'motion') assert.match(revising, /Never start the film over; the store is the truth/);
+    else assert.match(revising, /open <root>[\s\S]*?`appUrl`/);
     assert.doesNotMatch(adapted, /give the (?:user|person) (?:its |the )?`url`|`open`'s `url` \+ `#slide-/);
     assert.equal(await fs.readFile(path.join(upstream, 'claude-' + kind, 'SKILL.md'), 'utf8'), source, 'The upstream skill stays untouched.');
   });
@@ -63,17 +66,17 @@ test('actual supporting handover references use native links without inventing s
   assert.match(adaptedCanvas, /new creation result's exact root and native appUrl/);
 });
 
-test('adapting a disposable plugin writes the same native workflow and Codex command wrapper for all four kinds', async t => {
+test('adapting a disposable plugin writes native workflows for five editors and keeps the director beside Motion', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-skill-delivery-'));
   t.after(async () => {
     const relative = path.relative(os.tmpdir(), root);
     assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
     await fs.rm(root, { recursive: true, force: true });
   });
-  for (const kind of [...kinds, 'dataviz']) {
+  for (const kind of skillKinds) {
     const directory = path.join(root, 'skills', 'codex-' + kind);
     await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'SKILL.md'), `---\nname: ${kind === 'dataviz' ? kind : 'claude-' + kind}\ndescription: Example\n---\n\n# ${kind}\n\n## The calls\n\n- \`open <root>\` → \`{url, pid}\`: starts the editor page.\n`);
+    await fs.writeFile(path.join(directory, 'SKILL.md'), `---\nname: ${sourceName(kind)}\ndescription: Example\n---\n\n# ${kind}\n\n## The calls\n\n- \`open <root>\` → \`{url, pid}\`: starts the editor page.\n`);
   }
   await adaptSkills(root);
   for (const kind of kinds) {
@@ -83,6 +86,10 @@ test('adapting a disposable plugin writes the same native workflow and Codex com
     assert.match(await fs.readFile(path.join(directory, 'scripts/codex-artifact.mjs'), 'utf8'), /runArtifactCommand/);
   }
   assert.doesNotMatch(await fs.readFile(path.join(root, 'skills/codex-dataviz/SKILL.md'), 'utf8'), /Open and deliver in Codex Design/);
+  const director = await fs.readFile(path.join(root, 'skills/codex-motion-director/SKILL.md'), 'utf8');
+  assert.match(director, /\.\.\/codex-motion\/SKILL\.md/);
+  assert.match(director, /adds no separate artwork type, player or format/);
+  await assert.rejects(fs.access(path.join(root, 'skills/codex-motion-director/scripts/codex-artifact.mjs')), { code: 'ENOENT' });
 });
 
 test('all real upstream editor workflows retain local delivery and content-only transfer instead of LAN/archive recipes', async () => {
@@ -105,7 +112,7 @@ test('all real upstream editor workflows retain local delivery and content-only 
     assert.match(git, /exclude chats, comments, history/);
     assert.match(git, /Preserve any existing user-owned/);
     assert.doesNotMatch(git, /comments\.json.*included|history included|whole folder/);
-    assert.match(adapted, kind === 'dashboard' ? /## The documents/ : kind === 'slides' ? /## The slide format/ : kind === 'design' ? /## One artboard: the skeleton/ : /## tokens.json, in brief/);
+    assert.match(adapted, kind === 'motion' ? /## The store documents: exact shapes/ : kind === 'dashboard' ? /## The documents/ : kind === 'slides' ? /## The slide format/ : kind === 'design' ? /## One artboard: the skeleton/ : /## tokens.json, in brief/);
     assert.equal(await fs.readFile(path.join(upstream, 'claude-' + kind, 'SKILL.md'), 'utf8'), source);
   }
 });
@@ -156,8 +163,8 @@ test('comment list order is not documented as the author-avatar pin label', asyn
 
 test('every actual upstream markdown reference adapts, while unknown host wording still fails closed', async () => {
   let files = 0;
-  for (const kind of [...kinds, 'dataviz']) {
-    const base = path.join(upstream, kind === 'dataviz' ? kind : 'claude-' + kind);
+  for (const kind of skillKinds) {
+    const base = path.join(upstream, sourceName(kind));
     const walk = async directory => {
       for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
         const filename = path.join(directory, entry.name);

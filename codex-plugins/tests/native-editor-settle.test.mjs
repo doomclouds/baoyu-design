@@ -4,7 +4,11 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { adaptInlineEditorScript } from '../source/server/editor-document.mjs';
 
-const source = await fs.readFile(new URL('../../skills/claude-design/scripts/editor/assets/index-DyKwtQBI.js', import.meta.url), 'utf8');
+const editorRoot = new URL('../../skills/claude-design/scripts/editor/', import.meta.url);
+const editorHtml = await fs.readFile(new URL('index.html', editorRoot), 'utf8');
+const entry = editorHtml.match(/<script\b[^>]*type="module"[^>]*src="(\.\/assets\/index-[^"]+\.js)"/);
+assert.ok(entry, 'Read the actual current Canvas module entry from its editor page.');
+const source = await fs.readFile(new URL(entry[1], editorRoot), 'utf8');
 const adapted = adaptInlineEditorScript(source, 'https://codex-design.invalid/artifacts/test/assets/editor.js');
 function section(text, start, end) {
   const from = text.indexOf(start);

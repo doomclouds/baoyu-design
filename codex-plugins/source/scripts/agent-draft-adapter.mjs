@@ -97,7 +97,7 @@ function isEditorResourceData(source) {
   try {
     const value = JSON.parse(text.slice(0, -1));
     const messages = value?.resources?.en?.editor;
-    return ['slides', 'design', 'design-system', 'dashboard'].includes(value?.kind) && value.language === 'en'
+    return ['slides', 'design', 'design-system', 'dashboard', 'motion'].includes(value?.kind) && value.language === 'en'
       && messages !== null && typeof messages === 'object' && !Array.isArray(messages);
   } catch { return false; }
 }
@@ -139,6 +139,13 @@ export function adaptAgentDrafts(source) {
     for (const property of ['deliverClaudeRequest', 'deliverClaudePrompt']) insert(property, objectResult, true);
     insert('claudeSendResultMessage', message, true);
     insert('claudeDeliveryStatusMessage', ([status]) => `const message=__codexNativeAgentMessage(${status},"",__codexNativeAgentDraft.lastError);if(message!==null)return message;`, true);
+  } else if (source.includes('"stagePromptInClaude"') && source.includes('"MotionApp"')) {
+    kind = 'motion';
+    insert('stagePromptInClaude', stringResult, true);
+    insert('deliverPromptToClaude', stringResult, true);
+    insert('suggestOrCopyPrompt', stringResult, true);
+    insert('getPromptDeliveryMessage', message, true);
+    insert('sendExportProblemToClaude', ([problem, title, , context]) => `return __codexNativeAgentDraft({label:"Motion export problem",request:(0,e.buildExportProblemPrompt)(${problem},${title},${context})});`, true);
   } else if (source.includes('"sendSelectionToClaude"')) {
     kind = 'dashboard';
     insert('sendSelectionToClaude', stringResult, true);

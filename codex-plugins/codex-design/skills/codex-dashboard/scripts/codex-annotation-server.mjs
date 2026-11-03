@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export const nativeSession = () => process.env.CODEX_DESIGN_NATIVE_SESSION === '1';
 export function assertNativeNetwork({host, lan = false}) {
-  if (!nativeSession() || !lan && ['127.0.0.1', 'localhost', '::1'].includes(host)) return;
+  if (!lan && ['127.0.0.1', 'localhost', '::1'].includes(host)) return;
   const error = new Error('A native Codex Design data service is local-only; network sharing is not enabled by opening an artwork.');
   error.code = 'NATIVE_NETWORK_REFUSED';
   throw error;
@@ -43,7 +43,7 @@ export function sameCommentRevision(current, captured) {
 }
 
 const indexNames = { 'codex-slides': 'deck.json', 'codex-design': 'canvas.json', 'codex-design-system': 'design-system.json' };
-const editorKinds = { 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard' };
+const editorKinds = { 'codex-slides': 'slides', 'codex-design': 'design', 'codex-design-system': 'design-system', 'codex-dashboard': 'dashboard', 'codex-motion': 'motion' };
 const safe = value => typeof value === 'string' && value.length <= 220 && !value.startsWith('/') && !value.includes('\\') && value.split('/').every(p => p && p !== '.' && p !== '..' && !p.startsWith('.'));
 async function readJson(file) { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } }
 async function exists(root, relative) {
@@ -65,6 +65,17 @@ async function files(root, relative = '', result = []) {
 
 export async function annotationContext(root, skill) {
   const project = path.resolve(root);
+  if (skill === 'codex-motion') {
+    const meta = await readJson(path.join(root, 'db/film/meta.json'));
+    const objects = [];
+    for (const name of (await files(path.join(root, 'db/modules'))).filter(name => name.endsWith('.json'))) {
+      const doc = await readJson(path.join(root, 'db/modules', name));
+      if (typeof doc?.text !== 'string') continue;
+      const id = name.slice(0, -5);
+      objects.push({id, file: 'db/modules/' + name, name: id, keys: [id]});
+    }
+    return {skill, projectRoot: project, title: meta?.title || path.basename(root), indexFile: 'db/film/meta.json', objects};
+  }
   if (skill === 'codex-dashboard') {
     const names = await files(path.join(root, 'db/files'));
     const objects = [];
@@ -104,6 +115,21 @@ export async function annotationContext(root, skill) {
 
 export async function serveCodexAnnotation(request, response, rest, root, skill, moduleUrl, { viewer, bootScript } = {}) {
   const route = rest.replace(/^\//, '');
+  let canonical;
+  try { canonical = decodeURIComponent(route).split('/').filter(Boolean).join('/'); }
+  catch { canonical = route; }
+  if (nativeSession() && /^__ds-sync\//.test(canonical) && request.method === 'POST') {
+    request.resume?.();
+    response.writeHead(403, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
+    response.end(JSON.stringify({code: 'DS_SYNC_CONFIRMATION_REQUIRED', message: 'Review and confirm this design-system sync through the native workspace.'}));
+    return true;
+  }
+  if (nativeSession() && /^__comments\/(?:agent\/|[^/]+\/send(?:\/|$))/.test(canonical)) {
+    request.resume?.();
+    response.writeHead(403, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
+    response.end(JSON.stringify({code: 'NATIVE_COMMENT_DELIVERY_REQUIRED', message: 'Use native Add to chat and the registered native worker.'}));
+    return true;
+  }
   if (!['__codex/annotations.js', '__codex/annotation-context', '__codex/editor-session', '__codex/boot.js', '__codex/history-ui.js'].includes(route)) return false;
   // These routes expose local filesystem identity or native boot metadata.
   // Keep them behind the upstream grant and viewer checks, and never expose
