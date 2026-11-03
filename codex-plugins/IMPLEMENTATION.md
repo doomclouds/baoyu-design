@@ -2,15 +2,36 @@
 
 ## Current release and evidence boundaries
 
-0.6.5 is published on `main` and marketplace branch `codex/plugin` at
-`a7c54c58a58adf11f3cb4feffed1589960ca7323`. The release tree, fetched GitHub
+0.6.6 is published on `main` and marketplace branch `codex/plugin` at
+`014f87b571c776d7f6b43457706d2dff7f764c90`. The release tree, fetched GitHub
 marketplace snapshot and installed cache match all 192 files (191 owned files
-plus manifest). The complete regression passed 671/671; generated consistency
+plus manifest). The complete regression passed 686/686; generated consistency
 and generic-node/Unicode-path portable checks passed. A fresh runtime reports
 five skills, six tools and no errors. The current desktop session completed
-a live `view.get`; its running `server/index.mjs` is from installed 0.6.5,
+a live library read; its running `server/index.mjs` is from installed 0.6.6,
 with parent process 32632. Only the plugin was hot-switched; Codex was not
 restarted. No GitHub workflow was used.
+
+## 0.6.6 shared library and Trash selection
+
+Library and Trash now share visible-result selection in list and grid views.
+The contextual top toolbar offers Move to trash, or Restore / Delete selected
+in Trash. Trash row actions use a compact Restore button beside a muted,
+accessible delete icon. Permanent deletion keeps the concrete confirmation.
+
+Move/Restore use existing single-artwork operations serially, preserve failed
+selections, and read back uncertain responses before retrying. The same path
+fixes the old single-trash duplicate close/save. Only the active target editor
+is flushed, late replies cannot close replacement dialogs, and disposal stops
+subsequent mutation or purge batches. Final view identities are checked before
+applying them, preserving unrelated editors.
+
+The final focused suite passed 73/73 and the full suite 686/686. Formal-market
+native checks passed three-item move/restore, single/batch delete confirmation
+and cancellation, mixed/select-all state, six-item grid selection preservation
+and grid batch move. Six own QA items remain recoverable in Trash; unrelated
+record metadata is unchanged. No actual permanent UI deletion is claimed.
+See [ACCEPTANCE-0.6.6.md](ACCEPTANCE-0.6.6.md) and [visual QA](design-qa.md).
 
 Implementation is distinct from complete native coverage. Installed 0.6.4
 close/reopen, active-editor preservation, an actual same-location write race
